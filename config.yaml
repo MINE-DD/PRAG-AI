@@ -1,0 +1,16 @@
+models:
+  embedding: "nomic-embed-text"
+  llm:
+    type: "local"
+    model: "llama3"
+
+chunking:
+  size: 500
+  overlap: 100
+  strategy: "fixed"
+
+retrieval:
+  top_k: 10
+
+citations:
+  unique_id_format: "{author}{title_words}{year}"

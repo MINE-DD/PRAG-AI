@@ -1,1 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+data/
+.DS_Store
+*.swp
+*.swo
 .worktrees/
