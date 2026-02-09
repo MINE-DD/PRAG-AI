@@ -85,6 +85,59 @@ def upload_pdf(collection_id: str, file) -> Optional[dict]:
         return None
 
 
+def query_papers(collection_id: str, query_text: str, paper_ids: list = None, include_citations: bool = False) -> Optional[dict]:
+    """Query papers in a collection"""
+    try:
+        payload = {
+            "query_text": query_text,
+            "limit": 10,
+            "include_citations": include_citations
+        }
+        if paper_ids:
+            payload["paper_ids"] = paper_ids
+
+        response = httpx.post(
+            f"{BACKEND_URL}/collections/{collection_id}/query",
+            json=payload,
+            timeout=30.0
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error querying papers: {e}")
+        return None
+
+
+def summarize_papers(collection_id: str, paper_ids: list) -> Optional[dict]:
+    """Summarize papers"""
+    try:
+        response = httpx.post(
+            f"{BACKEND_URL}/collections/{collection_id}/summarize",
+            json={"paper_ids": paper_ids},
+            timeout=60.0
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error summarizing papers: {e}")
+        return None
+
+
+def compare_papers(collection_id: str, paper_ids: list, aspect: str = "all") -> Optional[dict]:
+    """Compare papers"""
+    try:
+        response = httpx.post(
+            f"{BACKEND_URL}/collections/{collection_id}/compare",
+            json={"paper_ids": paper_ids, "aspect": aspect},
+            timeout=60.0
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error comparing papers: {e}")
+        return None
+
+
 def main():
     st.set_page_config(
         page_title="PRAG-v2",
@@ -213,7 +266,151 @@ def main():
                                 st.warning("Delete functionality coming soon")
 
         with tab2:
-            st.info("Query interface coming soon!")
+            st.subheader("Query Papers")
+
+            # Get papers for selection
+            papers = get_papers(collection_id)
+
+            if not papers:
+                st.warning("No papers in this collection. Upload some PDFs first!")
+            else:
+                # Paper selection panel
+                with st.expander("📚 Select Papers", expanded=True):
+                    st.write("Choose which papers to query (leave empty to query all):")
+
+                    # Select All / Clear All buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Select All"):
+                            st.session_state.selected_papers = [p["paper_id"] for p in papers]
+                    with col2:
+                        if st.button("Clear All"):
+                            st.session_state.selected_papers = []
+
+                    # Initialize session state
+                    if "selected_papers" not in st.session_state:
+                        st.session_state.selected_papers = []
+
+                    # Paper checkboxes
+                    for paper in papers:
+                        paper_id = paper["paper_id"]
+                        filename = paper.get("filename", paper_id)
+
+                        is_selected = paper_id in st.session_state.selected_papers
+                        if st.checkbox(
+                            f"📄 {filename}",
+                            value=is_selected,
+                            key=f"select_{paper_id}"
+                        ):
+                            if paper_id not in st.session_state.selected_papers:
+                                st.session_state.selected_papers.append(paper_id)
+                        else:
+                            if paper_id in st.session_state.selected_papers:
+                                st.session_state.selected_papers.remove(paper_id)
+
+                    selected_count = len(st.session_state.selected_papers)
+                    if selected_count > 0:
+                        st.info(f"✓ {selected_count} paper(s) selected")
+                    else:
+                        st.info("All papers will be queried")
+
+                st.divider()
+
+                # Query interface
+                st.subheader("Ask a Question")
+
+                query_text = st.text_area(
+                    "Enter your question:",
+                    placeholder="e.g., What are the main findings about attention mechanisms?",
+                    height=100
+                )
+
+                col1, col2, col3 = st.columns([2, 2, 1])
+                with col1:
+                    include_citations = st.checkbox("Include citations", value=True)
+                with col2:
+                    query_mode = st.selectbox(
+                        "Mode",
+                        ["Search", "Summarize", "Compare"],
+                        help="Search: Find relevant passages\nSummarize: Generate summary\nCompare: Compare papers"
+                    )
+
+                if st.button("🔍 Submit", type="primary", use_container_width=True):
+                    if not query_text and query_mode == "Search":
+                        st.warning("Please enter a question")
+                    elif query_mode in ["Summarize", "Compare"] and selected_count == 0:
+                        st.warning(f"{query_mode} requires at least {'1' if query_mode == 'Summarize' else '2'} paper(s) selected")
+                    else:
+                        with st.spinner(f"{query_mode}ing..."):
+                            if query_mode == "Search":
+                                # Query/search mode
+                                result = query_papers(
+                                    collection_id,
+                                    query_text,
+                                    st.session_state.selected_papers if selected_count > 0 else None,
+                                    include_citations
+                                )
+
+                                if result:
+                                    st.success("✅ Search complete!")
+
+                                    # Display results
+                                    results = result.get("results", [])
+                                    st.write(f"**Found {len(results)} relevant passages:**")
+
+                                    for i, r in enumerate(results):
+                                        with st.container():
+                                            st.markdown(f"**Result {i+1}** (Score: {r['score']:.3f})")
+                                            st.markdown(f"> {r['chunk_text']}")
+                                            st.caption(f"Paper: {r['unique_id']} | Page: {r['page_number']} | Type: {r['chunk_type']}")
+                                            st.divider()
+
+                                    # Display citations if included
+                                    if include_citations and "citations" in result:
+                                        st.subheader("📚 Citations")
+                                        for paper_id, citation in result["citations"].items():
+                                            with st.expander(f"{citation['unique_id']} - {citation['title']}"):
+                                                st.markdown("**APA:**")
+                                                st.text(citation["apa"])
+                                                st.markdown("**BibTeX:**")
+                                                st.code(citation["bibtex"], language="bibtex")
+
+                            elif query_mode == "Summarize":
+                                # Summarize mode
+                                result = summarize_papers(
+                                    collection_id,
+                                    st.session_state.selected_papers
+                                )
+
+                                if result:
+                                    st.success("✅ Summary generated!")
+                                    st.markdown("### Summary")
+                                    st.markdown(result["summary"])
+
+                                    st.divider()
+                                    st.markdown("### Papers Summarized")
+                                    for paper in result.get("papers", []):
+                                        st.write(f"- **{paper['title']}** ({paper['year']}) - {', '.join(paper['authors'])}")
+
+                            elif query_mode == "Compare":
+                                # Compare mode
+                                if selected_count < 2:
+                                    st.error("Please select at least 2 papers to compare")
+                                else:
+                                    result = compare_papers(
+                                        collection_id,
+                                        st.session_state.selected_papers
+                                    )
+
+                                    if result:
+                                        st.success("✅ Comparison generated!")
+                                        st.markdown("### Comparison")
+                                        st.markdown(result["comparison"])
+
+                                        st.divider()
+                                        st.markdown("### Papers Compared")
+                                        for paper in result.get("papers", []):
+                                            st.write(f"- **{paper['title']}** ({paper['year']}) - {', '.join(paper['authors'])}")
 
     else:
         st.info("👈 Select or create a collection to get started")
