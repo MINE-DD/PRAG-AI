@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import health, collections
+from app.api import health, collections, papers
 from app.core.config import settings
 
 app = FastAPI(
@@ -21,6 +21,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, tags=["health"])
 app.include_router(collections.router, tags=["collections"])
+app.include_router(papers.router, tags=["papers"])
 
 
 @app.get("/")

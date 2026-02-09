@@ -1,5 +1,12 @@
 import pytest
-from backend.app.core.config import Settings, load_config
+import sys
+from pathlib import Path
+
+# Add backend to path for local testing
+backend_path = Path(__file__).parent.parent.parent / "backend"
+sys.path.insert(0, str(backend_path))
+
+from app.core.config import Settings, load_config
 
 
 def test_settings_from_env(monkeypatch):
@@ -21,5 +28,5 @@ def test_load_config_from_yaml():
 
     assert "models" in config
     assert "chunking" in config
-    assert config["models"]["embedding"] == "nomic-embed-text"
+    assert config["models"]["embedding"] == "mxbai-embed-large"
     assert config["chunking"]["size"] == 500

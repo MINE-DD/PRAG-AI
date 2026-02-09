@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
-from backend.app.services.pdf_processor import PDFProcessor
-from backend.app.models.paper import PaperMetadata
+from app.services.pdf_processor import PDFProcessor
+from app.models.paper import PaperMetadata
 
 
 @pytest.fixture

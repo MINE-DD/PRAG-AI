@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
-from backend.app.services.qdrant_service import QdrantService
-from backend.app.models.paper import Chunk, ChunkType
+from app.services.qdrant_service import QdrantService
+from app.models.paper import Chunk, ChunkType
 
 
 @pytest.fixture

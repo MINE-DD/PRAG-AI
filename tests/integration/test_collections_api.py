@@ -1,10 +1,17 @@
 import pytest
+import sys
+from pathlib import Path
 import tempfile
 import shutil
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
-from backend.app.main import app
-from backend.app.core.config import settings
+
+# Add backend to path for local testing
+backend_path = Path(__file__).parent.parent.parent / "backend"
+sys.path.insert(0, str(backend_path))
+
+from app.main import app
+from app.core.config import settings
 
 
 @pytest.fixture
@@ -23,7 +30,7 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant client"""
-    with patch('backend.app.api.collections.QdrantService') as mock:
+    with patch('app.api.collections.QdrantService') as mock:
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.delete_collection = Mock()

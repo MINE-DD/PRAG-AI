@@ -1,5 +1,5 @@
 import pytest
-from backend.app.services.chunking_service import ChunkingService
+from app.services.chunking_service import ChunkingService
 
 
 def test_chunk_text_fixed_size():

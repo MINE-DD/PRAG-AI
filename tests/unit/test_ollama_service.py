@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from backend.app.services.ollama_service import OllamaService
+from app.services.ollama_service import OllamaService
 
 
 @pytest.fixture

@@ -1,8 +1,15 @@
 import pytest
+import sys
+from pathlib import Path
 from datetime import datetime
-from backend.app.models.paper import PaperMetadata, Chunk, ChunkType
-from backend.app.models.collection import Collection
-from backend.app.models.query import QueryRequest, QueryResponse, Source
+
+# Add backend to path for local testing
+backend_path = Path(__file__).parent.parent.parent / "backend"
+sys.path.insert(0, str(backend_path))
+
+from app.models.paper import PaperMetadata, Chunk, ChunkType
+from app.models.collection import Collection
+from app.models.query import QueryRequest, QueryResponse, Source
 
 
 def test_paper_metadata_creation():
