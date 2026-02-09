@@ -15,7 +15,7 @@ RUN pip install uv && \
     uv pip install --system -e .
 
 # Copy application code
-COPY app/ ./app/
+COPY backend/app/ ./app/
 
 # Expose port
 EXPOSE 8000

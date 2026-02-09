@@ -1,8 +1,8 @@
 models:
-  embedding: "nomic-embed-text"
+  embedding: "mxbai-embed-large"
   llm:
     type: "local"
-    model: "llama3"
+    model: "llama3.2:1b"
 
 chunking:
   size: 500

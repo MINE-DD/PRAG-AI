@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   qdrant:
     image: qdrant/qdrant:latest
@@ -8,19 +6,15 @@ services:
     volumes:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     depends_on:
-      qdrant:
-        condition: service_healthy
+      - qdrant
     volumes:
       - ./data/collections:/data/collections
       - ./config.yaml:/app/config.yaml:ro
@@ -40,12 +34,13 @@ services:
       retries: 5
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "8501:8501"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     environment:
       - BACKEND_URL=http://backend:8000
     restart: unless-stopped

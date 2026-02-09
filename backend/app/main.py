@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api import health, collections
-from backend.app.core.config import settings
+from app.api import health, collections
+from app.core.config import settings
 
 app = FastAPI(
     title="PRAG-v2 API",
