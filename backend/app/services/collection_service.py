@@ -3,9 +3,9 @@ from datetime import datetime, UTC
 import uuid
 import shutil
 from typing import Optional
-from backend.app.models.collection import Collection
-from backend.app.services.qdrant_service import QdrantService
-from backend.app.core.config import settings
+from app.models.collection import Collection
+from app.services.qdrant_service import QdrantService
+from app.core.config import settings
 
 
 class CollectionService:

@@ -2,7 +2,7 @@ from docling.document_converter import DocumentConverter
 from pathlib import Path
 from typing import Optional
 import re
-from backend.app.models.paper import PaperMetadata
+from app.models.paper import PaperMetadata
 
 
 class PDFProcessor:

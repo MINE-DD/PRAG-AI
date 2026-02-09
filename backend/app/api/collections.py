@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from backend.app.services.collection_service import CollectionService
-from backend.app.services.qdrant_service import QdrantService
-from backend.app.core.config import settings
-from backend.app.models.collection import Collection
+from app.services.collection_service import CollectionService
+from app.services.qdrant_service import QdrantService
+from app.core.config import settings
+from app.models.collection import Collection
 
 router = APIRouter()
 

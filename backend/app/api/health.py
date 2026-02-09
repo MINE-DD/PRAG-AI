@@ -1,7 +1,7 @@
 from fastapi import APIRouter
-from backend.app.core.config import settings
-from backend.app.services.qdrant_service import QdrantService
-from backend.app.services.ollama_service import OllamaService
+from app.core.config import settings
+from app.services.qdrant_service import QdrantService
+from app.services.ollama_service import OllamaService
 
 router = APIRouter()
 
