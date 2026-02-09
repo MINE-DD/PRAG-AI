@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
+from collections import defaultdict
 from app.models.query import QueryRequest, QueryResponse, Source
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
 from app.services.ollama_service import OllamaService
+from app.services.citation_service import CitationService
+from app.services.metadata_service import MetadataService
 from app.core.config import settings, load_config
 
 router = APIRouter()
@@ -19,8 +22,10 @@ def get_services():
         url=settings.ollama_url,
         embedding_model=config["models"]["embedding"]
     )
+    citation_service = CitationService()
+    metadata_service = MetadataService(data_dir=settings.data_dir)
 
-    return collection_service, qdrant, ollama_service
+    return collection_service, qdrant, ollama_service, citation_service, metadata_service
 
 
 @router.post("/collections/{collection_id}/query")
@@ -34,12 +39,12 @@ def query_collection(
 
     Args:
         collection_id: Collection to search
-        query_request: Query parameters (query_text, paper_ids, limit)
+        query_request: Query parameters (query_text, paper_ids, limit, include_citations)
 
     Returns:
-        Search results with ranked chunks
+        Search results with ranked chunks and optional citations
     """
-    collection_service, qdrant, ollama = services
+    collection_service, qdrant, ollama, citation_service, metadata_service = services
 
     # Validate query text
     if not query_request.query_text or not query_request.query_text.strip():
@@ -63,10 +68,15 @@ def query_collection(
 
     # Format results
     results = []
+    cited_papers = set()
+
     for result in search_results:
+        paper_id = result.payload["paper_id"]
+        cited_papers.add(paper_id)
+
         results.append({
             "chunk_text": result.payload["chunk_text"],
-            "paper_id": result.payload["paper_id"],
+            "paper_id": paper_id,
             "unique_id": result.payload["unique_id"],
             "chunk_type": result.payload["chunk_type"],
             "page_number": result.payload["page_number"],
@@ -74,4 +84,23 @@ def query_collection(
             "metadata": result.payload.get("metadata", {})
         })
 
-    return {"results": results}
+    response = {"results": results}
+
+    # Generate citations if requested
+    if query_request.include_citations:
+        citations = {}
+        for paper_id in cited_papers:
+            metadata = metadata_service.get_paper_metadata(collection_id, paper_id)
+            if metadata:
+                citations[paper_id] = {
+                    "unique_id": metadata.unique_id,
+                    "title": metadata.title,
+                    "authors": metadata.authors,
+                    "year": metadata.year,
+                    "apa": citation_service.format_apa(metadata),
+                    "bibtex": citation_service.format_bibtex(metadata)
+                }
+
+        response["citations"] = citations
+
+    return response

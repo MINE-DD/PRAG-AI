@@ -7,6 +7,7 @@ class QueryRequest(BaseModel):
     query_text: str = Field(..., description="User question")
     paper_ids: list[str] = Field(default_factory=list, description="Paper IDs to search (empty = all)")
     limit: int = Field(default=10, ge=1, le=100, description="Maximum results to return")
+    include_citations: bool = Field(default=False, description="Include formatted citations")
     chat_history: list[dict] = Field(default_factory=list, description="Previous messages")
 
 

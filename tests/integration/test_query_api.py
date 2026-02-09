@@ -66,6 +66,26 @@ def mock_ollama():
 
 
 @pytest.fixture
+def mock_metadata_service():
+    """Mock metadata service"""
+    with patch('app.api.query.MetadataService') as mock:
+        from app.models.paper import PaperMetadata
+
+        mock_instance = Mock()
+        # Return fake paper metadata
+        fake_metadata = PaperMetadata(
+            paper_id="paper-123",
+            title="Test Paper on NLP",
+            authors=["Smith, J.", "Doe, A."],
+            year=2024,
+            unique_id="SmithTestPaper2024"
+        )
+        mock_instance.get_paper_metadata = Mock(return_value=fake_metadata)
+        mock.return_value = mock_instance
+        yield mock_instance
+
+
+@pytest.fixture
 def test_collection(client, temp_data_dir, mock_qdrant):
     """Create a test collection"""
     response = client.post(
@@ -76,7 +96,7 @@ def test_collection(client, temp_data_dir, mock_qdrant):
 
 
 @pytest.fixture
-def client(temp_data_dir, mock_qdrant, mock_ollama):
+def client(temp_data_dir, mock_qdrant, mock_ollama, mock_metadata_service):
     return TestClient(app)
 
 
@@ -159,3 +179,28 @@ def test_query_returns_metadata(client, test_collection):
     assert "chunk_type" in result
     assert "page_number" in result
     assert result["chunk_type"] in ["abstract", "body", "table", "figure_caption"]
+
+
+def test_query_with_citations(client, test_collection):
+    """Test that query results include citation information"""
+    response = client.post(
+        f"/collections/{test_collection}/query",
+        json={"query_text": "machine learning", "include_citations": True}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should have citations field
+    assert "citations" in data
+    assert isinstance(data["citations"], dict)
+
+    # Citations should map paper_id to citation info
+    if len(data["results"]) > 0:
+        paper_id = data["results"][0]["paper_id"]
+        assert paper_id in data["citations"]
+
+        citation_info = data["citations"][paper_id]
+        assert "apa" in citation_info
+        assert "bibtex" in citation_info
+        assert "unique_id" in citation_info
