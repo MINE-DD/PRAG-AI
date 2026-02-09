@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api import health
+from backend.app.api import health, collections
 from backend.app.core.config import settings
 
 app = FastAPI(
@@ -20,6 +20,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, tags=["health"])
+app.include_router(collections.router, tags=["collections"])
 
 
 @app.get("/")
