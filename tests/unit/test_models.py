@@ -68,13 +68,14 @@ def test_collection_creation():
 def test_query_request():
     """Test QueryRequest model"""
     req = QueryRequest(
-        collection_id="test-collection",
+        query_text="What is attention?",
         paper_ids=["paper-1", "paper-2"],
-        query_text="What is attention?"
+        limit=5
     )
 
-    assert req.collection_id == "test-collection"
+    assert req.query_text == "What is attention?"
     assert len(req.paper_ids) == 2
+    assert req.limit == 5
     assert req.chat_history == []
 
 
