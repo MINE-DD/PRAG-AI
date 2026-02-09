@@ -5,18 +5,40 @@ import shutil
 from app.models.paper import PaperMetadata
 from app.services.collection_service import CollectionService
 from app.services.pdf_processor import PDFProcessor
+from app.services.chunking_service import ChunkingService
+from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
-from app.core.config import settings
+from app.services.paper_service import PaperService
+from app.core.config import settings, load_config
 
 router = APIRouter()
 
 
 def get_services():
     """Dependency to get services"""
+    # Load config for model settings
+    config = load_config("config.yaml")
+
+    # Initialize services
     qdrant = QdrantService(url=settings.qdrant_url)
     collection_service = CollectionService(qdrant=qdrant)
     pdf_processor = PDFProcessor()
-    return collection_service, pdf_processor
+    chunking_service = ChunkingService(
+        chunk_size=config["chunking"]["size"],
+        overlap=config["chunking"]["overlap"]
+    )
+    ollama_service = OllamaService(
+        url=settings.ollama_url,
+        embedding_model=config["models"]["embedding"]
+    )
+    paper_service = PaperService(
+        pdf_processor=pdf_processor,
+        chunking_service=chunking_service,
+        ollama_service=ollama_service,
+        qdrant_service=qdrant
+    )
+
+    return collection_service, paper_service
 
 
 @router.post("/collections/{collection_id}/papers")
@@ -25,8 +47,8 @@ async def upload_paper(
     file: UploadFile = File(...),
     services: tuple = Depends(get_services)
 ):
-    """Upload a PDF to a collection"""
-    collection_service, pdf_processor = services
+    """Upload and process a PDF in a collection"""
+    collection_service, paper_service = services
 
     # Validate file type
     if not file.content_type == "application/pdf":
@@ -50,18 +72,24 @@ async def upload_paper(
         with pdf_path.open("wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        # Process PDF to extract metadata
-        result = pdf_processor.process_pdf(pdf_path, paper_id)
+        # Process PDF through full pipeline (extract, chunk, embed, store)
+        result = paper_service.process_paper(
+            collection_id=collection_id,
+            paper_id=paper_id,
+            pdf_path=pdf_path
+        )
         metadata = result["metadata"]
 
-        # Return response with collection_id included
+        # Return response with collection_id and processing info
         return {
             "paper_id": metadata.paper_id,
             "title": metadata.title,
             "authors": metadata.authors,
             "year": metadata.year,
             "unique_id": metadata.unique_id,
-            "collection_id": collection_id
+            "collection_id": collection_id,
+            "chunks_created": result["chunks_created"],
+            "status": "processed"
         }
 
     except Exception as e:

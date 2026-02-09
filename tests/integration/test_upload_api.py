@@ -41,29 +41,33 @@ def mock_qdrant():
 
 
 @pytest.fixture
-def mock_pdf_processor():
-    """Mock PDF processor"""
-    with patch('app.api.papers.PDFProcessor') as mock:
+def mock_paper_service():
+    """Mock paper service"""
+    with patch('app.api.papers.PaperService') as mock:
         mock_instance = Mock()
+        from app.models.paper import PaperMetadata
+
+        # Create fake metadata
+        fake_metadata = PaperMetadata(
+            paper_id="test-paper-id",
+            title="Test Paper",
+            authors=["Test Author"],
+            year=2024,
+            unique_id="AuthorTestPaper2024"
+        )
+
         mock_result = {
-            "metadata": Mock(
-                paper_id="test-paper-id",
-                title="Test Paper",
-                authors=["Test Author"],
-                year=2024,
-                unique_id="AuthorTestPaper2024"
-            ),
-            "text": "Test paper content",
-            "tables": [],
-            "figures": []
+            "metadata": fake_metadata,
+            "chunks_created": 5,
+            "embeddings_generated": 5
         }
-        mock_instance.process_pdf = Mock(return_value=mock_result)
+        mock_instance.process_paper = Mock(return_value=mock_result)
         mock.return_value = mock_instance
         yield mock_instance
 
 
 @pytest.fixture
-def test_collection(client, temp_data_dir, mock_qdrant, mock_pdf_processor):
+def test_collection(client, temp_data_dir, mock_qdrant, mock_paper_service):
     """Create a test collection"""
     response = client.post(
         "/collections",
@@ -73,7 +77,7 @@ def test_collection(client, temp_data_dir, mock_qdrant, mock_pdf_processor):
 
 
 @pytest.fixture
-def client(temp_data_dir, mock_qdrant, mock_pdf_processor):
+def client(temp_data_dir, mock_qdrant, mock_paper_service):
     return TestClient(app)
 
 
