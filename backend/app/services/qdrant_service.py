@@ -10,8 +10,8 @@ class QdrantService:
     def __init__(self, url: str):
         self.client = QdrantClient(url=url)
 
-    def create_collection(self, collection_name: str, vector_size: int = 768):
-        """Create a new Qdrant collection"""
+    def create_collection(self, collection_name: str, vector_size: int = 1024):
+        """Create a new Qdrant collection (default 1024 for mxbai-embed-large)"""
         self.client.create_collection(
             collection_name=collection_name,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)

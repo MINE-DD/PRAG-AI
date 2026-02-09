@@ -69,7 +69,7 @@ class PaperService:
 
         # Step 4: Generate embeddings for chunks
         chunk_texts = [chunk.chunk_text for chunk in chunks]
-        embeddings = self.ollama_service.generate_embeddings(chunk_texts)
+        embeddings = self.ollama_service.generate_embeddings_batch(chunk_texts)
 
         # Step 5: Store chunks and embeddings in Qdrant
         self.qdrant_service.upsert_chunks(

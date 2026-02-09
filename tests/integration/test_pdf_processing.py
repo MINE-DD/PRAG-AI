@@ -42,8 +42,8 @@ def mock_qdrant():
 def mock_ollama():
     """Mock Ollama service"""
     mock = Mock(spec=OllamaService)
-    # Return fake embeddings (768-dimensional vector)
-    mock.generate_embeddings = Mock(return_value=[[0.1] * 768] * 5)
+    # Return fake embeddings (1024-dimensional vector for mxbai-embed-large)
+    mock.generate_embeddings_batch = Mock(return_value=[[0.1] * 1024] * 5)
     return mock
 
 
@@ -130,7 +130,7 @@ def test_process_pdf_end_to_end(temp_data_dir, services, sample_pdf_path, mock_q
     assert result["chunks_created"] > 0
 
     # Verify embeddings were generated
-    mock_ollama.generate_embeddings.assert_called_once()
+    mock_ollama.generate_embeddings_batch.assert_called_once()
 
     # Verify chunks were stored in Qdrant
     mock_qdrant.upsert_chunks.assert_called_once()

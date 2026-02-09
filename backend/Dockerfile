@@ -2,9 +2,16 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for Docling PDF processing
 RUN apt-get update && apt-get install -y \
     curl \
+    libxcb1 \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libice6 \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
