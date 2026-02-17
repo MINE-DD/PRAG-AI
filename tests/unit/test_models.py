@@ -9,7 +9,7 @@ sys.path.insert(0, str(backend_path))
 
 from app.models.paper import PaperMetadata, Chunk, ChunkType
 from app.models.collection import Collection
-from app.models.query import QueryRequest, QueryResponse, Source
+from app.models.rag import RAGRequest, RAGResponse, Source
 
 
 def test_paper_metadata_creation():
@@ -65,9 +65,9 @@ def test_collection_creation():
     assert collection.paper_count == 0
 
 
-def test_query_request():
-    """Test QueryRequest model"""
-    req = QueryRequest(
+def test_rag_request():
+    """Test RAGRequest model"""
+    req = RAGRequest(
         query_text="What is attention?",
         paper_ids=["paper-1", "paper-2"],
         limit=5
@@ -77,10 +77,11 @@ def test_query_request():
     assert len(req.paper_ids) == 2
     assert req.limit == 5
     assert req.chat_history == []
+    assert req.use_hybrid is False
 
 
-def test_query_response_with_sources():
-    """Test QueryResponse with sources"""
+def test_rag_response_with_sources():
+    """Test RAGResponse with sources"""
     source = Source(
         unique_id="AuthorTest2024",
         title="Test Paper",
@@ -90,7 +91,7 @@ def test_query_response_with_sources():
         pages=[1]
     )
 
-    response = QueryResponse(
+    response = RAGResponse(
         answer="This is the answer",
         sources=[source],
         cited_paper_ids=["paper-1"]

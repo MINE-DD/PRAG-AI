@@ -32,6 +32,7 @@ class OllamaService:
         prompt: str,
         system: Optional[str] = None,
         temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
         chat_history: Optional[list[dict]] = None
     ) -> str:
         """Generate text response from LLM"""
@@ -45,10 +46,14 @@ class OllamaService:
 
         messages.append({"role": "user", "content": prompt})
 
+        opts: dict = {"temperature": temperature}
+        if max_tokens is not None:
+            opts["num_predict"] = max_tokens
+
         response = self.client.chat(
             model=self.model,
             messages=messages,
-            options={"temperature": temperature}
+            options=opts,
         )
 
         return response["message"]["content"]

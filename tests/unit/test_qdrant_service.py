@@ -53,7 +53,9 @@ def test_upsert_chunks(qdrant_service):
 
 def test_search_chunks(qdrant_service):
     """Test searching for chunks"""
-    qdrant_service.client.search = Mock(return_value=[])
+    mock_response = Mock()
+    mock_response.points = []
+    qdrant_service.client.query_points = Mock(return_value=mock_response)
 
     results = qdrant_service.search(
         collection_name="test-collection",
@@ -62,4 +64,4 @@ def test_search_chunks(qdrant_service):
     )
 
     assert isinstance(results, list)
-    qdrant_service.client.search.assert_called_once()
+    qdrant_service.client.query_points.assert_called_once()

@@ -1,16 +1,14 @@
 models:
-  embedding: "mxbai-embed-large"
+  embedding: nomic-embed-text:latest
   llm:
-    type: "local"
-    model: "llama3.2:1b"
-
+    type: local
+    model: llama3.2:latest
 chunking:
   size: 500
   overlap: 100
-  strategy: "fixed"
-
+  mode: tokens
+  strategy: fixed
 retrieval:
   top_k: 10
-
 citations:
-  unique_id_format: "{author}{title_words}{year}"
+  unique_id_format: '{author}{title_words}{year}'

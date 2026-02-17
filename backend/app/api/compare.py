@@ -14,6 +14,7 @@ class CompareRequest(BaseModel):
     """Request to compare papers"""
     paper_ids: list[str] = Field(..., min_length=2, description="Paper IDs to compare (min 2)")
     aspect: str = Field(default="all", description="Aspect to compare: methodology, findings, or all")
+    max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
 
 
 class CompareResponse(BaseModel):
@@ -83,7 +84,8 @@ def compare_papers(
             })
 
         # Get chunks for this paper
-        dummy_embedding = [0.0] * 1024
+        vector_size = qdrant.get_vector_size(collection_id)
+        dummy_embedding = [0.0] * vector_size
         chunks = qdrant.search(
             collection_name=collection_id,
             query_vector=dummy_embedding,
@@ -125,7 +127,7 @@ Provide a structured comparison covering:
 Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
 
     # Generate comparison using LLM
-    comparison = ollama.generate(prompt=prompt, temperature=0.3)
+    comparison = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
 
     return CompareResponse(
         comparison=comparison,

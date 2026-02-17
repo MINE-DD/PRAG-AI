@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from datetime import datetime, UTC
 import uuid
@@ -33,6 +34,7 @@ class CollectionService:
         collection_path.mkdir(parents=True)
         (collection_path / "pdfs").mkdir()
         (collection_path / "figures").mkdir()
+        (collection_path / "metadata").mkdir()
 
         # Create Qdrant collection
         self.qdrant.create_collection(collection_id)
@@ -43,21 +45,39 @@ class CollectionService:
             description=description
         )
 
+    def _read_collection_info(self, collection_path: Path) -> dict:
+        """Read collection_info.json for a collection directory."""
+        info_path = collection_path / "collection_info.json"
+        if info_path.exists():
+            return json.loads(info_path.read_text(encoding="utf-8"))
+        return {}
+
+    def _count_papers(self, collection_path: Path) -> int:
+        """Count papers in a collection by checking metadata/ then pdfs/ dir."""
+        meta_dir = collection_path / "metadata"
+        if meta_dir.is_dir():
+            count = len(list(meta_dir.glob("*.json")))
+            if count > 0:
+                return count
+        pdfs_dir = collection_path / "pdfs"
+        if pdfs_dir.is_dir():
+            return len(list(pdfs_dir.glob("*.pdf")))
+        return 0
+
     def list_collections(self) -> list[Collection]:
         """List all collections"""
         collections = []
 
         for path in self.data_dir.iterdir():
             if path.is_dir():
-                # Count PDFs
-                pdf_count = len(list((path / "pdfs").glob("*.pdf")))
-
+                info = self._read_collection_info(path)
                 collections.append(Collection(
                     collection_id=path.name,
-                    name=path.name.replace("_", " ").title(),
-                    paper_count=pdf_count,
+                    name=info.get("name", path.name.replace("_", " ").title()),
+                    paper_count=self._count_papers(path),
                     created_date=datetime.fromtimestamp(path.stat().st_ctime, tz=UTC),
-                    last_updated=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                    last_updated=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC),
+                    search_type=info.get("search_type", "dense"),
                 ))
 
         return collections
@@ -69,14 +89,14 @@ class CollectionService:
         if not collection_path.exists():
             return None
 
-        pdf_count = len(list((collection_path / "pdfs").glob("*.pdf")))
-
+        info = self._read_collection_info(collection_path)
         return Collection(
             collection_id=collection_id,
-            name=collection_id.replace("_", " ").title(),
-            paper_count=pdf_count,
+            name=info.get("name", collection_id.replace("_", " ").title()),
+            paper_count=self._count_papers(collection_path),
             created_date=datetime.fromtimestamp(collection_path.stat().st_ctime, tz=UTC),
-            last_updated=datetime.fromtimestamp(collection_path.stat().st_mtime, tz=UTC)
+            last_updated=datetime.fromtimestamp(collection_path.stat().st_mtime, tz=UTC),
+            search_type=info.get("search_type", "dense"),
         )
 
     def delete_collection(self, collection_id: str):

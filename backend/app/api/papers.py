@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pathlib import Path
 import uuid
@@ -112,17 +113,37 @@ def list_papers(
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
-    # Get all PDFs in collection
     data_dir = Path(settings.data_dir)
-    pdf_dir = data_dir / collection_id / "pdfs"
-
+    seen_ids = set()
     papers = []
-    for pdf_file in pdf_dir.glob("*.pdf"):
-        # Extract paper_id from filename (uuid.pdf)
-        paper_id = pdf_file.stem
-        papers.append({
-            "paper_id": paper_id,
-            "filename": pdf_file.name
-        })
+
+    # Check metadata/ dir first (new ingestion flow)
+    metadata_dir = data_dir / collection_id / "metadata"
+    if metadata_dir.exists():
+        for json_file in sorted(metadata_dir.glob("*.json")):
+            try:
+                data = json.loads(json_file.read_text(encoding="utf-8"))
+                paper_id = data.get("paper_id", json_file.stem)
+                seen_ids.add(paper_id)
+                papers.append({
+                    "paper_id": paper_id,
+                    "filename": data.get("source_pdf", f"{paper_id}.md"),
+                    "title": data.get("title"),
+                    "authors": data.get("authors", []),
+                    "unique_id": data.get("unique_id", ""),
+                })
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+    # Also check PDFs dir (legacy flow)
+    pdf_dir = data_dir / collection_id / "pdfs"
+    if pdf_dir.exists():
+        for pdf_file in pdf_dir.glob("*.pdf"):
+            paper_id = pdf_file.stem
+            if paper_id not in seen_ids:
+                papers.append({
+                    "paper_id": paper_id,
+                    "filename": pdf_file.name,
+                })
 
     return papers

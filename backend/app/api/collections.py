@@ -60,7 +60,8 @@ def get_collection(collection_id: str):
 
 @router.delete("/collections/{collection_id}")
 def delete_collection(collection_id: str):
-    """Delete a collection (Qdrant only, keeps files)"""
+    """Delete a collection (Qdrant + files on disk)"""
     service = get_collection_service()
     service.delete_collection(collection_id)
+    service.delete_collection_files(collection_id)
     return {"success": True}

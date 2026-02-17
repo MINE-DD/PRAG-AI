@@ -13,6 +13,7 @@ router = APIRouter()
 class SummarizeRequest(BaseModel):
     """Request to summarize papers"""
     paper_ids: list[str] = Field(..., min_length=1, description="Paper IDs to summarize")
+    max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
 
 
 class SummarizeResponse(BaseModel):
@@ -81,9 +82,9 @@ def summarize_papers(
                 "unique_id": metadata.unique_id
             })
 
-        # Search for all chunks from this paper (use empty query vector to get all)
-        # We'll use a dummy embedding and filter by paper_id
-        dummy_embedding = [0.0] * 1024
+        # Search for all chunks from this paper (use zero vector to get all)
+        vector_size = qdrant.get_vector_size(collection_id)
+        dummy_embedding = [0.0] * vector_size
         chunks = qdrant.search(
             collection_name=collection_id,
             query_vector=dummy_embedding,
@@ -122,7 +123,7 @@ Paper excerpts:
 Please provide a clear, concise summary in 2-3 paragraphs."""
 
     # Generate summary using LLM
-    summary = ollama.generate(prompt=prompt, temperature=0.3)
+    summary = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
 
     return SummarizeResponse(
         summary=summary,

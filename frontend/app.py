@@ -1,3 +1,6 @@
+import json
+import time
+
 import streamlit as st
 import httpx
 import os
@@ -6,6 +9,10 @@ from typing import Optional
 # Configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+
+# ---------------------------------------------------------------------------
+# Backend helper functions
+# ---------------------------------------------------------------------------
 
 def check_backend_health() -> dict:
     """Check if backend is healthy"""
@@ -27,31 +34,6 @@ def get_collections() -> list:
         return []
 
 
-def create_collection(name: str, description: str = "") -> Optional[dict]:
-    """Create a new collection"""
-    try:
-        response = httpx.post(
-            f"{BACKEND_URL}/collections",
-            json={"name": name, "description": description}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 409:
-            st.error(e.response.json()["detail"])
-        else:
-            st.error(f"Error creating collection: {e}")
-        return None
-
-
-def get_collection_id(collection_name: str, collections: list) -> Optional[str]:
-    """Get collection ID from name"""
-    for c in collections:
-        if c["name"] == collection_name:
-            return c["collection_id"]
-    return None
-
-
 def get_papers(collection_id: str) -> list:
     """Fetch papers in a collection"""
     try:
@@ -63,43 +45,31 @@ def get_papers(collection_id: str) -> list:
         return []
 
 
-def upload_pdf(collection_id: str, file) -> Optional[dict]:
-    """Upload a PDF to a collection"""
-    try:
-        files = {"file": (file.name, file, "application/pdf")}
-        response = httpx.post(
-            f"{BACKEND_URL}/collections/{collection_id}/papers",
-            files=files,
-            timeout=300.0  # 5 minutes for processing
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.TimeoutException:
-        st.error("Upload timed out. The PDF might be too large or processing is taking too long.")
-        return None
-    except httpx.HTTPStatusError as e:
-        st.error(f"Error uploading PDF: {e.response.text}")
-        return None
-    except Exception as e:
-        st.error(f"Error uploading PDF: {e}")
-        return None
-
-
-def query_papers(collection_id: str, query_text: str, paper_ids: list = None, include_citations: bool = False) -> Optional[dict]:
-    """Query papers in a collection"""
+def rag_query(
+    collection_id: str,
+    query_text: str,
+    paper_ids: list = None,
+    include_citations: bool = False,
+    limit: int = 10,
+    max_tokens: int = 500,
+    use_hybrid: bool = False,
+) -> Optional[dict]:
+    """RAG query: retrieve and generate answer from papers"""
     try:
         payload = {
             "query_text": query_text,
-            "limit": 10,
-            "include_citations": include_citations
+            "limit": limit,
+            "max_tokens": max_tokens,
+            "include_citations": include_citations,
+            "use_hybrid": use_hybrid,
         }
         if paper_ids:
             payload["paper_ids"] = paper_ids
 
         response = httpx.post(
-            f"{BACKEND_URL}/collections/{collection_id}/query",
+            f"{BACKEND_URL}/collections/{collection_id}/rag",
             json=payload,
-            timeout=30.0
+            timeout=120.0,
         )
         response.raise_for_status()
         return response.json()
@@ -108,13 +78,16 @@ def query_papers(collection_id: str, query_text: str, paper_ids: list = None, in
         return None
 
 
-def summarize_papers(collection_id: str, paper_ids: list) -> Optional[dict]:
+def summarize_papers(collection_id: str, paper_ids: list, max_tokens: Optional[int] = None) -> Optional[dict]:
     """Summarize papers"""
     try:
+        payload = {"paper_ids": paper_ids}
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         response = httpx.post(
             f"{BACKEND_URL}/collections/{collection_id}/summarize",
-            json={"paper_ids": paper_ids},
-            timeout=60.0
+            json=payload,
+            timeout=120.0,
         )
         response.raise_for_status()
         return response.json()
@@ -123,13 +96,16 @@ def summarize_papers(collection_id: str, paper_ids: list) -> Optional[dict]:
         return None
 
 
-def compare_papers(collection_id: str, paper_ids: list, aspect: str = "all") -> Optional[dict]:
+def compare_papers(collection_id: str, paper_ids: list, aspect: str = "all", max_tokens: Optional[int] = None) -> Optional[dict]:
     """Compare papers"""
     try:
+        payload = {"paper_ids": paper_ids, "aspect": aspect}
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         response = httpx.post(
             f"{BACKEND_URL}/collections/{collection_id}/compare",
-            json={"paper_ids": paper_ids, "aspect": aspect},
-            timeout=60.0
+            json=payload,
+            timeout=120.0,
         )
         response.raise_for_status()
         return response.json()
@@ -156,7 +132,6 @@ def export_to_markdown(content_type: str, data: dict, query_text: str = "") -> s
             md_lines.append(f"*Source: {result['unique_id']} | Page: {result['page_number']} | Type: {result['chunk_type']}*")
             md_lines.append("")
 
-        # Add citations if present
         if "citations" in data:
             md_lines.append("## Citations")
             md_lines.append("")
@@ -204,6 +179,994 @@ def export_to_markdown(content_type: str, data: dict, query_text: str = "") -> s
     return "\n".join(md_lines)
 
 
+# ---------------------------------------------------------------------------
+# Tab 1: PDF Preprocessing
+# ---------------------------------------------------------------------------
+
+def _fetch_pdf_assets(dir_name: str, filename: str) -> dict:
+    """Fetch tables/images info for a processed PDF."""
+    try:
+        resp = httpx.post(
+            f"{BACKEND_URL}/preprocess/assets",
+            json={"dir_name": dir_name, "filename": filename},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return {"tables": [], "images": []}
+
+
+def _render_pdf_assets(dir_name: str, filename: str):
+    """Render paper metadata, tables, and images extracted from a processed PDF."""
+    assets = _fetch_pdf_assets(dir_name, filename)
+
+    # Paper metadata (may be absent after lean preprocessing)
+    paper_meta = assets.get("paper_metadata", {})
+    title = paper_meta.get("title")
+    authors = paper_meta.get("authors", [])
+    pub_date = paper_meta.get("publication_date")
+    abstract = paper_meta.get("abstract")
+
+    if title:
+        st.markdown(f"**Title:** {title}")
+    if authors:
+        st.markdown(f"**Authors:** {', '.join(authors)}")
+    if pub_date:
+        st.markdown(f"**Published:** {pub_date}")
+    if abstract:
+        with st.expander("Abstract", expanded=False):
+            st.write(abstract)
+
+    tables = assets.get("tables", [])
+    images = assets.get("images", [])
+
+    if not tables and not images:
+        # No assets extracted yet — offer the button
+        if st.button("Extract Tables & Images", key=f"extract_assets_{filename}", type="secondary"):
+            st.session_state["extract_assets_action"] = {
+                "dir_name": dir_name,
+                "filename": filename,
+            }
+            st.rerun()
+        return
+
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    # Tables section
+    if tables:
+        st.markdown(f"**Tables ({len(tables)})**")
+        for t in tables:
+            caption = t.get("caption", "") or f"Table {t['index']}"
+            page = t.get("page")
+            page_str = f" (page {page})" if page else ""
+
+            dl_url = f"{BACKEND_URL}/preprocess/assets/{dir_name}/{filename}/tables/{t['file']}"
+            table_data = None
+            try:
+                table_resp = httpx.get(dl_url, timeout=10.0)
+                if table_resp.status_code == 200:
+                    table_data = table_resp.content
+            except Exception:
+                pass
+
+            show_key = f"show_table_{filename}_{t['index']}"
+            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            with col_label:
+                st.write(f"- {caption}{page_str}")
+            with col_toggle:
+                if table_data and t["file"].endswith(".csv"):
+                    st.checkbox("Show", key=show_key, value=False)
+            with col_dl:
+                if table_data:
+                    mime = "text/csv" if t["file"].endswith(".csv") else "text/markdown"
+                    st.download_button(
+                        label=f"Download",
+                        data=table_data,
+                        file_name=t["file"],
+                        mime=mime,
+                        key=f"dl_table_{filename}_{t['index']}",
+                    )
+
+            # Show dataframe if toggled on
+            if st.session_state.get(show_key) and table_data and t["file"].endswith(".csv"):
+                import pandas as pd
+                from io import StringIO
+                df = pd.read_csv(StringIO(table_data.decode("utf-8")))
+                st.dataframe(df, use_container_width=True)
+
+    # Images section
+    if images:
+        st.markdown(f"**Images ({len(images)})**")
+        for img in images:
+            caption = img.get("caption", "") or f"Image {img['index']}"
+            page = img.get("page")
+            page_str = f" (p.{page})" if page else ""
+
+            dl_url = f"{BACKEND_URL}/preprocess/assets/{dir_name}/{filename}/images/{img['file']}"
+            img_data = None
+            try:
+                img_resp = httpx.get(dl_url, timeout=10.0)
+                if img_resp.status_code == 200:
+                    img_data = img_resp.content
+            except Exception:
+                pass
+
+            show_key = f"show_img_{filename}_{img['index']}"
+            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            with col_label:
+                st.write(f"- {caption}{page_str}")
+            with col_toggle:
+                if img_data:
+                    st.checkbox("Show", key=show_key, value=False)
+            with col_dl:
+                if img_data:
+                    st.download_button(
+                        label="Download",
+                        data=img_data,
+                        file_name=img["file"],
+                        mime="image/png",
+                        key=f"dl_img_{filename}_{img['index']}",
+                    )
+
+            # Show image thumbnail if toggled on
+            if st.session_state.get(show_key) and img_data:
+                from io import BytesIO
+                from PIL import Image as PILImage
+                pil_img = PILImage.open(BytesIO(img_data))
+                orig_w, orig_h = pil_img.size
+                if orig_h > 200:
+                    thumb_h = 200
+                    thumb_w = int(orig_w * thumb_h / orig_h)
+                    display_img = pil_img.resize((thumb_w, thumb_h))
+                else:
+                    display_img = pil_img
+                st.image(display_img, caption=f"{caption}{page_str} ({orig_w}x{orig_h})")
+
+
+def _preprocess_single_file(dir_name: str, filename: str):
+    """Call backend to convert a single PDF. Returns True on success."""
+    try:
+        resp = httpx.post(
+            f"{BACKEND_URL}/preprocess/convert",
+            json={"dir_name": dir_name, "filename": filename},
+            timeout=300.0,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        st.error(f"Error converting {filename}: {e}")
+        return False
+
+
+def _preprocess_batch_stream(dir_name: str, filenames: list[str], max_workers: int = 2):
+    """Stream batch conversion results from backend as NDJSON lines."""
+    try:
+        with httpx.stream(
+            "POST",
+            f"{BACKEND_URL}/preprocess/convert-batch",
+            json={"dir_name": dir_name, "filenames": filenames, "max_workers": max_workers},
+            timeout=httpx.Timeout(10.0, read=600.0),
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line.strip():
+                    yield json.loads(line)
+    except Exception as e:
+        yield {"filename": "batch", "status": "error", "detail": str(e)}
+
+
+def render_preprocessing_tab():
+    st.subheader("PDF Management")
+    st.write("Convert PDFs to markdown using Docling. Place PDF directories in the `data/pdf_input/` folder.")
+
+    # Handle pending single-file actions from previous render
+    if "preprocess_action" in st.session_state:
+        action = st.session_state.pop("preprocess_action")
+        if action["type"] == "convert":
+            with st.status(f"Converting {action['filename']}...", expanded=True) as status:
+                st.write("Converting PDF to markdown with Docling...")
+                t0 = time.monotonic()
+                if _preprocess_single_file(action["dir_name"], action["filename"]):
+                    elapsed = time.monotonic() - t0
+                    status.update(label=f"Converted {action['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
+                else:
+                    elapsed = time.monotonic() - t0
+                    status.update(label=f"Failed to convert {action['filename']} ({elapsed:.1f}s)", state="error", expanded=True)
+        elif action["type"] == "delete":
+            try:
+                resp = httpx.post(
+                    f"{BACKEND_URL}/preprocess/delete",
+                    json={"dir_name": action["dir_name"], "filename": action["filename"]},
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                st.toast(f"Deleted preprocessed output for {action['filename']}")
+            except Exception as e:
+                st.error(f"Error deleting: {e}")
+
+    # Handle extract-assets action
+    if "extract_assets_action" in st.session_state:
+        action = st.session_state.pop("extract_assets_action")
+        with st.status(f"Extracting tables & images from {action['filename']}...", expanded=True) as status:
+            st.write("Re-running Docling to extract tables and images...")
+            t0 = time.monotonic()
+            try:
+                resp = httpx.post(
+                    f"{BACKEND_URL}/preprocess/extract-assets",
+                    json={"dir_name": action["dir_name"], "filename": action["filename"]},
+                    timeout=300.0,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                elapsed = time.monotonic() - t0
+                status.update(
+                    label=f"Extracted {result.get('table_count', 0)} tables, {result.get('image_count', 0)} images from {action['filename']} in {elapsed:.1f}s",
+                    state="complete",
+                    expanded=False,
+                )
+            except Exception as e:
+                elapsed = time.monotonic() - t0
+                st.error(f"Error extracting assets: {e}")
+                status.update(label=f"Failed to extract assets from {action['filename']} ({elapsed:.1f}s)", state="error", expanded=True)
+
+    # Handle re-process: convert right after delete
+    if "preprocess_reconvert" in st.session_state:
+        reconvert = st.session_state.pop("preprocess_reconvert")
+        with st.status(f"Re-processing {reconvert['filename']}...", expanded=True) as status:
+            st.write("Deleting old output and re-extracting with Docling...")
+            t0 = time.monotonic()
+            if _preprocess_single_file(reconvert["dir_name"], reconvert["filename"]):
+                elapsed = time.monotonic() - t0
+                status.update(label=f"Re-processed {reconvert['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
+            else:
+                elapsed = time.monotonic() - t0
+                status.update(label=f"Failed to re-process {reconvert['filename']} ({elapsed:.1f}s)", state="error", expanded=True)
+
+    # Fetch available directories
+    try:
+        response = httpx.get(f"{BACKEND_URL}/preprocess/directories", timeout=5.0)
+        response.raise_for_status()
+        directories = response.json()
+    except Exception as e:
+        st.error(f"Error fetching directories: {e}")
+        return
+
+    if not directories:
+        st.info("No directories found in `data/pdf_input/`. Place a folder with PDFs there to get started.")
+        return
+
+    # Directory selector
+    dir_names = [d["name"] for d in directories]
+    dir_info = {d["name"]: d for d in directories}
+    selected_dir = st.selectbox(
+        "Select directory",
+        options=dir_names,
+        format_func=lambda n: f"{n} ({dir_info[n]['pdf_count']} PDFs)",
+    )
+
+    if not selected_dir:
+        return
+
+    # Scan selected directory
+    try:
+        scan_response = httpx.post(
+            f"{BACKEND_URL}/preprocess/scan",
+            json={"dir_name": selected_dir},
+            timeout=10.0,
+        )
+        scan_response.raise_for_status()
+        scan_data = scan_response.json()
+    except Exception as e:
+        st.error(f"Error scanning directory: {e}")
+        return
+
+    files = scan_data["files"]
+    pending = [f for f in files if not f["processed"]]
+    processed = [f for f in files if f["processed"]]
+
+    st.write(f"**{len(processed)}/{len(files)}** processed, **{len(pending)}** pending")
+
+    # "Convert All" button — processes pending files in parallel via batch endpoint
+    if pending:
+        col_btn, col_workers = st.columns([3, 1])
+        with col_workers:
+            max_workers = st.number_input("Parallel workers", min_value=1, max_value=4, value=2, key="preprocess_workers")
+        with col_btn:
+            convert_all_clicked = st.button("Convert All", type="primary", use_container_width=True)
+
+        if convert_all_clicked:
+            total = len(pending)
+            filenames = [f["filename"] for f in pending]
+            with st.status(f"Converting {total} PDFs ({max_workers} workers)...", expanded=True) as status:
+                progress_bar = st.progress(0)
+                success_count = 0
+                error_count = 0
+                t0 = time.monotonic()
+                for result in _preprocess_batch_stream(selected_dir, filenames, max_workers=max_workers):
+                    done = success_count + error_count + 1
+                    fname = result.get("filename", "?")
+                    elapsed = time.monotonic() - t0
+                    if result["status"] == "success":
+                        success_count += 1
+                        st.write(f"Converted `{fname}` ({elapsed:.1f}s)")
+                    else:
+                        error_count += 1
+                        st.error(f"Failed `{fname}`: {result.get('detail', 'unknown error')}")
+                    progress_bar.progress(done / total)
+                    status.update(label=f"Converting {done}/{total} — {fname} ({elapsed:.1f}s)")
+
+                elapsed = time.monotonic() - t0
+                if error_count == 0:
+                    status.update(label=f"Done — converted {success_count}/{total} files in {elapsed:.1f}s", state="complete", expanded=False)
+                else:
+                    status.update(label=f"Done — {success_count} converted, {error_count} failed in {elapsed:.1f}s", state="error", expanded=True)
+            st.rerun()
+    else:
+        st.success("All files in this directory have been preprocessed.")
+
+    st.divider()
+
+    # File list with per-file actions
+    for f in files:
+        fname = f["filename"]
+        is_done = f["processed"]
+
+        if is_done:
+            with st.expander(f"`{fname}` — **done**"):
+                col_action1, col_action2, col_spacer = st.columns([1, 1, 3])
+                with col_action1:
+                    if st.button("Re-process", key=f"reprocess_{fname}", type="secondary"):
+                        st.session_state["preprocess_action"] = {
+                            "type": "delete",
+                            "dir_name": selected_dir,
+                            "filename": fname,
+                        }
+                        st.session_state["preprocess_reconvert"] = {
+                            "dir_name": selected_dir,
+                            "filename": fname,
+                        }
+                        st.rerun()
+                with col_action2:
+                    if st.button("Delete .md", key=f"delete_{fname}", type="secondary"):
+                        st.session_state["preprocess_action"] = {
+                            "type": "delete",
+                            "dir_name": selected_dir,
+                            "filename": fname,
+                        }
+                        st.rerun()
+
+                # Fetch and display assets (tables + images)
+                _render_pdf_assets(selected_dir, fname)
+        else:
+            col_status, col_action = st.columns([5, 2])
+            with col_status:
+                st.write(f"`{fname}` — pending")
+            with col_action:
+                if st.button("Process PDF", key=f"convert_{fname}", type="primary"):
+                    st.session_state["preprocess_action"] = {
+                        "type": "convert",
+                        "dir_name": selected_dir,
+                        "filename": fname,
+                    }
+                    st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Tab 2: Collection Management
+# ---------------------------------------------------------------------------
+
+def _render_create_collection_section():
+    """Render the create-collection form. Separated so early returns don't skip the collection list."""
+    # List preprocessed subdirectories from history
+    preprocessed_dirs = []
+    try:
+        hist_resp = httpx.get(f"{BACKEND_URL}/preprocess/history", timeout=5.0)
+        hist_resp.raise_for_status()
+        history = hist_resp.json()
+        preprocessed_dirs = list(history.get("directories", {}).keys())
+    except Exception:
+        pass
+
+    if not preprocessed_dirs:
+        st.info("No preprocessed directories found. Go to the PDF Preprocessing tab first.")
+        return
+
+    selected_dir = st.selectbox(
+        "Select preprocessed directory",
+        options=preprocessed_dirs,
+        format_func=lambda d: d,
+    )
+
+    if not selected_dir:
+        return
+
+    preprocessed_path = f"/data/preprocessed/{selected_dir}"
+
+    # Scan the path
+    scan_data = None
+    try:
+        scan_resp = httpx.post(
+            f"{BACKEND_URL}/ingest/scan",
+            json={"path": preprocessed_path},
+            timeout=10.0,
+        )
+        if scan_resp.status_code == 404:
+            st.warning("Directory not found. Check the path or preprocess PDFs in Tab 1 first.")
+            return
+        scan_resp.raise_for_status()
+        scan_data = scan_resp.json()
+    except httpx.HTTPStatusError:
+        st.warning("Directory not found or not accessible.")
+        return
+    except Exception as e:
+        st.error(f"Error scanning: {e}")
+        return
+
+    files = scan_data.get("files", [])
+    total_pdfs = scan_data.get("total_pdfs", 0)
+    if not files:
+        st.warning(f"No preprocessed files found (0 out of {total_pdfs} PDFs). Go to the PDF Management tab first.")
+        return
+
+    col_info, col_sel_all, col_clr_all = st.columns([4, 1, 1])
+    with col_info:
+        st.write(f"Found **{len(files)}** preprocessed files out of **{total_pdfs}** PDFs")
+    with col_sel_all:
+        if st.button("Select all", key="ingest_select_all"):
+            for f in files:
+                st.session_state[f"ingest_sel_{f['markdown_file']}"] = True
+            st.rerun()
+    with col_clr_all:
+        if st.button("Clear all", key="ingest_clear_all"):
+            for f in files:
+                st.session_state[f"ingest_sel_{f['markdown_file']}"] = False
+            st.rerun()
+
+    # File selection with checkboxes
+    selected_files = []
+    for f in files:
+        label = f["markdown_file"]
+        if not f["has_metadata"]:
+            label += " (no metadata)"
+        default = st.session_state.get(f"ingest_sel_{f['markdown_file']}", True)
+        checked = st.checkbox(label, value=default, key=f"ingest_sel_{f['markdown_file']}")
+        if checked:
+            selected_files.append(f)
+
+    if not selected_files:
+        st.warning("Select at least one file to ingest.")
+        return
+
+    st.caption(f"{len(selected_files)}/{len(files)} files selected")
+
+    st.divider()
+
+    # Collection creation
+    col_name = st.text_input("Collection name", placeholder="e.g. my_research_papers")
+
+    # Search type selection
+    search_type_label = st.radio(
+        "Search type",
+        ["Dense only", "Hybrid (Dense + BM42)"],
+        horizontal=True,
+        key="ingest_search_type",
+    )
+    search_type = "hybrid" if "Hybrid" in search_type_label else "dense"
+
+    # Chunking controls
+    col_mode, col_cs, col_ov = st.columns(3)
+    with col_mode:
+        chunk_mode = st.radio("Chunk mode", ["tokens", "characters"], horizontal=True, key="ingest_chunk_mode")
+
+    # Track mode changes and reset defaults
+    prev_mode_key = "_prev_ingest_chunk_mode"
+    if prev_mode_key not in st.session_state or st.session_state[prev_mode_key] != chunk_mode:
+        st.session_state[prev_mode_key] = chunk_mode
+        if chunk_mode == "tokens":
+            st.session_state["ingest_chunk_size"] = 500
+            st.session_state["ingest_chunk_overlap"] = 100
+        else:
+            st.session_state["ingest_chunk_size"] = 2500
+            st.session_state["ingest_chunk_overlap"] = 500
+
+    with col_cs:
+        chunk_size = st.number_input(f"Chunk size ({chunk_mode})", min_value=100, max_value=10000, step=50, key="ingest_chunk_size")
+    with col_ov:
+        chunk_overlap = st.number_input(f"Chunk overlap ({chunk_mode})", min_value=0, max_value=2000, step=25, key="ingest_chunk_overlap")
+
+    if st.button("Ingest Papers into Collection", type="primary"):
+        if not col_name:
+            st.warning("Please enter a collection name.")
+            return
+
+        # Create collection
+        total = len(selected_files)
+        with st.status(f"Creating collection and ingesting {total} files...", expanded=True) as status:
+            st.write("Creating Qdrant collection...")
+            try:
+                create_resp = httpx.post(
+                    f"{BACKEND_URL}/ingest/create",
+                    json={
+                        "name": col_name,
+                        "preprocessed_path": preprocessed_path,
+                        "search_type": search_type,
+                    },
+                    timeout=30.0,
+                )
+                if create_resp.status_code == 409:
+                    st.error("Collection already exists. Choose a different name.")
+                    status.update(label="Failed — collection already exists", state="error")
+                    return
+                create_resp.raise_for_status()
+                create_data = create_resp.json()
+            except httpx.HTTPStatusError as e:
+                st.error(f"Error creating collection: {e.response.text}")
+                status.update(label="Failed to create collection", state="error")
+                return
+            except Exception as e:
+                st.error(f"Error creating collection: {e}")
+                status.update(label="Failed to create collection", state="error")
+                return
+
+            collection_id = create_data["collection_id"]
+
+            # Ingest selected files one by one with progress
+            progress_bar = st.progress(0)
+            for i, f in enumerate(selected_files):
+                pct = int((i / total) * 100)
+                status.update(label=f"Ingesting {i+1}/{total} ({pct}%) — {f['markdown_file']}")
+                st.write(f"Ingesting `{f['markdown_file']}`...")
+                try:
+                    ingest_resp = httpx.post(
+                        f"{BACKEND_URL}/ingest/{collection_id}/file",
+                        json={
+                            "markdown_file": f["markdown_file"],
+                            "preprocessed_path": preprocessed_path,
+                            "chunk_size": chunk_size,
+                            "chunk_overlap": chunk_overlap,
+                            "chunk_mode": chunk_mode,
+                        },
+                        timeout=300.0,
+                    )
+                    ingest_resp.raise_for_status()
+                except Exception as e:
+                    st.error(f"Error ingesting {f['markdown_file']}: {e}")
+                    status.update(label=f"Failed on {f['markdown_file']}", state="error")
+                    break
+                progress_bar.progress((i + 1) / total)
+            else:
+                status.update(label=f"Done — ingested {total} files into '{col_name}'", state="complete", expanded=False)
+        st.rerun()
+
+
+def render_collection_tab():
+    st.subheader("Collection Management")
+    st.write("Create a collection from preprocessed markdown files and ingest them into Qdrant.")
+
+    # Handle pending deletion from previous render (must be before any early return)
+    if "delete_collection_id" in st.session_state:
+        cid = st.session_state.pop("delete_collection_id")
+        try:
+            resp = httpx.delete(f"{BACKEND_URL}/collections/{cid}", timeout=10.0)
+            resp.raise_for_status()
+            st.success("Collection deleted.")
+        except Exception as e:
+            st.error(f"Error deleting collection: {e}")
+
+    # --- Create new collection section ---
+    _render_create_collection_section()
+
+    # Show existing collections
+    st.divider()
+    st.subheader("Existing Collections")
+    collections = get_collections()
+    if not collections:
+        st.info("No collections yet.")
+    else:
+        for c in collections:
+            col_a, col_b = st.columns([5, 1])
+            with col_a:
+                s_type = c.get("search_type", "dense")
+                badge = "hybrid" if s_type == "hybrid" else "dense"
+                st.write(f"**{c['name']}** (ID: `{c['collection_id']}`, {c.get('paper_count', 0)} papers, `{badge}`)")
+            with col_b:
+                if st.button("Delete", key=f"del_{c['collection_id']}", type="secondary"):
+                    st.session_state["delete_collection_id"] = c["collection_id"]
+                    st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Tab 3: RAG (Search + Generate)
+# ---------------------------------------------------------------------------
+
+def render_rag_tab():
+    st.subheader("RAG Query")
+
+    # Collection selector
+    collections = get_collections()
+    if not collections:
+        st.info("No collections yet. Create one in the Collection Management tab.")
+        return
+
+    collection_names = [c["name"] for c in collections]
+    collection_map = {c["name"]: c for c in collections}
+
+    selected_name = st.selectbox("Select Collection", options=collection_names, key="rag_collection")
+    if not selected_name:
+        return
+
+    selected_collection = collection_map[selected_name]
+    collection_id = selected_collection["collection_id"]
+
+    # Paper selection
+    papers = get_papers(collection_id)
+    if not papers:
+        st.warning("No papers in this collection.")
+        return
+
+    with st.expander("Filter by papers (optional)", expanded=False):
+        st.write("Leave all unchecked to query all papers.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Select All", key="rag_sel_all"):
+                for p in papers:
+                    st.session_state[f"rag_sel_{p['paper_id']}"] = True
+                st.rerun()
+        with col2:
+            if st.button("Clear All", key="rag_clr_all"):
+                for p in papers:
+                    st.session_state[f"rag_sel_{p['paper_id']}"] = False
+                st.rerun()
+
+        selected_paper_ids = []
+        for paper in papers:
+            paper_id = paper["paper_id"]
+            label = paper.get("title") or paper.get("filename", paper_id)
+            checked = st.checkbox(label, value=st.session_state.get(f"rag_sel_{paper_id}", False), key=f"rag_sel_{paper_id}")
+            if checked:
+                selected_paper_ids.append(paper_id)
+
+        if selected_paper_ids:
+            st.caption(f"{len(selected_paper_ids)} paper(s) selected")
+        else:
+            st.caption("All papers will be queried")
+
+    st.divider()
+
+    query_text = st.text_area(
+        "Enter your question:",
+        placeholder="e.g., What are the main findings about attention mechanisms?",
+        height=100,
+    )
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        top_k = st.slider("Top-K chunks", min_value=1, max_value=50, value=10)
+    with col_b:
+        max_tokens = st.slider("Response length (words)", min_value=50, max_value=2000, value=500, step=50)
+    with col_c:
+        include_citations = st.checkbox("Include citations", value=True)
+
+    # Hybrid search toggle
+    use_hybrid = False
+    if selected_collection.get("search_type") == "hybrid":
+        use_hybrid = st.checkbox("Hybrid search (Dense + BM42)", value=False, key="rag_use_hybrid")
+    else:
+        st.checkbox("Hybrid search (Dense + BM42)", value=False, disabled=True, key="rag_use_hybrid_disabled",
+                     help="This collection was created with dense-only search. Recreate with 'Hybrid' to enable.")
+
+    if st.button("Search", type="primary", use_container_width=True):
+        if not query_text:
+            st.warning("Please enter a question.")
+            return
+
+        with st.spinner("Searching..."):
+            result = rag_query(
+                collection_id,
+                query_text,
+                selected_paper_ids if selected_paper_ids else None,
+                include_citations,
+                limit=top_k,
+                max_tokens=max_tokens,
+                use_hybrid=use_hybrid,
+            )
+
+            if result:
+                answer = result.get("answer", "")
+                if answer:
+                    st.markdown("### Answer")
+                    st.markdown(answer)
+                    st.divider()
+
+                markdown_export = export_to_markdown("search", result, query_text)
+                st.download_button(
+                    label="Export to Markdown",
+                    data=markdown_export,
+                    file_name=f"search_results_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown",
+                )
+
+                results = result.get("results", [])
+                st.markdown(f"**Retrieved Passages ({len(results)})**")
+                for i, r in enumerate(results):
+                    label = f"#{i+1} (Score: {r['score']:.3f}) — {r['unique_id']}"
+                    with st.expander(label):
+                        st.markdown(r["chunk_text"])
+                        st.caption(f"Page: {r['page_number']} | Type: {r['chunk_type']}")
+
+                if include_citations and "citations" in result:
+                    with st.expander("Citations"):
+                        for pid, citation in result["citations"].items():
+                            st.markdown(f"**{citation['unique_id']}** - {citation['title']}")
+                            st.markdown("**APA:**")
+                            st.text(citation["apa"])
+                            st.markdown("**BibTeX:**")
+                            st.code(citation["bibtex"], language="bibtex")
+                            st.divider()
+
+
+# ---------------------------------------------------------------------------
+# Tab 4: Summarize
+# ---------------------------------------------------------------------------
+
+def render_summarize_tab():
+    st.subheader("Summarize Paper")
+
+    collections = get_collections()
+    if not collections:
+        st.info("No collections yet. Create one in the Collection Management tab.")
+        return
+
+    collection_names = [c["name"] for c in collections]
+    collection_map = {c["name"]: c["collection_id"] for c in collections}
+
+    selected_name = st.selectbox("Select Collection", options=collection_names, key="summarize_collection")
+    if not selected_name:
+        return
+
+    collection_id = collection_map[selected_name]
+
+    papers = get_papers(collection_id)
+    if not papers:
+        st.warning("No papers in this collection.")
+        return
+
+    # Single paper selector
+    paper_labels = []
+    paper_id_map = {}
+    for p in papers:
+        label = p.get("title") or p.get("filename", p["paper_id"])
+        paper_labels.append(label)
+        paper_id_map[label] = p["paper_id"]
+
+    selected_label = st.selectbox("Select paper to summarize", options=paper_labels, key="summarize_paper")
+    if not selected_label:
+        return
+
+    selected_paper_id = paper_id_map[selected_label]
+
+    st.divider()
+
+    max_tokens = st.slider("Response length (approx. words)", min_value=50, max_value=2000, value=500, step=50, key="summarize_max_tokens")
+
+    if st.button("Summarize", type="primary", use_container_width=True):
+        with st.spinner("Generating summary..."):
+            result = summarize_papers(collection_id, [selected_paper_id], max_tokens=max_tokens)
+
+            if result:
+                markdown_export = export_to_markdown("summary", result)
+                st.download_button(
+                    label="Export Summary to Markdown",
+                    data=markdown_export,
+                    file_name=f"summary_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown",
+                )
+
+                st.markdown("### Summary")
+                st.markdown(result["summary"])
+
+                st.divider()
+                st.markdown("### Paper")
+                for paper in result.get("papers", []):
+                    st.write(f"- **{paper['title']}** ({paper.get('year', 'N/A')}) - {', '.join(paper['authors'])}")
+
+
+# ---------------------------------------------------------------------------
+# Tab 5: Compare
+# ---------------------------------------------------------------------------
+
+def render_compare_tab():
+    st.subheader("Compare Papers")
+
+    collections = get_collections()
+    if not collections:
+        st.info("No collections yet. Create one in the Collection Management tab.")
+        return
+
+    collection_names = [c["name"] for c in collections]
+    collection_map = {c["name"]: c["collection_id"] for c in collections}
+
+    selected_name = st.selectbox("Select Collection", options=collection_names, key="compare_collection")
+    if not selected_name:
+        return
+
+    collection_id = collection_map[selected_name]
+
+    papers = get_papers(collection_id)
+    if not papers:
+        st.warning("No papers in this collection.")
+        return
+
+    st.write("Select papers to compare (at least 2):")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Select All", key="compare_sel_all"):
+            for p in papers:
+                st.session_state[f"compare_sel_{p['paper_id']}"] = True
+            st.rerun()
+    with col2:
+        if st.button("Clear All", key="compare_clr_all"):
+            for p in papers:
+                st.session_state[f"compare_sel_{p['paper_id']}"] = False
+            st.rerun()
+
+    selected_paper_ids = []
+    for paper in papers:
+        paper_id = paper["paper_id"]
+        label = paper.get("title") or paper.get("filename", paper_id)
+        checked = st.checkbox(label, value=st.session_state.get(f"compare_sel_{paper_id}", False), key=f"compare_sel_{paper_id}")
+        if checked:
+            selected_paper_ids.append(paper_id)
+
+    st.caption(f"{len(selected_paper_ids)} paper(s) selected")
+
+    st.divider()
+
+    max_tokens = st.slider("Response length (approx. words)", min_value=50, max_value=2000, value=500, step=50, key="compare_max_tokens")
+
+    if st.button("Compare", type="primary", use_container_width=True):
+        if len(selected_paper_ids) < 2:
+            st.warning("Please select at least 2 papers to compare.")
+            return
+
+        with st.spinner("Generating comparison..."):
+            result = compare_papers(collection_id, selected_paper_ids, max_tokens=max_tokens)
+
+            if result:
+                markdown_export = export_to_markdown("comparison", result)
+                st.download_button(
+                    label="Export Comparison to Markdown",
+                    data=markdown_export,
+                    file_name=f"comparison_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown",
+                )
+
+                st.markdown("### Comparison")
+                st.markdown(result["comparison"])
+
+                st.divider()
+                st.markdown("### Papers Compared")
+                for paper in result.get("papers", []):
+                    st.write(f"- **{paper['title']}** ({paper.get('year', 'N/A')}) - {', '.join(paper['authors'])}")
+
+
+# ---------------------------------------------------------------------------
+# Sidebar: Settings
+# ---------------------------------------------------------------------------
+
+def render_settings_sidebar():
+    with st.sidebar:
+        st.header("Settings")
+
+        # Fetch current settings
+        current = {}
+        try:
+            resp = httpx.get(f"{BACKEND_URL}/settings", timeout=5.0)
+            resp.raise_for_status()
+            current = resp.json()
+        except Exception:
+            st.error("Could not load settings from backend.")
+            return
+
+        # Fetch available Ollama models
+        ollama_models = []
+        try:
+            resp = httpx.get(f"{BACKEND_URL}/ollama/models", timeout=10.0)
+            resp.raise_for_status()
+            ollama_models = [m["name"] for m in resp.json()]
+        except Exception:
+            st.warning("Could not fetch Ollama models.")
+
+        def _find_model_index(options: list, current_value: str) -> int:
+            """Find index matching current_value, handling missing :latest tag."""
+            if current_value in options:
+                return options.index(current_value)
+            # Try matching with/without :latest
+            for i, opt in enumerate(options):
+                bare = opt.split(":")[0]
+                if bare == current_value or bare == current_value.split(":")[0]:
+                    return i
+            return 0
+
+        # Embedding model
+        cur_embed = current.get("embedding_model", "")
+        embed_options = ollama_models if ollama_models else [cur_embed]
+        embedding_model = st.selectbox("Embedding model", options=embed_options, index=_find_model_index(embed_options, cur_embed))
+
+        # LLM model
+        cur_llm = current.get("llm_model", "")
+        llm_options = ollama_models if ollama_models else [cur_llm]
+        llm_model = st.selectbox("Generation model (LLM)", options=llm_options, index=_find_model_index(llm_options, cur_llm))
+
+        st.divider()
+
+        # Chunking defaults
+        cur_mode = current.get("chunk_mode", "characters")
+        mode_options = ["tokens", "characters"]
+        chunk_mode_setting = st.radio(
+            "Default chunk mode",
+            mode_options,
+            index=mode_options.index(cur_mode) if cur_mode in mode_options else 0,
+            horizontal=True,
+            key="settings_chunk_mode",
+        )
+        chunk_size = st.number_input(
+            f"Default chunk size ({chunk_mode_setting})",
+            min_value=100, max_value=10000,
+            value=current.get("chunk_size", 500), step=50,
+        )
+        chunk_overlap = st.number_input(
+            f"Default chunk overlap ({chunk_mode_setting})",
+            min_value=0, max_value=2000,
+            value=current.get("chunk_overlap", 100), step=25,
+        )
+
+        # Retrieval
+        top_k = st.number_input(
+            "Default top-K retrieval",
+            min_value=1, max_value=100,
+            value=current.get("top_k", 10), step=1,
+        )
+
+        st.divider()
+
+        # Directories
+        pdf_input_dir = st.text_input("PDF input directory", value=current.get("pdf_input_dir", "/data/pdf_input"))
+        preprocessed_dir = st.text_input("Preprocessed directory", value=current.get("preprocessed_dir", "/data/preprocessed"))
+
+        st.divider()
+
+        # Save button
+        if st.button("Save Settings", type="primary", use_container_width=True):
+            payload = {
+                "embedding_model": embedding_model,
+                "llm_model": llm_model,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "chunk_mode": chunk_mode_setting,
+                "top_k": top_k,
+                "pdf_input_dir": pdf_input_dir,
+                "preprocessed_dir": preprocessed_dir,
+            }
+            try:
+                save_resp = httpx.post(
+                    f"{BACKEND_URL}/settings",
+                    json=payload,
+                    timeout=10.0,
+                )
+                save_resp.raise_for_status()
+                st.success("Settings saved!")
+            except Exception as e:
+                st.error(f"Error saving settings: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     st.set_page_config(
         page_title="PRAG-v2",
@@ -211,356 +1174,35 @@ def main():
         layout="wide"
     )
 
-    st.title("📚 PRAG-v2")
+    st.title("PRAG-v2")
     st.caption("RAG System for Academic Research Papers")
 
     # Check backend health
     health = check_backend_health()
     if "error" in health:
-        st.error(f"⚠️ Backend not available: {health['error']}")
+        st.error(f"Backend not available: {health['error']}")
         st.stop()
 
-    # Sidebar
-    with st.sidebar:
-        st.header("Collections")
+    # Sidebar settings
+    render_settings_sidebar()
 
-        # Create collection
-        with st.expander("➕ Create New Collection"):
-            new_name = st.text_input("Collection Name")
-            new_desc = st.text_area("Description (optional)")
-            if st.button("Create"):
-                if new_name:
-                    result = create_collection(new_name, new_desc)
-                    if result:
-                        st.success(f"Created: {result['name']}")
-                        st.rerun()
-                else:
-                    st.warning("Please enter a collection name")
+    # Five tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["PDF Management", "Collection Management", "RAG", "Summarize", "Compare"])
 
-        # List collections
-        collections = get_collections()
+    with tab1:
+        render_preprocessing_tab()
 
-        if not collections:
-            st.info("No collections yet. Create one to get started!")
-        else:
-            collection_names = [c["name"] for c in collections]
-            selected = st.selectbox(
-                "Select Collection",
-                options=collection_names,
-                key="collection_selector"
-            )
+    with tab2:
+        render_collection_tab()
 
-            if selected:
-                st.session_state.selected_collection = selected
+    with tab3:
+        render_rag_tab()
 
-        # Settings
-        with st.expander("⚙️ Settings"):
-            st.info("Settings coming soon")
+    with tab4:
+        render_summarize_tab()
 
-    # Main area
-    if "selected_collection" in st.session_state:
-        collection_name = st.session_state.selected_collection
-        collection_id = get_collection_id(collection_name, collections)
-
-        if not collection_id:
-            st.error("Collection not found")
-            st.stop()
-
-        st.header(f"📁 {collection_name}")
-
-        # Tabs for different sections
-        tab1, tab2 = st.tabs(["📄 Papers", "💬 Query"])
-
-        with tab1:
-            st.subheader("Upload PDF")
-
-            # PDF Upload
-            uploaded_file = st.file_uploader(
-                "Choose a PDF file",
-                type=["pdf"],
-                help="Upload a research paper in PDF format"
-            )
-
-            if uploaded_file is not None:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.info(f"📄 {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
-                with col2:
-                    if st.button("Upload & Process", type="primary"):
-                        with st.spinner("Processing PDF... This may take a few minutes."):
-                            result = upload_pdf(collection_id, uploaded_file)
-                            if result:
-                                st.success("✅ PDF uploaded and processed successfully!")
-                                st.json({
-                                    "Title": result.get("title", "Unknown"),
-                                    "Authors": ", ".join(result.get("authors", [])),
-                                    "Year": result.get("year", "N/A"),
-                                    "Chunks Created": result.get("chunks_created", 0),
-                                    "Status": result.get("status", "unknown")
-                                })
-                                # Clear the file uploader
-                                st.rerun()
-
-            st.divider()
-
-            # List Papers
-            st.subheader("Papers in Collection")
-
-            papers = get_papers(collection_id)
-
-            if not papers:
-                st.info("No papers yet. Upload a PDF to get started!")
-            else:
-                # Sorting and filtering controls
-                col1, col2, col3 = st.columns([2, 2, 3])
-                with col1:
-                    sort_by = st.selectbox(
-                        "Sort by",
-                        ["Filename (A-Z)", "Filename (Z-A)", "Most Recent", "Oldest First"],
-                        key="sort_papers"
-                    )
-                with col2:
-                    view_mode = st.radio(
-                        "View",
-                        ["List", "Grid"],
-                        horizontal=True,
-                        key="view_mode"
-                    )
-                with col3:
-                    search_filter = st.text_input(
-                        "Search papers",
-                        placeholder="Filter by filename...",
-                        key="search_papers"
-                    )
-
-                # Apply filtering
-                filtered_papers = papers
-                if search_filter:
-                    filtered_papers = [
-                        p for p in papers
-                        if search_filter.lower() in p.get('filename', p['paper_id']).lower()
-                    ]
-
-                # Apply sorting
-                if sort_by == "Filename (A-Z)":
-                    filtered_papers = sorted(filtered_papers, key=lambda p: p.get('filename', p['paper_id']))
-                elif sort_by == "Filename (Z-A)":
-                    filtered_papers = sorted(filtered_papers, key=lambda p: p.get('filename', p['paper_id']), reverse=True)
-                # Most Recent/Oldest would need timestamps from the API, using default order for now
-
-                st.write(f"**Showing {len(filtered_papers)} of {len(papers)} papers**")
-
-                # Display papers based on view mode
-                if view_mode == "List":
-                    # List view - expandable cards
-                    for i, paper in enumerate(filtered_papers):
-                        with st.expander(f"📄 {paper.get('filename', paper['paper_id'])}"):
-                            st.write(f"**Paper ID:** `{paper['paper_id']}`")
-                            st.write(f"**Filename:** {paper.get('filename', 'N/A')}")
-
-                            # Action buttons
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("📊 View Details", key=f"view_{i}", use_container_width=True):
-                                    st.session_state.selected_paper_details = paper['paper_id']
-                            with col2:
-                                if st.button("📝 Quick Summarize", key=f"summ_{i}", use_container_width=True):
-                                    with st.spinner("Generating summary..."):
-                                        result = summarize_papers(collection_id, [paper['paper_id']])
-                                        if result:
-                                            st.success("Summary generated!")
-                                            st.markdown(result["summary"])
-                else:
-                    # Grid view - compact cards
-                    cols_per_row = 3
-                    for i in range(0, len(filtered_papers), cols_per_row):
-                        cols = st.columns(cols_per_row)
-                        for j, paper in enumerate(filtered_papers[i:i+cols_per_row]):
-                            with cols[j]:
-                                with st.container():
-                                    st.markdown(f"**📄 {paper.get('filename', paper['paper_id'])[:30]}...**" if len(paper.get('filename', paper['paper_id'])) > 30 else f"**📄 {paper.get('filename', paper['paper_id'])}**")
-                                    st.caption(f"ID: {paper['paper_id'][:8]}...")
-                                    if st.button("Select", key=f"grid_sel_{i+j}", use_container_width=True):
-                                        st.session_state.selected_paper_details = paper['paper_id']
-
-        with tab2:
-            st.subheader("Query Papers")
-
-            # Get papers for selection
-            papers = get_papers(collection_id)
-
-            if not papers:
-                st.warning("No papers in this collection. Upload some PDFs first!")
-            else:
-                # Paper selection panel
-                with st.expander("📚 Select Papers", expanded=True):
-                    st.write("Choose which papers to query (leave empty to query all):")
-
-                    # Select All / Clear All buttons
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Select All"):
-                            st.session_state.selected_papers = [p["paper_id"] for p in papers]
-                    with col2:
-                        if st.button("Clear All"):
-                            st.session_state.selected_papers = []
-
-                    # Initialize session state
-                    if "selected_papers" not in st.session_state:
-                        st.session_state.selected_papers = []
-
-                    # Paper checkboxes
-                    for paper in papers:
-                        paper_id = paper["paper_id"]
-                        filename = paper.get("filename", paper_id)
-
-                        is_selected = paper_id in st.session_state.selected_papers
-                        if st.checkbox(
-                            f"📄 {filename}",
-                            value=is_selected,
-                            key=f"select_{paper_id}"
-                        ):
-                            if paper_id not in st.session_state.selected_papers:
-                                st.session_state.selected_papers.append(paper_id)
-                        else:
-                            if paper_id in st.session_state.selected_papers:
-                                st.session_state.selected_papers.remove(paper_id)
-
-                    selected_count = len(st.session_state.selected_papers)
-                    if selected_count > 0:
-                        st.info(f"✓ {selected_count} paper(s) selected")
-                    else:
-                        st.info("All papers will be queried")
-
-                st.divider()
-
-                # Query interface
-                st.subheader("Ask a Question")
-
-                query_text = st.text_area(
-                    "Enter your question:",
-                    placeholder="e.g., What are the main findings about attention mechanisms?",
-                    height=100
-                )
-
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    include_citations = st.checkbox("Include citations", value=True)
-                with col2:
-                    query_mode = st.selectbox(
-                        "Mode",
-                        ["Search", "Summarize", "Compare"],
-                        help="Search: Find relevant passages\nSummarize: Generate summary\nCompare: Compare papers"
-                    )
-
-                if st.button("🔍 Submit", type="primary", use_container_width=True):
-                    if not query_text and query_mode == "Search":
-                        st.warning("Please enter a question")
-                    elif query_mode in ["Summarize", "Compare"] and selected_count == 0:
-                        st.warning(f"{query_mode} requires at least {'1' if query_mode == 'Summarize' else '2'} paper(s) selected")
-                    else:
-                        with st.spinner(f"{query_mode}ing..."):
-                            if query_mode == "Search":
-                                # Query/search mode
-                                result = query_papers(
-                                    collection_id,
-                                    query_text,
-                                    st.session_state.selected_papers if selected_count > 0 else None,
-                                    include_citations
-                                )
-
-                                if result:
-                                    st.success("✅ Search complete!")
-
-                                    # Export button
-                                    markdown_export = export_to_markdown("search", result, query_text)
-                                    st.download_button(
-                                        label="📥 Export to Markdown",
-                                        data=markdown_export,
-                                        file_name=f"search_results_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                                        mime="text/markdown"
-                                    )
-
-                                    # Display results
-                                    results = result.get("results", [])
-                                    st.write(f"**Found {len(results)} relevant passages:**")
-
-                                    for i, r in enumerate(results):
-                                        with st.container():
-                                            st.markdown(f"**Result {i+1}** (Score: {r['score']:.3f})")
-                                            st.markdown(f"> {r['chunk_text']}")
-                                            st.caption(f"Paper: {r['unique_id']} | Page: {r['page_number']} | Type: {r['chunk_type']}")
-                                            st.divider()
-
-                                    # Display citations if included
-                                    if include_citations and "citations" in result:
-                                        st.subheader("📚 Citations")
-                                        for paper_id, citation in result["citations"].items():
-                                            with st.expander(f"{citation['unique_id']} - {citation['title']}"):
-                                                st.markdown("**APA:**")
-                                                st.text(citation["apa"])
-                                                st.markdown("**BibTeX:**")
-                                                st.code(citation["bibtex"], language="bibtex")
-
-                            elif query_mode == "Summarize":
-                                # Summarize mode
-                                result = summarize_papers(
-                                    collection_id,
-                                    st.session_state.selected_papers
-                                )
-
-                                if result:
-                                    st.success("✅ Summary generated!")
-
-                                    # Export button
-                                    markdown_export = export_to_markdown("summary", result)
-                                    st.download_button(
-                                        label="📥 Export Summary to Markdown",
-                                        data=markdown_export,
-                                        file_name=f"summary_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                                        mime="text/markdown"
-                                    )
-
-                                    st.markdown("### Summary")
-                                    st.markdown(result["summary"])
-
-                                    st.divider()
-                                    st.markdown("### Papers Summarized")
-                                    for paper in result.get("papers", []):
-                                        st.write(f"- **{paper['title']}** ({paper['year']}) - {', '.join(paper['authors'])}")
-
-                            elif query_mode == "Compare":
-                                # Compare mode
-                                if selected_count < 2:
-                                    st.error("Please select at least 2 papers to compare")
-                                else:
-                                    result = compare_papers(
-                                        collection_id,
-                                        st.session_state.selected_papers
-                                    )
-
-                                    if result:
-                                        st.success("✅ Comparison generated!")
-
-                                        # Export button
-                                        markdown_export = export_to_markdown("comparison", result)
-                                        st.download_button(
-                                            label="📥 Export Comparison to Markdown",
-                                            data=markdown_export,
-                                            file_name=f"comparison_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                                            mime="text/markdown"
-                                        )
-
-                                        st.markdown("### Comparison")
-                                        st.markdown(result["comparison"])
-
-                                        st.divider()
-                                        st.markdown("### Papers Compared")
-                                        for paper in result.get("papers", []):
-                                            st.write(f"- **{paper['title']}** ({paper['year']}) - {', '.join(paper['authors'])}")
-
-    else:
-        st.info("👈 Select or create a collection to get started")
+    with tab5:
+        render_compare_tab()
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://qdrant:6333"
     ollama_url: str = "http://host.docker.internal:11434"
     data_dir: str = "/data/collections"
+    pdf_input_dir: str = "/data/pdf_input"
+    preprocessed_dir: str = "/data/preprocessed"
     anthropic_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
 

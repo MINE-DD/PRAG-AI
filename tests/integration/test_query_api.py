@@ -29,7 +29,7 @@ def temp_data_dir():
 def mock_qdrant():
     """Mock Qdrant service"""
     with patch('app.api.collections.QdrantService') as mock_collections, \
-         patch('app.api.query.QdrantService') as mock_query:
+         patch('app.api.rag.QdrantService') as mock_rag:
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.delete_collection = Mock()
@@ -50,17 +50,18 @@ def mock_qdrant():
         mock_instance.search = Mock(return_value=[mock_search_result])
 
         mock_collections.return_value = mock_instance
-        mock_query.return_value = mock_instance
+        mock_rag.return_value = mock_instance
         yield mock_instance
 
 
 @pytest.fixture
 def mock_ollama():
     """Mock Ollama service"""
-    with patch('app.api.query.OllamaService') as mock:
+    with patch('app.api.rag.OllamaService') as mock:
         mock_instance = Mock()
         # Return fake embedding (1024-dimensional)
         mock_instance.generate_embedding = Mock(return_value=[0.1] * 1024)
+        mock_instance.generate = Mock(return_value="This is a generated answer about NLP.")
         mock.return_value = mock_instance
         yield mock_instance
 
@@ -68,7 +69,7 @@ def mock_ollama():
 @pytest.fixture
 def mock_metadata_service():
     """Mock metadata service"""
-    with patch('app.api.query.MetadataService') as mock:
+    with patch('app.api.rag.MetadataService') as mock:
         from app.models.paper import PaperMetadata
 
         mock_instance = Mock()
@@ -100,10 +101,10 @@ def client(temp_data_dir, mock_qdrant, mock_ollama, mock_metadata_service):
     return TestClient(app)
 
 
-def test_query_collection(client, test_collection):
-    """Test querying a collection with semantic search"""
+def test_rag_query_collection(client, test_collection):
+    """Test RAG querying a collection with semantic search"""
     response = client.post(
-        f"/collections/{test_collection}/query",
+        f"/collections/{test_collection}/rag",
         json={
             "query_text": "What is natural language processing?",
             "limit": 5
@@ -114,6 +115,9 @@ def test_query_collection(client, test_collection):
     data = response.json()
 
     # Verify response structure
+    assert "answer" in data
+    assert isinstance(data["answer"], str)
+    assert len(data["answer"]) > 0
     assert "results" in data
     assert isinstance(data["results"], list)
     assert len(data["results"]) > 0
@@ -127,10 +131,10 @@ def test_query_collection(client, test_collection):
     assert result["score"] > 0
 
 
-def test_query_with_paper_filter(client, test_collection):
-    """Test querying with paper_ids filter"""
+def test_rag_query_with_paper_filter(client, test_collection):
+    """Test RAG querying with paper_ids filter"""
     response = client.post(
-        f"/collections/{test_collection}/query",
+        f"/collections/{test_collection}/rag",
         json={
             "query_text": "machine learning",
             "paper_ids": ["paper-123"],
@@ -144,30 +148,30 @@ def test_query_with_paper_filter(client, test_collection):
     assert len(data["results"]) > 0
 
 
-def test_query_nonexistent_collection(client):
-    """Test querying a collection that doesn't exist"""
+def test_rag_query_nonexistent_collection(client):
+    """Test RAG querying a collection that doesn't exist"""
     response = client.post(
-        "/collections/nonexistent/query",
+        "/collections/nonexistent/rag",
         json={"query_text": "test"}
     )
 
     assert response.status_code == 404
 
 
-def test_query_empty_text(client, test_collection):
-    """Test querying with empty query text"""
+def test_rag_query_empty_text(client, test_collection):
+    """Test RAG querying with empty query text"""
     response = client.post(
-        f"/collections/{test_collection}/query",
+        f"/collections/{test_collection}/rag",
         json={"query_text": ""}
     )
 
     assert response.status_code == 400
 
 
-def test_query_returns_metadata(client, test_collection):
-    """Test that query results include chunk metadata"""
+def test_rag_query_returns_metadata(client, test_collection):
+    """Test that RAG query results include chunk metadata"""
     response = client.post(
-        f"/collections/{test_collection}/query",
+        f"/collections/{test_collection}/rag",
         json={"query_text": "natural language processing"}
     )
 
@@ -181,10 +185,10 @@ def test_query_returns_metadata(client, test_collection):
     assert result["chunk_type"] in ["abstract", "body", "table", "figure_caption"]
 
 
-def test_query_with_citations(client, test_collection):
-    """Test that query results include citation information"""
+def test_rag_query_with_citations(client, test_collection):
+    """Test that RAG query results include citation information"""
     response = client.post(
-        f"/collections/{test_collection}/query",
+        f"/collections/{test_collection}/rag",
         json={"query_text": "machine learning", "include_citations": True}
     )
 

@@ -16,14 +16,16 @@ services:
     depends_on:
       - qdrant
     volumes:
-      - ./data/collections:/data/collections
-      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml
     env_file:
       - .env
     environment:
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_URL=http://host.docker.internal:11434
       - DATA_DIR=/data/collections
+      - PDF_INPUT_DIR=/data/pdf_input
+      - PREPROCESSED_DIR=/data/preprocessed
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

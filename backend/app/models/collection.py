@@ -11,6 +11,7 @@ class Collection(BaseModel):
     created_date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))
     paper_count: int = Field(default=0, description="Number of papers")
+    search_type: str = Field(default="dense", description="Search type: dense or hybrid")
 
 
 class CollectionResponse(BaseModel):
