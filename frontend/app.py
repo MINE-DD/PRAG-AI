@@ -1,4 +1,3 @@
-import json
 import time
 
 import streamlit as st
@@ -339,21 +338,6 @@ def _preprocess_single_file(dir_name: str, filename: str):
         return False
 
 
-def _preprocess_batch_stream(dir_name: str, filenames: list[str], max_workers: int = 2):
-    """Stream batch conversion results from backend as NDJSON lines."""
-    try:
-        with httpx.stream(
-            "POST",
-            f"{BACKEND_URL}/preprocess/convert-batch",
-            json={"dir_name": dir_name, "filenames": filenames, "max_workers": max_workers},
-            timeout=httpx.Timeout(10.0, read=600.0),
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if line.strip():
-                    yield json.loads(line)
-    except Exception as e:
-        yield {"filename": "batch", "status": "error", "detail": str(e)}
 
 
 def render_preprocessing_tab():
@@ -467,34 +451,25 @@ def render_preprocessing_tab():
 
     st.write(f"**{len(processed)}/{len(files)}** processed, **{len(pending)}** pending")
 
-    # "Convert All" button — processes pending files in parallel via batch endpoint
+    # "Convert All" button — processes pending files one by one
     if pending:
-        col_btn, col_workers = st.columns([3, 1])
-        with col_workers:
-            max_workers = st.number_input("Parallel workers", min_value=1, max_value=4, value=2, key="preprocess_workers")
-        with col_btn:
-            convert_all_clicked = st.button("Convert All", type="primary", use_container_width=True)
-
-        if convert_all_clicked:
+        if st.button("Convert All", type="primary", use_container_width=True):
             total = len(pending)
-            filenames = [f["filename"] for f in pending]
-            with st.status(f"Converting {total} PDFs ({max_workers} workers)...", expanded=True) as status:
+            with st.status(f"Converting {total} PDFs...", expanded=True) as status:
                 progress_bar = st.progress(0)
                 success_count = 0
                 error_count = 0
                 t0 = time.monotonic()
-                for result in _preprocess_batch_stream(selected_dir, filenames, max_workers=max_workers):
-                    done = success_count + error_count + 1
-                    fname = result.get("filename", "?")
-                    elapsed = time.monotonic() - t0
-                    if result["status"] == "success":
+                for i, f in enumerate(pending):
+                    fname = f["filename"]
+                    status.update(label=f"Converting {i+1}/{total} — {fname}")
+                    if _preprocess_single_file(selected_dir, fname):
                         success_count += 1
+                        elapsed = time.monotonic() - t0
                         st.write(f"Converted `{fname}` ({elapsed:.1f}s)")
                     else:
                         error_count += 1
-                        st.error(f"Failed `{fname}`: {result.get('detail', 'unknown error')}")
-                    progress_bar.progress(done / total)
-                    status.update(label=f"Converting {done}/{total} — {fname} ({elapsed:.1f}s)")
+                    progress_bar.progress((i + 1) / total)
 
                 elapsed = time.monotonic() - t0
                 if error_count == 0:
@@ -514,8 +489,25 @@ def render_preprocessing_tab():
 
         if is_done:
             with st.expander(f"`{fname}` — **done**"):
-                col_action1, col_action2, col_spacer = st.columns([1, 1, 3])
-                with col_action1:
+                stem = fname.rsplit(".", 1)[0] if "." in fname else fname
+
+                # Download buttons for markdown and metadata
+                col_dl_md, col_dl_json, col_reprocess, col_delete = st.columns([1, 1, 1, 1])
+                with col_dl_md:
+                    try:
+                        md_resp = httpx.get(f"{BACKEND_URL}/preprocess/download/{selected_dir}/{fname}/markdown", timeout=10.0)
+                        if md_resp.status_code == 200:
+                            st.download_button("Download .md", data=md_resp.content, file_name=f"{stem}.md", mime="text/markdown", key=f"dl_md_{fname}")
+                    except Exception:
+                        pass
+                with col_dl_json:
+                    try:
+                        json_resp = httpx.get(f"{BACKEND_URL}/preprocess/download/{selected_dir}/{fname}/metadata", timeout=10.0)
+                        if json_resp.status_code == 200:
+                            st.download_button("Download .json", data=json_resp.content, file_name=f"{stem}_metadata.json", mime="application/json", key=f"dl_json_{fname}")
+                    except Exception:
+                        pass
+                with col_reprocess:
                     if st.button("Re-process", key=f"reprocess_{fname}", type="secondary"):
                         st.session_state["preprocess_action"] = {
                             "type": "delete",
@@ -527,7 +519,7 @@ def render_preprocessing_tab():
                             "filename": fname,
                         }
                         st.rerun()
-                with col_action2:
+                with col_delete:
                     if st.button("Delete .md", key=f"delete_{fname}", type="secondary"):
                         st.session_state["preprocess_action"] = {
                             "type": "delete",

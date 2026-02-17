@@ -1,9 +1,5 @@
-import json
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.services.preprocessing_service import PreprocessingService
@@ -55,42 +51,6 @@ def convert_pdf(request: ConvertRequest):
         raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")
 
 
-class ConvertBatchRequest(BaseModel):
-    dir_name: str
-    filenames: list[str]
-    max_workers: int = 2
-
-
-def _convert_one(dir_name: str, filename: str) -> dict:
-    """Convert a single PDF in its own PreprocessingService instance (thread-safe)."""
-    try:
-        service = PreprocessingService()
-        result = service.convert_single_pdf(dir_name, filename)
-        return {"filename": filename, "status": "success", **result}
-    except Exception as e:
-        return {"filename": filename, "status": "error", "detail": str(e)}
-
-
-@router.post("/preprocess/convert-batch")
-async def convert_batch(request: ConvertBatchRequest):
-    """Convert multiple PDFs in parallel, streaming NDJSON results as each completes."""
-    workers = min(request.max_workers, 4)
-    loop = asyncio.get_event_loop()
-    executor = ThreadPoolExecutor(max_workers=workers)
-
-    async def generate():
-        futures = {
-            loop.run_in_executor(executor, _convert_one, request.dir_name, fname): fname
-            for fname in request.filenames
-        }
-        for coro in asyncio.as_completed(futures):
-            result = await coro
-            yield json.dumps(result) + "\n"
-        executor.shutdown(wait=False)
-
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
-
-
 @router.post("/preprocess/extract-assets")
 def extract_assets(request: ConvertRequest):
     """Extract tables and images from an already-preprocessed PDF."""
@@ -134,6 +94,31 @@ def get_assets(request: AssetsRequest):
     """Get tables and images info for a processed PDF."""
     service = get_preprocessing_service()
     return service.get_assets(request.dir_name, request.filename)
+
+
+@router.get("/preprocess/download/{dir_name}/{filename}/{file_type}")
+def download_output(dir_name: str, filename: str, file_type: str):
+    """Download the preprocessed markdown or metadata JSON for a PDF."""
+    if file_type not in ("markdown", "metadata"):
+        raise HTTPException(status_code=400, detail="file_type must be 'markdown' or 'metadata'")
+
+    service = get_preprocessing_service()
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    output_dir = service.preprocessed_dir / dir_name
+
+    if file_type == "markdown":
+        path = output_dir / f"{stem}.md"
+        media_type = "text/markdown"
+        dl_name = f"{stem}.md"
+    else:
+        path = output_dir / f"{stem}_metadata.json"
+        media_type = "application/json"
+        dl_name = f"{stem}_metadata.json"
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"{file_type} file not found")
+
+    return FileResponse(str(path), media_type=media_type, filename=dl_name)
 
 
 @router.get("/preprocess/assets/{dir_name}/{filename}/{asset_type}/{asset_file}")
