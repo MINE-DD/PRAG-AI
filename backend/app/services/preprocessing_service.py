@@ -512,9 +512,24 @@ class PreprocessingService:
             return {"tables": [], "images": [], "paper_metadata": {}}
 
         metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+
+        # Extract references section from the markdown file
+        references = ""
+        md_path = output_dir / f"{stem}.md"
+        if md_path.exists():
+            md_text = md_path.read_text(encoding="utf-8")
+            ref_pattern = re.compile(
+                r"^(?:#{1,3}\s+|\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
+                re.IGNORECASE | re.MULTILINE,
+            )
+            ref_match = ref_pattern.search(md_text)
+            if ref_match:
+                references = md_text[ref_match.start():]
+
         return {
             "tables": metadata.get("tables", []),
             "images": metadata.get("images", []),
+            "references": references,
             "paper_metadata": {
                 "title": metadata.get("title"),
                 "authors": metadata.get("authors", []),

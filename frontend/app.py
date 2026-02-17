@@ -234,6 +234,11 @@ def _render_pdf_assets(dir_name: str, filename: str):
     if abstract:
         with st.expander("Abstract", expanded=False):
             st.write(abstract)
+    # References section from markdown
+    references = assets.get("references", "")
+    if references:
+        with st.expander("References", expanded=False):
+            st.markdown(references)
     # Show source tags
     tags = []
     if conv_backend:
@@ -1063,6 +1068,12 @@ def render_explore_tab():
         source_pdf = selected_paper.get("source_pdf") or selected_paper.get("filename", "")
         st.markdown(f"**{title}**")
         st.caption("Full metadata not available in collection.")
+
+    # --- Paper References ---
+    references_text = paper_detail.get("references", "") if paper_detail else ""
+    if references_text:
+        with st.expander("Show Paper References", expanded=False):
+            st.markdown(references_text)
 
     # --- Extract Tables & Images ---
     dir_name = paper_detail.get("preprocessed_dir") if paper_detail else selected_paper.get("preprocessed_dir")

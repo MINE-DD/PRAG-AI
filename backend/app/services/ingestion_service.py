@@ -139,8 +139,11 @@ class IngestionService:
             year=self._extract_year(metadata.get("publication_date")),
         )
 
-        # Chunk text
-        text_chunks = self.chunking_service.chunk_text(text_content)
+        # Strip references section before chunking
+        body_text, references = self._split_references(text_content)
+
+        # Chunk text (body only, no references)
+        text_chunks = self.chunking_service.chunk_text(body_text)
 
         # Create Chunk objects
         chunks = []
@@ -182,6 +185,7 @@ class IngestionService:
             "unique_id": unique_id,
             "preprocessed_dir": md_file.parent.name,
             "chunks_created": len(chunks),
+            "references": references,
             "ingested_at": datetime.now(UTC).isoformat(),
         }
         dest = collection_meta_dir / f"{paper_id}.json"
@@ -221,3 +225,24 @@ class IngestionService:
             return None
         match = re.search(r"\d{4}", str(publication_date))
         return int(match.group()) if match else None
+
+    @staticmethod
+    def _split_references(text: str) -> tuple[str, str]:
+        """Split markdown text into body and references section.
+
+        Matches common formats:
+        - Markdown headings: ## References, # Bibliography, etc.
+        - Bold text on its own line: **References**
+        - All-caps on its own line: REFERENCES
+        Returns (body_text, references_text).
+        """
+        pattern = re.compile(
+            r"^(?:#{1,3}\s+|\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        match = pattern.search(text)
+        if match:
+            body = text[:match.start()].rstrip()
+            references = text[match.start():]
+            return body, references
+        return text, ""
