@@ -14,6 +14,7 @@ class ScanRequest(BaseModel):
 class ConvertRequest(BaseModel):
     dir_name: str
     filename: str
+    backend: str = "docling"  # "docling" or "pymupdf"
 
 
 def get_preprocessing_service() -> PreprocessingService:
@@ -43,7 +44,7 @@ def convert_pdf(request: ConvertRequest):
     """Convert a single PDF to markdown + metadata."""
     service = get_preprocessing_service()
     try:
-        result = service.convert_single_pdf(request.dir_name, request.filename)
+        result = service.convert_single_pdf(request.dir_name, request.filename, backend=request.backend)
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

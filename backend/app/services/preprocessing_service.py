@@ -91,8 +91,11 @@ class PreprocessingService:
             })
         return files
 
-    def convert_single_pdf(self, dir_name: str, filename: str) -> dict:
-        """Convert a single PDF to markdown + minimal metadata JSON."""
+    def convert_single_pdf(self, dir_name: str, filename: str, backend: str = "docling") -> dict:
+        """Convert a single PDF to markdown + minimal metadata JSON.
+
+        backend: "docling" (thorough, slower) or "pymupdf" (fast, text-based)
+        """
         source_path = self.pdf_input_dir / dir_name / filename
         if not source_path.exists():
             raise FileNotFoundError(f"PDF not found: {dir_name}/{filename}")
@@ -103,22 +106,24 @@ class PreprocessingService:
 
         stem = source_path.stem
 
-        # Convert with Docling
-        result = self.converter.convert(str(source_path))
-        doc = result.document
+        if backend == "pymupdf":
+            markdown_content = self._convert_with_pymupdf(source_path)
+            paper_meta = {"title": stem, "authors": [], "abstract": None, "publication_date": None}
+        else:
+            result = self.converter.convert(str(source_path))
+            doc = result.document
+            markdown_content = doc.export_to_markdown()
+            paper_meta = self._extract_paper_metadata(doc, stem)
 
-        # Export markdown
-        markdown_content = doc.export_to_markdown()
+        # Write markdown
         md_path = output_dir / f"{stem}.md"
         md_path.write_text(markdown_content, encoding="utf-8")
-
-        # Extract paper metadata (title, authors, abstract, date)
-        paper_meta = self._extract_paper_metadata(doc, stem)
 
         # Write metadata (with paper info, but no tables/images yet)
         metadata = {
             **paper_meta,
             "source_pdf": filename,
+            "backend": backend,
             "preprocessed_at": datetime.now(UTC).isoformat(),
         }
         metadata_path = output_dir / f"{stem}_metadata.json"
@@ -135,6 +140,12 @@ class PreprocessingService:
             "table_count": 0,
             "image_count": 0,
         }
+
+    @staticmethod
+    def _convert_with_pymupdf(source_path: Path) -> str:
+        """Convert PDF to markdown using pymupdf4llm (fast, text-based)."""
+        import pymupdf4llm
+        return pymupdf4llm.to_markdown(str(source_path))
 
     def extract_assets(self, dir_name: str, filename: str) -> dict:
         """Extract tables and images from an already-preprocessed PDF.

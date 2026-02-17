@@ -180,6 +180,7 @@ class IngestionService:
             **metadata,
             "paper_id": paper_id,
             "unique_id": unique_id,
+            "preprocessed_dir": md_file.parent.name,
             "chunks_created": len(chunks),
             "ingested_at": datetime.now(UTC).isoformat(),
         }

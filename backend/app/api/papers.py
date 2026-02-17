@@ -131,6 +131,8 @@ def list_papers(
                     "title": data.get("title"),
                     "authors": data.get("authors", []),
                     "unique_id": data.get("unique_id", ""),
+                    "preprocessed_dir": data.get("preprocessed_dir"),
+                    "source_pdf": data.get("source_pdf"),
                 })
             except (json.JSONDecodeError, KeyError):
                 continue

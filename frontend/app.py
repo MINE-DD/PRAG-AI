@@ -221,13 +221,6 @@ def _render_pdf_assets(dir_name: str, filename: str):
     images = assets.get("images", [])
 
     if not tables and not images:
-        # No assets extracted yet — offer the button
-        if st.button("Extract Tables & Images", key=f"extract_assets_{filename}", type="secondary"):
-            st.session_state["extract_assets_action"] = {
-                "dir_name": dir_name,
-                "filename": filename,
-            }
-            st.rerun()
         return
 
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
@@ -323,12 +316,12 @@ def _render_pdf_assets(dir_name: str, filename: str):
                 st.image(display_img, caption=f"{caption}{page_str} ({orig_w}x{orig_h})")
 
 
-def _preprocess_single_file(dir_name: str, filename: str):
+def _preprocess_single_file(dir_name: str, filename: str, backend: str = "docling"):
     """Call backend to convert a single PDF. Returns True on success."""
     try:
         resp = httpx.post(
             f"{BACKEND_URL}/preprocess/convert",
-            json={"dir_name": dir_name, "filename": filename},
+            json={"dir_name": dir_name, "filename": filename, "backend": backend},
             timeout=300.0,
         )
         resp.raise_for_status()
@@ -342,16 +335,20 @@ def _preprocess_single_file(dir_name: str, filename: str):
 
 def render_preprocessing_tab():
     st.subheader("PDF Management")
-    st.write("Convert PDFs to markdown using Docling. Place PDF directories in the `data/pdf_input/` folder.")
+    st.write("Convert PDFs to markdown. Place PDF directories in the `data/pdf_input/` folder.")
+
+    backend = st.session_state.get("preprocess_backend", "pymupdf")
 
     # Handle pending single-file actions from previous render
     if "preprocess_action" in st.session_state:
         action = st.session_state.pop("preprocess_action")
         if action["type"] == "convert":
-            with st.status(f"Converting {action['filename']}...", expanded=True) as status:
-                st.write("Converting PDF to markdown with Docling...")
+            be = action.get("backend", backend)
+            be_label = "PyMuPDF" if be == "pymupdf" else "Docling"
+            with st.status(f"Converting {action['filename']} ({be_label})...", expanded=True) as status:
+                st.write(f"Converting PDF to markdown with {be_label}...")
                 t0 = time.monotonic()
-                if _preprocess_single_file(action["dir_name"], action["filename"]):
+                if _preprocess_single_file(action["dir_name"], action["filename"], backend=be):
                     elapsed = time.monotonic() - t0
                     status.update(label=f"Converted {action['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
                 else:
@@ -369,38 +366,15 @@ def render_preprocessing_tab():
             except Exception as e:
                 st.error(f"Error deleting: {e}")
 
-    # Handle extract-assets action
-    if "extract_assets_action" in st.session_state:
-        action = st.session_state.pop("extract_assets_action")
-        with st.status(f"Extracting tables & images from {action['filename']}...", expanded=True) as status:
-            st.write("Re-running Docling to extract tables and images...")
-            t0 = time.monotonic()
-            try:
-                resp = httpx.post(
-                    f"{BACKEND_URL}/preprocess/extract-assets",
-                    json={"dir_name": action["dir_name"], "filename": action["filename"]},
-                    timeout=300.0,
-                )
-                resp.raise_for_status()
-                result = resp.json()
-                elapsed = time.monotonic() - t0
-                status.update(
-                    label=f"Extracted {result.get('table_count', 0)} tables, {result.get('image_count', 0)} images from {action['filename']} in {elapsed:.1f}s",
-                    state="complete",
-                    expanded=False,
-                )
-            except Exception as e:
-                elapsed = time.monotonic() - t0
-                st.error(f"Error extracting assets: {e}")
-                status.update(label=f"Failed to extract assets from {action['filename']} ({elapsed:.1f}s)", state="error", expanded=True)
-
     # Handle re-process: convert right after delete
     if "preprocess_reconvert" in st.session_state:
         reconvert = st.session_state.pop("preprocess_reconvert")
-        with st.status(f"Re-processing {reconvert['filename']}...", expanded=True) as status:
-            st.write("Deleting old output and re-extracting with Docling...")
+        re_be = reconvert.get("backend", backend)
+        re_label = "PyMuPDF" if re_be == "pymupdf" else "Docling"
+        with st.status(f"Re-processing {reconvert['filename']} ({re_label})...", expanded=True) as status:
+            st.write(f"Deleting old output and re-extracting with {re_label}...")
             t0 = time.monotonic()
-            if _preprocess_single_file(reconvert["dir_name"], reconvert["filename"]):
+            if _preprocess_single_file(reconvert["dir_name"], reconvert["filename"], backend=re_be):
                 elapsed = time.monotonic() - t0
                 status.update(label=f"Re-processed {reconvert['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
             else:
@@ -463,7 +437,7 @@ def render_preprocessing_tab():
                 for i, f in enumerate(pending):
                     fname = f["filename"]
                     status.update(label=f"Converting {i+1}/{total} — {fname}")
-                    if _preprocess_single_file(selected_dir, fname):
+                    if _preprocess_single_file(selected_dir, fname, backend=backend):
                         success_count += 1
                         elapsed = time.monotonic() - t0
                         st.write(f"Converted `{fname}` ({elapsed:.1f}s)")
@@ -508,7 +482,7 @@ def render_preprocessing_tab():
                     except Exception:
                         pass
                 with col_reprocess:
-                    if st.button("Re-process", key=f"reprocess_{fname}", type="secondary"):
+                    if st.button("Re-process (Docling)", key=f"reprocess_{fname}", type="secondary"):
                         st.session_state["preprocess_action"] = {
                             "type": "delete",
                             "dir_name": selected_dir,
@@ -517,6 +491,7 @@ def render_preprocessing_tab():
                         st.session_state["preprocess_reconvert"] = {
                             "dir_name": selected_dir,
                             "filename": fname,
+                            "backend": "docling",
                         }
                         st.rerun()
                 with col_delete:
@@ -540,6 +515,7 @@ def render_preprocessing_tab():
                         "type": "convert",
                         "dir_name": selected_dir,
                         "filename": fname,
+                        "backend": backend,
                     }
                     st.rerun()
 
@@ -900,11 +876,11 @@ def render_rag_tab():
 
 
 # ---------------------------------------------------------------------------
-# Tab 4: Summarize
+# Tab 4: Explore Paper
 # ---------------------------------------------------------------------------
 
-def render_summarize_tab():
-    st.subheader("Summarize Paper")
+def render_explore_tab():
+    st.subheader("Explore Paper")
 
     collections = get_collections()
     if not collections:
@@ -914,7 +890,7 @@ def render_summarize_tab():
     collection_names = [c["name"] for c in collections]
     collection_map = {c["name"]: c["collection_id"] for c in collections}
 
-    selected_name = st.selectbox("Select Collection", options=collection_names, key="summarize_collection")
+    selected_name = st.selectbox("Select Collection", options=collection_names, key="explore_collection")
     if not selected_name:
         return
 
@@ -927,42 +903,205 @@ def render_summarize_tab():
 
     # Single paper selector
     paper_labels = []
-    paper_id_map = {}
+    paper_map = {}
     for p in papers:
         label = p.get("title") or p.get("filename", p["paper_id"])
         paper_labels.append(label)
-        paper_id_map[label] = p["paper_id"]
+        paper_map[label] = p
 
-    selected_label = st.selectbox("Select paper to summarize", options=paper_labels, key="summarize_paper")
+    selected_label = st.selectbox("Select a paper to explore", options=paper_labels, key="explore_paper")
     if not selected_label:
         return
 
-    selected_paper_id = paper_id_map[selected_label]
+    selected_paper = paper_map[selected_label]
+    selected_paper_id = selected_paper["paper_id"]
+
+    # Reset chat history when paper changes
+    if st.session_state.get("explore_current_paper") != selected_paper_id:
+        st.session_state["explore_current_paper"] = selected_paper_id
+        st.session_state["explore_chat_history"] = []
+
+    # --- Paper info ---
+    title = selected_paper.get("title") or selected_paper_id
+    authors = selected_paper.get("authors", [])
+    source_pdf = selected_paper.get("source_pdf") or selected_paper.get("filename", "")
+
+    info_parts = [f"**{title}**"]
+    if authors:
+        info_parts.append(f"*{', '.join(authors)}*")
+    if source_pdf:
+        info_parts.append(f"`{source_pdf}`")
+    st.markdown(" | ".join(info_parts))
+
+    # --- Extract Tables & Images ---
+    dir_name = selected_paper.get("preprocessed_dir")
+    if dir_name and source_pdf:
+        assets = _fetch_pdf_assets(dir_name, source_pdf)
+        tables = assets.get("tables", [])
+        images = assets.get("images", [])
+
+        if not tables and not images:
+            if st.button("Extract Tables & Images", key="explore_extract_assets", type="secondary"):
+                with st.status(f"Extracting tables & images...", expanded=True) as status:
+                    st.write("Re-running Docling to extract tables and images...")
+                    t0 = time.monotonic()
+                    try:
+                        resp = httpx.post(
+                            f"{BACKEND_URL}/preprocess/extract-assets",
+                            json={"dir_name": dir_name, "filename": source_pdf},
+                            timeout=300.0,
+                        )
+                        resp.raise_for_status()
+                        result = resp.json()
+                        elapsed = time.monotonic() - t0
+                        status.update(
+                            label=f"Extracted {result.get('table_count', 0)} tables, {result.get('image_count', 0)} images in {elapsed:.1f}s",
+                            state="complete",
+                            expanded=False,
+                        )
+                    except Exception as e:
+                        elapsed = time.monotonic() - t0
+                        st.error(f"Error extracting assets: {e}")
+                        status.update(label=f"Failed ({elapsed:.1f}s)", state="error", expanded=True)
+                st.rerun()
+        else:
+            with st.expander(f"Tables ({len(tables)}) & Images ({len(images)})", expanded=False):
+                _render_assets_inline(dir_name, source_pdf, tables, images)
 
     st.divider()
 
-    max_tokens = st.slider("Response length (approx. words)", min_value=50, max_value=2000, value=500, step=50, key="summarize_max_tokens")
+    # --- Chat interface ---
+    # Initialize chat history in session state
+    if "explore_chat_history" not in st.session_state:
+        st.session_state["explore_chat_history"] = []
 
-    if st.button("Summarize", type="primary", use_container_width=True):
-        with st.spinner("Generating summary..."):
-            result = summarize_papers(collection_id, [selected_paper_id], max_tokens=max_tokens)
+    chat_history = st.session_state["explore_chat_history"]
 
-            if result:
-                markdown_export = export_to_markdown("summary", result)
-                st.download_button(
-                    label="Export Summary to Markdown",
-                    data=markdown_export,
-                    file_name=f"summary_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                    mime="text/markdown",
+    # Display existing chat messages
+    for msg in chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Ask a question about this paper...", key="explore_chat_input"):
+        # Add user message
+        chat_history.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate response
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                result = rag_query(
+                    collection_id=collection_id,
+                    query_text=prompt,
+                    paper_ids=[selected_paper_id],
+                    limit=10,
+                    max_tokens=500,
                 )
+                if result and result.get("answer"):
+                    answer = result["answer"]
+                else:
+                    answer = "I couldn't find relevant information in this paper to answer your question."
+                st.markdown(answer)
 
-                st.markdown("### Summary")
-                st.markdown(result["summary"])
+        # Add assistant message
+        chat_history.append({"role": "assistant", "content": answer})
 
-                st.divider()
-                st.markdown("### Paper")
-                for paper in result.get("papers", []):
-                    st.write(f"- **{paper['title']}** ({paper.get('year', 'N/A')}) - {', '.join(paper['authors'])}")
+        # Keep only last 3 turns (6 messages)
+        if len(chat_history) > 6:
+            st.session_state["explore_chat_history"] = chat_history[-6:]
+
+
+def _render_assets_inline(dir_name: str, filename: str, tables: list, images: list):
+    """Render tables and images inline (used in explore tab)."""
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    if tables:
+        st.markdown(f"**Tables ({len(tables)})**")
+        for t in tables:
+            caption = t.get("caption", "") or f"Table {t['index']}"
+            page = t.get("page")
+            page_str = f" (page {page})" if page else ""
+
+            dl_url = f"{BACKEND_URL}/preprocess/assets/{dir_name}/{filename}/tables/{t['file']}"
+            table_data = None
+            try:
+                table_resp = httpx.get(dl_url, timeout=10.0)
+                if table_resp.status_code == 200:
+                    table_data = table_resp.content
+            except Exception:
+                pass
+
+            show_key = f"explore_show_table_{filename}_{t['index']}"
+            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            with col_label:
+                st.write(f"- {caption}{page_str}")
+            with col_toggle:
+                if table_data and t["file"].endswith(".csv"):
+                    st.checkbox("Show", key=show_key, value=False)
+            with col_dl:
+                if table_data:
+                    mime = "text/csv" if t["file"].endswith(".csv") else "text/markdown"
+                    st.download_button(
+                        label="Download",
+                        data=table_data,
+                        file_name=t["file"],
+                        mime=mime,
+                        key=f"explore_dl_table_{filename}_{t['index']}",
+                    )
+
+            if st.session_state.get(show_key) and table_data and t["file"].endswith(".csv"):
+                import pandas as pd
+                from io import StringIO
+                df = pd.read_csv(StringIO(table_data.decode("utf-8")))
+                st.dataframe(df, use_container_width=True)
+
+    if images:
+        st.markdown(f"**Images ({len(images)})**")
+        for img in images:
+            caption = img.get("caption", "") or f"Image {img['index']}"
+            page = img.get("page")
+            page_str = f" (p.{page})" if page else ""
+
+            dl_url = f"{BACKEND_URL}/preprocess/assets/{dir_name}/{filename}/images/{img['file']}"
+            img_data = None
+            try:
+                img_resp = httpx.get(dl_url, timeout=10.0)
+                if img_resp.status_code == 200:
+                    img_data = img_resp.content
+            except Exception:
+                pass
+
+            show_key = f"explore_show_img_{filename}_{img['index']}"
+            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            with col_label:
+                st.write(f"- {caption}{page_str}")
+            with col_toggle:
+                if img_data:
+                    st.checkbox("Show", key=show_key, value=False)
+            with col_dl:
+                if img_data:
+                    st.download_button(
+                        label="Download",
+                        data=img_data,
+                        file_name=img["file"],
+                        mime="image/png",
+                        key=f"explore_dl_img_{filename}_{img['index']}",
+                    )
+
+            if st.session_state.get(show_key) and img_data:
+                from io import BytesIO
+                from PIL import Image as PILImage
+                pil_img = PILImage.open(BytesIO(img_data))
+                orig_w, orig_h = pil_img.size
+                if orig_h > 200:
+                    thumb_h = 200
+                    thumb_w = int(orig_w * thumb_h / orig_h)
+                    display_img = pil_img.resize((thumb_w, thumb_h))
+                else:
+                    display_img = pil_img
+                st.image(display_img, caption=f"{caption}{page_str} ({orig_w}x{orig_h})")
 
 
 # ---------------------------------------------------------------------------
@@ -1125,6 +1264,16 @@ def render_settings_sidebar():
 
         st.divider()
 
+        # PDF conversion backend
+        st.radio(
+            "PDF conversion backend",
+            options=["pymupdf", "docling"],
+            format_func=lambda b: "Basic (PyMuPDF) — fast" if b == "pymupdf" else "Docling — thorough, scanned PDFs",
+            key="preprocess_backend",
+        )
+
+        st.divider()
+
         # Directories
         pdf_input_dir = st.text_input("PDF input directory", value=current.get("pdf_input_dir", "/data/pdf_input"))
         preprocessed_dir = st.text_input("Preprocessed directory", value=current.get("preprocessed_dir", "/data/preprocessed"))
@@ -1179,7 +1328,7 @@ def main():
     render_settings_sidebar()
 
     # Five tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["PDF Management", "Collection Management", "RAG", "Summarize", "Compare"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["PDF Management", "Collection Management", "RAG", "Explore Paper", "Compare"])
 
     with tab1:
         render_preprocessing_tab()
@@ -1191,7 +1340,7 @@ def main():
         render_rag_tab()
 
     with tab4:
-        render_summarize_tab()
+        render_explore_tab()
 
     with tab5:
         render_compare_tab()
