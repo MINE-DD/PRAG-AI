@@ -910,21 +910,14 @@ def render_rag_tab():
         height=100,
     )
 
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b = st.columns(2)
     with col_a:
         top_k = st.slider("Top-K chunks", min_value=1, max_value=50, value=10)
     with col_b:
         max_tokens = st.slider("Response length (words)", min_value=50, max_value=2000, value=500, step=50)
-    with col_c:
-        pass  # Citations always shown
 
-    # Hybrid search toggle
-    use_hybrid = False
-    if selected_collection.get("search_type") == "hybrid":
-        use_hybrid = st.checkbox("Hybrid search (Dense + BM42)", value=False, key="rag_use_hybrid")
-    else:
-        st.checkbox("Hybrid search (Dense + BM42)", value=False, disabled=True, key="rag_use_hybrid_disabled",
-                     help="This collection was created with dense-only search. Recreate with 'Hybrid' to enable.")
+    # Auto-detect hybrid from collection
+    use_hybrid = selected_collection.get("search_type") == "hybrid"
 
     if st.button("Search", type="primary", use_container_width=True):
         if not query_text:
@@ -1109,6 +1102,22 @@ def render_explore_tab():
         else:
             with st.expander(f"Tables ({len(tables)}) & Images ({len(images)})", expanded=False):
                 _render_assets_inline(dir_name, source_pdf, tables, images)
+
+    st.divider()
+
+    # --- Summarize button ---
+    summary_key = f"explore_summary_{selected_paper_id}"
+    if st.button("Summarize Paper", key="explore_summarize_btn", type="secondary"):
+        with st.spinner("Generating summary..."):
+            result = summarize_papers(collection_id, [selected_paper_id], max_tokens=500)
+            if result and result.get("summary"):
+                st.session_state[summary_key] = result["summary"]
+            else:
+                st.warning("Could not generate a summary for this paper.")
+
+    if summary_key in st.session_state:
+        with st.expander("Paper Summary", expanded=True):
+            st.markdown(st.session_state[summary_key])
 
     st.divider()
 
