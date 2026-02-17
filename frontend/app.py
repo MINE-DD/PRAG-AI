@@ -44,6 +44,16 @@ def get_papers(collection_id: str) -> list:
         return []
 
 
+def get_paper_detail(collection_id: str, paper_id: str) -> dict | None:
+    """Fetch full metadata for a single paper from the collection."""
+    try:
+        response = httpx.get(f"{BACKEND_URL}/collections/{collection_id}/papers/{paper_id}", timeout=10.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return None
+
+
 def rag_query(
     collection_id: str,
     query_text: str,
@@ -200,22 +210,38 @@ def _render_pdf_assets(dir_name: str, filename: str):
     """Render paper metadata, tables, and images extracted from a processed PDF."""
     assets = _fetch_pdf_assets(dir_name, filename)
 
-    # Paper metadata (may be absent after lean preprocessing)
+    # Paper metadata
     paper_meta = assets.get("paper_metadata", {})
     title = paper_meta.get("title")
     authors = paper_meta.get("authors", [])
     pub_date = paper_meta.get("publication_date")
     abstract = paper_meta.get("abstract")
+    doi = paper_meta.get("doi")
+    journal = paper_meta.get("journal")
+    meta_source = paper_meta.get("metadata_source")
+    conv_backend = paper_meta.get("backend")
 
     if title:
         st.markdown(f"**Title:** {title}")
     if authors:
         st.markdown(f"**Authors:** {', '.join(authors)}")
+    if journal:
+        st.markdown(f"**Journal:** {journal}")
     if pub_date:
         st.markdown(f"**Published:** {pub_date}")
+    if doi:
+        st.markdown(f"**DOI:** [{doi}]({doi})" if doi.startswith("http") else f"**DOI:** [{doi}](https://doi.org/{doi})")
     if abstract:
         with st.expander("Abstract", expanded=False):
             st.write(abstract)
+    # Show source tags
+    tags = []
+    if conv_backend:
+        tags.append(f"Converted with: {conv_backend}")
+    if meta_source:
+        tags.append(f"Metadata from: {meta_source}")
+    if tags:
+        st.caption(" | ".join(tags))
 
     tables = assets.get("tables", [])
     images = assets.get("images", [])
@@ -243,17 +269,22 @@ def _render_pdf_assets(dir_name: str, filename: str):
                 pass
 
             show_key = f"show_table_{filename}_{t['index']}"
-            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            analyze_key = f"analyze_table_{filename}_{t['index']}"
+            col_label, col_toggle, col_analyze, col_dl = st.columns([4, 0.7, 1, 1])
             with col_label:
                 st.write(f"- {caption}{page_str}")
             with col_toggle:
                 if table_data and t["file"].endswith(".csv"):
                     st.checkbox("Show", key=show_key, value=False)
+            with col_analyze:
+                if table_data and t["file"].endswith(".csv"):
+                    if st.button("Analyze", key=f"btn_{analyze_key}", type="secondary"):
+                        st.session_state[analyze_key] = True
             with col_dl:
                 if table_data:
                     mime = "text/csv" if t["file"].endswith(".csv") else "text/markdown"
                     st.download_button(
-                        label=f"Download",
+                        label="Download",
                         data=table_data,
                         file_name=t["file"],
                         mime=mime,
@@ -266,6 +297,22 @@ def _render_pdf_assets(dir_name: str, filename: str):
                 from io import StringIO
                 df = pd.read_csv(StringIO(table_data.decode("utf-8")))
                 st.dataframe(df, use_container_width=True)
+
+            # Analyze table with LLM
+            if st.session_state.get(analyze_key) and t["file"].endswith(".csv"):
+                with st.spinner("Analyzing table..."):
+                    try:
+                        resp = httpx.post(
+                            f"{BACKEND_URL}/preprocess/analyze-table",
+                            json={"dir_name": dir_name, "filename": filename, "table_file": t["file"]},
+                            timeout=120.0,
+                        )
+                        resp.raise_for_status()
+                        analysis = resp.json().get("analysis", "")
+                        st.info(analysis)
+                    except Exception as e:
+                        st.error(f"Analysis failed: {e}")
+                st.session_state[analyze_key] = False
 
     # Images section
     if images:
@@ -316,12 +363,12 @@ def _render_pdf_assets(dir_name: str, filename: str):
                 st.image(display_img, caption=f"{caption}{page_str} ({orig_w}x{orig_h})")
 
 
-def _preprocess_single_file(dir_name: str, filename: str, backend: str = "docling"):
+def _preprocess_single_file(dir_name: str, filename: str, backend: str = "docling", metadata_backend: str = "openalex"):
     """Call backend to convert a single PDF. Returns True on success."""
     try:
         resp = httpx.post(
             f"{BACKEND_URL}/preprocess/convert",
-            json={"dir_name": dir_name, "filename": filename, "backend": backend},
+            json={"dir_name": dir_name, "filename": filename, "backend": backend, "metadata_backend": metadata_backend},
             timeout=300.0,
         )
         resp.raise_for_status()
@@ -338,6 +385,32 @@ def render_preprocessing_tab():
     st.write("Convert PDFs to markdown. Place PDF directories in the `data/pdf_input/` folder.")
 
     backend = st.session_state.get("preprocess_backend", "pymupdf")
+    metadata_backend = st.session_state.get("metadata_backend", "openalex")
+
+    # Handle enrich-metadata action
+    if "enrich_action" in st.session_state:
+        action = st.session_state.pop("enrich_action")
+        meta_labels = {"openalex": "OpenAlex", "crossref": "CrossRef", "semantic_scholar": "Semantic Scholar"}
+        be_label = meta_labels.get(action["backend"], action["backend"])
+        with st.status(f"Fetching metadata from {be_label}...", expanded=True) as status:
+            t0 = time.monotonic()
+            try:
+                resp = httpx.post(
+                    f"{BACKEND_URL}/preprocess/enrich-metadata",
+                    json={"dir_name": action["dir_name"], "filename": action["filename"], "backend": action["backend"]},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                elapsed = time.monotonic() - t0
+                if result.get("enriched"):
+                    status.update(label=f"Metadata enriched for {action['filename']} via {be_label} ({elapsed:.1f}s)", state="complete", expanded=False)
+                else:
+                    status.update(label=f"No metadata found for {action['filename']} on {be_label} ({elapsed:.1f}s)", state="error", expanded=True)
+            except Exception as e:
+                elapsed = time.monotonic() - t0
+                st.error(f"Error enriching metadata: {e}")
+                status.update(label=f"Failed ({elapsed:.1f}s)", state="error", expanded=True)
 
     # Handle pending single-file actions from previous render
     if "preprocess_action" in st.session_state:
@@ -348,7 +421,8 @@ def render_preprocessing_tab():
             with st.status(f"Converting {action['filename']} ({be_label})...", expanded=True) as status:
                 st.write(f"Converting PDF to markdown with {be_label}...")
                 t0 = time.monotonic()
-                if _preprocess_single_file(action["dir_name"], action["filename"], backend=be):
+                meta_be = action.get("metadata_backend", metadata_backend)
+                if _preprocess_single_file(action["dir_name"], action["filename"], backend=be, metadata_backend=meta_be):
                     elapsed = time.monotonic() - t0
                     status.update(label=f"Converted {action['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
                 else:
@@ -374,7 +448,7 @@ def render_preprocessing_tab():
         with st.status(f"Re-processing {reconvert['filename']} ({re_label})...", expanded=True) as status:
             st.write(f"Deleting old output and re-extracting with {re_label}...")
             t0 = time.monotonic()
-            if _preprocess_single_file(reconvert["dir_name"], reconvert["filename"], backend=re_be):
+            if _preprocess_single_file(reconvert["dir_name"], reconvert["filename"], backend=re_be, metadata_backend=metadata_backend):
                 elapsed = time.monotonic() - t0
                 status.update(label=f"Re-processed {reconvert['filename']} in {elapsed:.1f}s", state="complete", expanded=False)
             else:
@@ -437,7 +511,7 @@ def render_preprocessing_tab():
                 for i, f in enumerate(pending):
                     fname = f["filename"]
                     status.update(label=f"Converting {i+1}/{total} — {fname}")
-                    if _preprocess_single_file(selected_dir, fname, backend=backend):
+                    if _preprocess_single_file(selected_dir, fname, backend=backend, metadata_backend=metadata_backend):
                         success_count += 1
                         elapsed = time.monotonic() - t0
                         st.write(f"Converted `{fname}` ({elapsed:.1f}s)")
@@ -462,11 +536,33 @@ def render_preprocessing_tab():
         is_done = f["processed"]
 
         if is_done:
-            with st.expander(f"`{fname}` — **done**"):
+            # Peek at metadata for a richer expander label
+            _assets = _fetch_pdf_assets(selected_dir, fname)
+            _pm = _assets.get("paper_metadata", {})
+            _label_title = _pm.get("title")
+            _expander_label = f"`{fname}` — {_label_title}" if _label_title else f"`{fname}` — **done**"
+
+            with st.expander(_expander_label):
                 stem = fname.rsplit(".", 1)[0] if "." in fname else fname
 
-                # Download buttons for markdown and metadata
-                col_dl_md, col_dl_json, col_reprocess, col_delete = st.columns([1, 1, 1, 1])
+                # Action buttons — "Get Metadata" only when auto-enrich is disabled (None)
+                _meta_be = st.session_state.get("metadata_backend", "openalex")
+
+                if _meta_be == "none":
+                    col_meta, col_dl_md, col_dl_json, col_reprocess, col_delete = st.columns([1.2, 1, 1, 1, 1])
+                else:
+                    col_dl_md, col_dl_json, col_reprocess, col_delete = st.columns([1, 1, 1, 1])
+                    col_meta = None
+
+                if col_meta is not None:
+                    with col_meta:
+                        if st.button("Get Metadata", key=f"enrich_{fname}", type="secondary"):
+                            st.session_state["enrich_action"] = {
+                                "dir_name": selected_dir,
+                                "filename": fname,
+                                "backend": "openalex",
+                            }
+                            st.rerun()
                 with col_dl_md:
                     try:
                         md_resp = httpx.get(f"{BACKEND_URL}/preprocess/download/{selected_dir}/{fname}/markdown", timeout=10.0)
@@ -815,7 +911,7 @@ def render_rag_tab():
     with col_b:
         max_tokens = st.slider("Response length (words)", min_value=50, max_value=2000, value=500, step=50)
     with col_c:
-        include_citations = st.checkbox("Include citations", value=True)
+        pass  # Citations always shown
 
     # Hybrid search toggle
     use_hybrid = False
@@ -834,8 +930,7 @@ def render_rag_tab():
             result = rag_query(
                 collection_id,
                 query_text,
-                selected_paper_ids if selected_paper_ids else None,
-                include_citations,
+                paper_ids=selected_paper_ids if selected_paper_ids else None,
                 limit=top_k,
                 max_tokens=max_tokens,
                 use_hybrid=use_hybrid,
@@ -864,10 +959,12 @@ def render_rag_tab():
                         st.markdown(r["chunk_text"])
                         st.caption(f"Page: {r['page_number']} | Type: {r['chunk_type']}")
 
-                if include_citations and "citations" in result:
-                    with st.expander("Citations"):
-                        for pid, citation in result["citations"].items():
-                            st.markdown(f"**{citation['unique_id']}** - {citation['title']}")
+                if "citations" in result and result["citations"]:
+                    with st.expander(f"Citations ({len(result['citations'])})"):
+                        for cite_key, citation in result["citations"].items():
+                            st.markdown(f"**[{cite_key}]** {citation['title']}")
+                            if citation.get("authors"):
+                                st.caption(f"{', '.join(citation['authors'])} ({citation.get('year', 'N/A')})")
                             st.markdown("**APA:**")
                             st.text(citation["apa"])
                             st.markdown("**BibTeX:**")
@@ -921,20 +1018,54 @@ def render_explore_tab():
         st.session_state["explore_current_paper"] = selected_paper_id
         st.session_state["explore_chat_history"] = []
 
-    # --- Paper info ---
-    title = selected_paper.get("title") or selected_paper_id
-    authors = selected_paper.get("authors", [])
-    source_pdf = selected_paper.get("source_pdf") or selected_paper.get("filename", "")
+    # --- Paper metadata from collection (confirms Qdrant knows it) ---
+    paper_detail = get_paper_detail(collection_id, selected_paper_id)
+    if paper_detail:
+        title = paper_detail.get("title") or selected_paper_id
+        authors = paper_detail.get("authors", [])
+        source_pdf = paper_detail.get("source_pdf") or selected_paper.get("filename", "")
+        journal = paper_detail.get("journal")
+        pub_date = paper_detail.get("publication_date")
+        doi = paper_detail.get("doi")
+        abstract = paper_detail.get("abstract")
+        meta_source = paper_detail.get("metadata_source")
+        chunks_created = paper_detail.get("chunks_created")
+        unique_id = paper_detail.get("unique_id")
 
-    info_parts = [f"**{title}**"]
-    if authors:
-        info_parts.append(f"*{', '.join(authors)}*")
-    if source_pdf:
-        info_parts.append(f"`{source_pdf}`")
-    st.markdown(" | ".join(info_parts))
+        st.markdown(f"**{title}**")
+        if authors:
+            st.markdown(f"*{', '.join(authors)}*")
+        detail_parts = []
+        if journal:
+            detail_parts.append(f"**Journal:** {journal}")
+        if pub_date:
+            detail_parts.append(f"**Published:** {pub_date}")
+        if doi:
+            doi_link = doi if doi.startswith("http") else f"https://doi.org/{doi}"
+            detail_parts.append(f"**DOI:** [{doi}]({doi_link})")
+        if detail_parts:
+            st.markdown(" | ".join(detail_parts))
+        if abstract:
+            with st.expander("Abstract", expanded=False):
+                st.write(abstract)
+        # Collection-specific info
+        tags = []
+        if unique_id:
+            tags.append(f"ID: {unique_id}")
+        if chunks_created:
+            tags.append(f"Chunks: {chunks_created}")
+        if meta_source:
+            tags.append(f"Metadata: {meta_source}")
+        if tags:
+            st.caption(" | ".join(tags))
+    else:
+        title = selected_paper.get("title") or selected_paper_id
+        source_pdf = selected_paper.get("source_pdf") or selected_paper.get("filename", "")
+        st.markdown(f"**{title}**")
+        st.caption("Full metadata not available in collection.")
 
     # --- Extract Tables & Images ---
-    dir_name = selected_paper.get("preprocessed_dir")
+    dir_name = paper_detail.get("preprocessed_dir") if paper_detail else selected_paper.get("preprocessed_dir")
     if dir_name and source_pdf:
         assets = _fetch_pdf_assets(dir_name, source_pdf)
         tables = assets.get("tables", [])
@@ -1034,12 +1165,17 @@ def _render_assets_inline(dir_name: str, filename: str, tables: list, images: li
                 pass
 
             show_key = f"explore_show_table_{filename}_{t['index']}"
-            col_label, col_toggle, col_dl = st.columns([4, 1, 1])
+            analyze_key = f"explore_analyze_table_{filename}_{t['index']}"
+            col_label, col_toggle, col_analyze, col_dl = st.columns([4, 0.7, 1, 1])
             with col_label:
                 st.write(f"- {caption}{page_str}")
             with col_toggle:
                 if table_data and t["file"].endswith(".csv"):
                     st.checkbox("Show", key=show_key, value=False)
+            with col_analyze:
+                if table_data and t["file"].endswith(".csv"):
+                    if st.button("Analyze", key=f"btn_{analyze_key}", type="secondary"):
+                        st.session_state[analyze_key] = True
             with col_dl:
                 if table_data:
                     mime = "text/csv" if t["file"].endswith(".csv") else "text/markdown"
@@ -1056,6 +1192,22 @@ def _render_assets_inline(dir_name: str, filename: str, tables: list, images: li
                 from io import StringIO
                 df = pd.read_csv(StringIO(table_data.decode("utf-8")))
                 st.dataframe(df, use_container_width=True)
+
+            # Analyze table with LLM
+            if st.session_state.get(analyze_key) and t["file"].endswith(".csv"):
+                with st.spinner("Analyzing table..."):
+                    try:
+                        resp = httpx.post(
+                            f"{BACKEND_URL}/preprocess/analyze-table",
+                            json={"dir_name": dir_name, "filename": filename, "table_file": t["file"]},
+                            timeout=120.0,
+                        )
+                        resp.raise_for_status()
+                        analysis = resp.json().get("analysis", "")
+                        st.info(analysis)
+                    except Exception as e:
+                        st.error(f"Analysis failed: {e}")
+                st.session_state[analyze_key] = False
 
     if images:
         st.markdown(f"**Images ({len(images)})**")
@@ -1234,36 +1386,6 @@ def render_settings_sidebar():
 
         st.divider()
 
-        # Chunking defaults
-        cur_mode = current.get("chunk_mode", "characters")
-        mode_options = ["tokens", "characters"]
-        chunk_mode_setting = st.radio(
-            "Default chunk mode",
-            mode_options,
-            index=mode_options.index(cur_mode) if cur_mode in mode_options else 0,
-            horizontal=True,
-            key="settings_chunk_mode",
-        )
-        chunk_size = st.number_input(
-            f"Default chunk size ({chunk_mode_setting})",
-            min_value=100, max_value=10000,
-            value=current.get("chunk_size", 500), step=50,
-        )
-        chunk_overlap = st.number_input(
-            f"Default chunk overlap ({chunk_mode_setting})",
-            min_value=0, max_value=2000,
-            value=current.get("chunk_overlap", 100), step=25,
-        )
-
-        # Retrieval
-        top_k = st.number_input(
-            "Default top-K retrieval",
-            min_value=1, max_value=100,
-            value=current.get("top_k", 10), step=1,
-        )
-
-        st.divider()
-
         # PDF conversion backend
         st.radio(
             "PDF conversion backend",
@@ -1272,11 +1394,24 @@ def render_settings_sidebar():
             key="preprocess_backend",
         )
 
+        # Metadata API backend
+        _meta_labels = {
+            "openalex": "OpenAlex",
+            "crossref": "CrossRef",
+            "semantic_scholar": "Semantic Scholar",
+            "none": "None",
+        }
+        st.radio(
+            "Metadata API",
+            options=["openalex", "crossref", "semantic_scholar", "none"],
+            format_func=lambda b: _meta_labels[b],
+            key="metadata_backend",
+        )
+
         st.divider()
 
         # Directories
         pdf_input_dir = st.text_input("PDF input directory", value=current.get("pdf_input_dir", "/data/pdf_input"))
-        preprocessed_dir = st.text_input("Preprocessed directory", value=current.get("preprocessed_dir", "/data/preprocessed"))
 
         st.divider()
 
@@ -1285,12 +1420,8 @@ def render_settings_sidebar():
             payload = {
                 "embedding_model": embedding_model,
                 "llm_model": llm_model,
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-                "chunk_mode": chunk_mode_setting,
-                "top_k": top_k,
                 "pdf_input_dir": pdf_input_dir,
-                "preprocessed_dir": preprocessed_dir,
+                "preprocessed_dir": "/data/preprocessed",
             }
             try:
                 save_resp = httpx.post(

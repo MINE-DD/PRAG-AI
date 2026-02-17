@@ -10,6 +10,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.base_models import InputFormat
 
 from app.core.config import settings
+from app.services.metadata_api_service import enrich_metadata as _api_enrich
 
 # Module-level lock for thread-safe history.json writes
 _history_lock = threading.Lock()
@@ -91,10 +92,14 @@ class PreprocessingService:
             })
         return files
 
-    def convert_single_pdf(self, dir_name: str, filename: str, backend: str = "docling") -> dict:
-        """Convert a single PDF to markdown + minimal metadata JSON.
+    def convert_single_pdf(
+        self, dir_name: str, filename: str,
+        backend: str = "docling", metadata_backend: str = "openalex",
+    ) -> dict:
+        """Convert a single PDF to markdown + metadata JSON.
 
         backend: "docling" (thorough, slower) or "pymupdf" (fast, text-based)
+        metadata_backend: "openalex", "crossref", "semantic_scholar", or "none"
         """
         source_path = self.pdf_input_dir / dir_name / filename
         if not source_path.exists():
@@ -108,7 +113,7 @@ class PreprocessingService:
 
         if backend == "pymupdf":
             markdown_content = self._convert_with_pymupdf(source_path)
-            paper_meta = {"title": stem, "authors": [], "abstract": None, "publication_date": None}
+            paper_meta = self._extract_metadata_from_markdown(markdown_content, stem)
         else:
             result = self.converter.convert(str(source_path))
             doc = result.document
@@ -126,6 +131,21 @@ class PreprocessingService:
             "backend": backend,
             "preprocessed_at": datetime.now(UTC).isoformat(),
         }
+
+        # Auto-enrich with metadata API
+        enriched = False
+        if metadata_backend and metadata_backend != "none":
+            title = paper_meta.get("title", stem)
+            api_data = _api_enrich(title, metadata_backend)
+            if api_data:
+                for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+                    if api_data.get(key):
+                        metadata[key] = api_data[key]
+                if api_data.get("openalex_id"):
+                    metadata["openalex_id"] = api_data["openalex_id"]
+                metadata["metadata_source"] = metadata_backend
+                enriched = True
+
         metadata_path = output_dir / f"{stem}_metadata.json"
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -139,6 +159,7 @@ class PreprocessingService:
             "markdown_length": len(markdown_content),
             "table_count": 0,
             "image_count": 0,
+            "metadata_enriched": enriched,
         }
 
     @staticmethod
@@ -146,6 +167,80 @@ class PreprocessingService:
         """Convert PDF to markdown using pymupdf4llm (fast, text-based)."""
         import pymupdf4llm
         return pymupdf4llm.to_markdown(str(source_path))
+
+    def _extract_metadata_from_markdown(self, markdown_text: str, fallback_title: str) -> dict:
+        """Parse title and authors from markdown text."""
+        lines = markdown_text.strip().split("\n")
+
+        title = None
+        title_idx = None
+
+        # First # heading = title
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("# ") and not stripped.startswith("## "):
+                title = stripped.lstrip("# ").strip()
+                title_idx = i
+                break
+
+        # Fallback: first non-empty line
+        if title is None:
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped and not stripped.startswith("!") and not stripped.startswith("["):
+                    title = stripped
+                    title_idx = i
+                    break
+
+        if title is None:
+            title = fallback_title
+
+        # Authors: first non-empty, non-heading line after title
+        authors = []
+        if title_idx is not None:
+            for line in lines[title_idx + 1 :]:
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    break
+                if stripped and len(stripped) > 5:
+                    authors = self._parse_authors(stripped)
+                    break
+
+        return {
+            "title": title,
+            "authors": authors,
+            "abstract": None,
+            "publication_date": None,
+        }
+
+    def enrich_with_api(self, dir_name: str, filename: str, backend: str) -> dict:
+        """Enrich metadata for an already-preprocessed PDF using an external API."""
+        stem = Path(filename).stem
+        output_dir = self.preprocessed_dir / dir_name
+        metadata_path = output_dir / f"{stem}_metadata.json"
+
+        if not metadata_path.exists():
+            raise FileNotFoundError(f"Metadata not found — preprocess {filename} first")
+
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        title = metadata.get("title", stem)
+
+        api_data = _api_enrich(title, backend)
+        if not api_data:
+            return {"filename": filename, "enriched": False, "backend": backend}
+
+        # Merge API data into metadata (overwrite with API values when present)
+        for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+            if api_data.get(key):
+                metadata[key] = api_data[key]
+
+        if api_data.get("openalex_id"):
+            metadata["openalex_id"] = api_data["openalex_id"]
+
+        metadata["metadata_source"] = backend
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+        return {"filename": filename, "enriched": True, "backend": backend, "title": metadata.get("title")}
 
     def extract_assets(self, dir_name: str, filename: str) -> dict:
         """Extract tables and images from an already-preprocessed PDF.
@@ -425,6 +520,10 @@ class PreprocessingService:
                 "authors": metadata.get("authors", []),
                 "publication_date": metadata.get("publication_date"),
                 "abstract": metadata.get("abstract"),
+                "doi": metadata.get("doi"),
+                "journal": metadata.get("journal"),
+                "metadata_source": metadata.get("metadata_source"),
+                "backend": metadata.get("backend"),
             },
         }
 

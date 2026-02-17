@@ -149,3 +149,25 @@ def list_papers(
                 })
 
     return papers
+
+
+@router.get("/collections/{collection_id}/papers/{paper_id}")
+def get_paper_detail(
+    collection_id: str,
+    paper_id: str,
+    services: tuple = Depends(get_services)
+):
+    """Get full metadata for a single paper in a collection (from collection metadata dir)."""
+    collection_service, _ = services
+
+    collection = collection_service.get_collection(collection_id)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    data_dir = Path(settings.data_dir)
+    metadata_path = data_dir / collection_id / "metadata" / f"{paper_id}.json"
+    if not metadata_path.exists():
+        raise HTTPException(status_code=404, detail="Paper metadata not found in collection")
+
+    data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    return data

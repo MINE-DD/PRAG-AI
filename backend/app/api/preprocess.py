@@ -3,6 +3,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.services.preprocessing_service import PreprocessingService
+from app.services.ollama_service import OllamaService
+from app.core.config import settings, load_config
 
 router = APIRouter()
 
@@ -15,6 +17,7 @@ class ConvertRequest(BaseModel):
     dir_name: str
     filename: str
     backend: str = "docling"  # "docling" or "pymupdf"
+    metadata_backend: str = "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
 
 
 def get_preprocessing_service() -> PreprocessingService:
@@ -44,7 +47,10 @@ def convert_pdf(request: ConvertRequest):
     """Convert a single PDF to markdown + metadata."""
     service = get_preprocessing_service()
     try:
-        result = service.convert_single_pdf(request.dir_name, request.filename, backend=request.backend)
+        result = service.convert_single_pdf(
+            request.dir_name, request.filename,
+            backend=request.backend, metadata_backend=request.metadata_backend,
+        )
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -63,6 +69,25 @@ def extract_assets(request: ConvertRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Asset extraction error: {str(e)}")
+
+
+class EnrichRequest(BaseModel):
+    dir_name: str
+    filename: str
+    backend: str = "openalex"  # "openalex", "crossref", "semantic_scholar"
+
+
+@router.post("/preprocess/enrich-metadata")
+def enrich_metadata(request: EnrichRequest):
+    """Enrich metadata for a processed PDF using an external API."""
+    service = get_preprocessing_service()
+    try:
+        result = service.enrich_with_api(request.dir_name, request.filename, request.backend)
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
 
 
 class DeleteRequest(BaseModel):
@@ -139,3 +164,45 @@ def download_asset(dir_name: str, filename: str, asset_type: str, asset_file: st
 
     media_type = "text/csv" if asset_file.endswith(".csv") else "image/png"
     return FileResponse(str(path), media_type=media_type, filename=asset_file)
+
+
+class AnalyzeTableRequest(BaseModel):
+    dir_name: str
+    filename: str
+    table_file: str
+
+
+@router.post("/preprocess/analyze-table")
+def analyze_table(request: AnalyzeTableRequest):
+    """Send a CSV table to the LLM for analysis."""
+    service = get_preprocessing_service()
+    try:
+        path = service.get_asset_path(request.dir_name, request.filename, "tables", request.table_file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Table file not found")
+
+    csv_content = path.read_text(encoding="utf-8")
+    if not csv_content.strip():
+        raise HTTPException(status_code=400, detail="Table file is empty")
+
+    config = load_config("config.yaml")
+    ollama = OllamaService(
+        url=settings.ollama_url,
+        model=config["models"]["llm"]["model"],
+    )
+
+    prompt = (
+        "Analyze the following CSV table extracted from a research paper. "
+        "Summarize what the table shows, describe the columns, highlight key findings "
+        "or notable patterns in the data. Be concise.\n\n"
+        f"```csv\n{csv_content}\n```"
+    )
+
+    try:
+        analysis = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=500)
+        return {"analysis": analysis, "table_file": request.table_file}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")

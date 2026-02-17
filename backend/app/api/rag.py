@@ -94,43 +94,62 @@ def rag_query(
         use_hybrid=use_hybrid,
     )
 
-    # Format results
+    # Format results and build citation key map
     results = []
-    cited_papers = set()
+    # Map paper_id → unique_id (citation key) for all retrieved chunks
+    paper_citation_keys = {}  # paper_id → unique_id
 
     for result in search_results:
         paper_id = result.payload["paper_id"]
-        cited_papers.add(paper_id)
+        unique_id = result.payload["unique_id"]
+        paper_citation_keys[paper_id] = unique_id
 
         results.append({
             "chunk_text": result.payload["chunk_text"],
             "paper_id": paper_id,
-            "unique_id": result.payload["unique_id"],
+            "unique_id": unique_id,
             "chunk_type": result.payload["chunk_type"],
             "page_number": result.payload["page_number"],
             "score": result.score,
             "metadata": result.payload.get("metadata", {})
         })
 
+    # Load metadata for all cited papers upfront
+    paper_metadata_map = {}  # paper_id → PaperMetadata
+    for paper_id in paper_citation_keys:
+        meta = metadata_service.get_paper_metadata(collection_id, paper_id)
+        if meta:
+            paper_metadata_map[paper_id] = meta
+
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
     if results:
+        # Build context: each chunk tagged with its citation key
         context_parts = []
         for r in results:
-            source_label = r["unique_id"] or r["paper_id"]
+            citation_key = r["unique_id"] or r["paper_id"]
             cleaned_text = _clean_context(r["chunk_text"])
-            context_parts.append(f"[{source_label}]: {cleaned_text}")
+            context_parts.append(
+                f"--- Source: [{citation_key}] ---\n{cleaned_text}"
+            )
         context = "\n\n".join(context_parts)
+
+        # List all valid citation keys for the prompt
+        valid_keys = sorted(set(paper_citation_keys.values()))
+        keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_tokens
         prompt = (
-            f"Based on the following excerpts from research papers, provide a clear and "
-            f"coherent answer to the question. Cite sources using their labels in square "
-            f"brackets (e.g. [AuthorTitle2024]). Aim for approximately {word_target} words.\n\n"
-            f"The sources are only the ones IN THE COLLECTION, not general web knowledge, not the original papers." 
-            f"I want you to answer based on the paper to which the retrieved excerpts belong to , not on your general knowledge.\n\n"
-            f"If the context provides insufficient information to answer the question, "
-            f'reply with "{CANNOT_ANSWER_PHRASE}"\n\n'
+            f"You are a research assistant. Answer the question using ONLY the excerpts below.\n\n"
+            f"CITATION RULES:\n"
+            f"- The ONLY valid citation keys are: {keys_list}\n"
+            f"- Cite by placing the key in square brackets, e.g. {f'[{valid_keys[0]}]' if valid_keys else '[AuthorTitle2024]'}\n"
+            f"- Do NOT invent citation keys. Do NOT cite numbered references from within the text (e.g. [1], [2]).\n"
+            f"- Only use the keys listed above.\n\n"
+            f"Answer based solely on the provided excerpts, not on prior knowledge.\n"
+            f"Aim for approximately {word_target} words.\n"
+            f"If the excerpts do not contain enough information, reply with: "
+            f'"{CANNOT_ANSWER_PHRASE}"\n\n'
             f"Question: {rag_request.query_text}\n\n"
             f"Excerpts:\n{context}\n\n"
             f"Answer:"
@@ -144,23 +163,24 @@ def rag_query(
                 "this question. Try broadening your query or selecting different papers."
             )
 
-    response = {"answer": answer, "results": results}
+    # Always build citations for all retrieved papers
+    citations = {}
+    for paper_id, unique_id in paper_citation_keys.items():
+        meta = paper_metadata_map.get(paper_id)
+        if meta:
+            citations[unique_id] = {
+                "unique_id": meta.unique_id,
+                "title": meta.title,
+                "authors": meta.authors,
+                "year": meta.year,
+                "apa": citation_service.format_apa(meta),
+                "bibtex": citation_service.format_bibtex(meta),
+            }
 
-    # Generate citations if requested
-    if rag_request.include_citations:
-        citations = {}
-        for paper_id in cited_papers:
-            metadata = metadata_service.get_paper_metadata(collection_id, paper_id)
-            if metadata:
-                citations[paper_id] = {
-                    "unique_id": metadata.unique_id,
-                    "title": metadata.title,
-                    "authors": metadata.authors,
-                    "year": metadata.year,
-                    "apa": citation_service.format_apa(metadata),
-                    "bibtex": citation_service.format_bibtex(metadata)
-                }
-
-        response["citations"] = citations
+    response = {
+        "answer": answer,
+        "results": results,
+        "citations": citations,
+    }
 
     return response
