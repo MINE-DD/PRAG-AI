@@ -444,6 +444,17 @@ def render_preprocessing_tab():
                 st.toast(f"Deleted preprocessed output for {action['filename']}")
             except Exception as e:
                 st.error(f"Error deleting: {e}")
+        elif action["type"] == "delete_pdf":
+            try:
+                resp = httpx.post(
+                    f"{BACKEND_URL}/preprocess/delete-pdf",
+                    json={"dir_name": action["dir_name"], "filename": action["filename"]},
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                st.toast(f"Deleted {action['filename']}")
+            except Exception as e:
+                st.error(f"Error deleting PDF: {e}")
 
     # Handle re-process: convert right after delete
     if "preprocess_reconvert" in st.session_state:
@@ -468,6 +479,42 @@ def render_preprocessing_tab():
     except Exception as e:
         st.error(f"Error fetching directories: {e}")
         return
+
+    # --- Upload PDFs section ---
+    if "upload_counter" not in st.session_state:
+        st.session_state["upload_counter"] = 0
+
+    with st.expander("Upload PDFs", icon="📂"):
+        upload_dir_name = st.text_input("Directory name", placeholder="e.g. my_papers", key="upload_dir_name")
+        uploaded_files = st.file_uploader(
+            "Select PDF files (you can select an entire folder's contents)",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key=f"pdf_uploader_{st.session_state['upload_counter']}",
+        )
+        if uploaded_files and upload_dir_name:
+            if st.button("Upload", type="primary", key="do_upload"):
+                with st.spinner(f"Uploading {len(uploaded_files)} file(s)..."):
+                    try:
+                        files_payload = [
+                            ("files", (f.name, f.getvalue(), "application/pdf"))
+                            for f in uploaded_files
+                        ]
+                        resp = httpx.post(
+                            f"{BACKEND_URL}/preprocess/upload",
+                            data={"dir_name": upload_dir_name},
+                            files=files_payload,
+                            timeout=120.0,
+                        )
+                        resp.raise_for_status()
+                        result = resp.json()
+                        st.session_state["upload_counter"] += 1
+                        st.success(f"Uploaded {result['uploaded']} PDF(s) to `{result['dir_name']}`")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Upload failed: {e}")
+        elif uploaded_files and not upload_dir_name:
+            st.warning("Enter a directory name before uploading.")
 
     if not directories:
         st.info("No directories found in `data/pdf_input/`. Place a folder with PDFs there to get started.")
@@ -607,7 +654,7 @@ def render_preprocessing_tab():
                 # Fetch and display assets (tables + images)
                 _render_pdf_assets(selected_dir, fname)
         else:
-            col_status, col_action = st.columns([5, 2])
+            col_status, col_action, col_del = st.columns([5, 2, 1])
             with col_status:
                 st.write(f"`{fname}` — pending")
             with col_action:
@@ -617,6 +664,14 @@ def render_preprocessing_tab():
                         "dir_name": selected_dir,
                         "filename": fname,
                         "backend": backend,
+                    }
+                    st.rerun()
+            with col_del:
+                if st.button("Delete PDF", key=f"delpdf_{fname}", type="secondary"):
+                    st.session_state["preprocess_action"] = {
+                        "type": "delete_pdf",
+                        "dir_name": selected_dir,
+                        "filename": fname,
                     }
                     st.rerun()
 

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -101,6 +103,22 @@ def delete_preprocessed(request: DeleteRequest):
     service = get_preprocessing_service()
     result = service.delete_preprocessed(request.dir_name, request.filename)
     return result
+
+
+@router.post("/preprocess/delete-pdf")
+def delete_source_pdf(request: DeleteRequest):
+    """Delete the source PDF (and its preprocessed output if any)."""
+    service = get_preprocessing_service()
+    pdf_path = Path(settings.pdf_input_dir) / request.dir_name / request.filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    # Also clean up preprocessed output if it exists
+    try:
+        service.delete_preprocessed(request.dir_name, request.filename)
+    except Exception:
+        pass
+    pdf_path.unlink()
+    return {"deleted": request.filename, "dir_name": request.dir_name}
 
 
 @router.get("/preprocess/history")
@@ -206,3 +224,26 @@ def analyze_table(request: AnalyzeTableRequest):
         return {"analysis": analysis, "table_file": request.table_file}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
+
+
+@router.post("/preprocess/upload")
+async def upload_pdfs(dir_name: str = Form(...), files: list[UploadFile] = File(...)):
+    """Upload multiple PDF files into a pdf_input subdirectory."""
+    # Sanitise directory name
+    safe_name = Path(dir_name).name
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid directory name")
+
+    target_dir = Path(settings.pdf_input_dir) / safe_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = []
+    for f in files:
+        if not f.filename or not f.filename.lower().endswith(".pdf"):
+            continue
+        dest = target_dir / Path(f.filename).name
+        content = await f.read()
+        dest.write_bytes(content)
+        saved.append(f.filename)
+
+    return {"dir_name": safe_name, "uploaded": len(saved), "files": saved}
