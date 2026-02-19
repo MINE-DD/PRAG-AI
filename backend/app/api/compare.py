@@ -9,6 +9,9 @@ from app.core.config import settings, load_config
 
 router = APIRouter()
 
+SEARCH_CHUNKS_LIMIT = 50  # Max chunks to retrieve per paper for comparison
+USE_CHUNKS_LIMIT = 10  # Limit chunks included in prompt to avoid token overload
+
 
 class CompareRequest(BaseModel):
     """Request to compare papers"""
@@ -89,13 +92,13 @@ def compare_papers(
         chunks = qdrant.search(
             collection_name=collection_id,
             query_vector=dummy_embedding,
-            limit=50,  # Get up to 50 chunks per paper
+            limit=SEARCH_CHUNKS_LIMIT,  # Get up to SEARCH_CHUNKS_LIMIT chunks per paper
             paper_ids=[paper_id]
         )
 
         # Store chunks for this paper
         paper_chunks = [chunk.payload["chunk_text"] for chunk in chunks]
-        papers_content[paper_id] = "\n\n".join(paper_chunks[:10])  # Limit to 10 chunks per paper
+        papers_content[paper_id] = "\n\n".join(paper_chunks[:USE_CHUNKS_LIMIT])  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
 
     # Build comparison prompt based on aspect
     aspect_prompts = {
@@ -117,14 +120,15 @@ def compare_papers(
 
     prompt = f"""Compare the following {len(request.paper_ids)} research papers. {aspect_instruction}
 
-{combined_content}
+            {combined_content}
 
-Provide a structured comparison covering:
-1. **Similarities**: What do these papers have in common?
-2. **Differences**: How do they differ in approach, methods, or conclusions?
-3. **Key Insights**: What can we learn from comparing these papers?
+            Provide a structured comparison covering:
+            1. **Papers:** Explicitly list each paper by its local label (Paper A, Paper B, etc.) and include key metadata from the collection (title, authors, year).
+            2. **Similarities**: What do these papers have in common?
+            3. **Differences**: How do they differ in approach, methods, or conclusions?
+            4. **Key Insights**: What can we learn from comparing these papers?
 
-Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
+            Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
 
     # Generate comparison using LLM
     comparison = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
