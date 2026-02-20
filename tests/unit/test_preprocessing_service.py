@@ -110,45 +110,39 @@ def test_convert_single_pdf_file_not_found():
     service.pdf_input_dir = Path("/nonexistent")
     service.preprocessed_dir = Path("/nonexistent_out")
     service.history_path = service.preprocessed_dir / "history.json"
-    service.converter = MagicMock()
 
     with pytest.raises(FileNotFoundError):
         service.convert_single_pdf("dir", "missing.pdf")
 
 
 def test_convert_single_pdf_success(service, temp_dirs):
-    """Test successful PDF conversion with mocked Docling."""
+    """Test successful PDF conversion with mocked backend."""
     pdf_input, preprocessed = temp_dirs
     dir1 = Path(pdf_input) / "my_papers"
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    # Mock the Docling converter with proper texts structure
-    mock_title_item = MagicMock()
-    mock_title_item.label.value = "section_header"
-    mock_title_item.text = "Test Paper"
+    mock_converter = MagicMock()
+    mock_converter.convert_to_markdown.return_value = "# Test Paper\n\nSome content here."
+    mock_converter.extract_metadata.return_value = {
+        "title": "Test Paper",
+        "authors": [],
+        "abstract": None,
+        "publication_date": None,
+    }
+    # Remove convert_and_extract so the else branch is used
+    del mock_converter.convert_and_extract
 
-    mock_doc = MagicMock()
-    mock_doc.export_to_markdown.return_value = "# Test Paper\n\nSome content here."
-    mock_doc.texts = [mock_title_item]
-
-    mock_result = MagicMock()
-    mock_result.document = mock_doc
-    service.converter = MagicMock()
-    service.converter.convert.return_value = mock_result
-
-    # Disable API enrichment for unit test
-    result = service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
+    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+        result = service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
 
     assert result["filename"] == "paper1.pdf"
     assert result["markdown_length"] > 0
 
-    # Check files were created
     output_dir = Path(preprocessed) / "my_papers"
     assert (output_dir / "paper1.md").exists()
     assert (output_dir / "paper1_metadata.json").exists()
 
-    # Check metadata content
     metadata = json.loads((output_dir / "paper1_metadata.json").read_text())
     assert metadata["title"] == "Test Paper"
     assert metadata["source_pdf"] == "paper1.pdf"
@@ -167,16 +161,18 @@ def test_history_updated_after_conversion(service, temp_dirs):
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    # Mock Docling
-    mock_doc = MagicMock()
-    mock_doc.export_to_markdown.return_value = "# Content"
-    mock_doc.texts = []
-    mock_result = MagicMock()
-    mock_result.document = mock_doc
-    service.converter = MagicMock()
-    service.converter.convert.return_value = mock_result
+    mock_converter = MagicMock()
+    mock_converter.convert_to_markdown.return_value = "# Content"
+    mock_converter.extract_metadata.return_value = {
+        "title": "Content",
+        "authors": [],
+        "abstract": None,
+        "publication_date": None,
+    }
+    del mock_converter.convert_and_extract
 
-    service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
+    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+        service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
 
     history = service.get_history()
     assert "my_papers" in history["directories"]

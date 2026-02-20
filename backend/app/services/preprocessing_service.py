@@ -5,27 +5,16 @@ from pathlib import Path
 from datetime import datetime, UTC
 from typing import Optional
 
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.datamodel.base_models import InputFormat
+from app.services.pdf_converter_base import get_converter
+# Ensure backend modules register themselves
+import app.services.docling_service  # noqa: F401
+import app.services.pymupdf4llm_service  # noqa: F401
 
 from app.core.config import settings
-from app.services.metadata_api_service import enrich_metadata as _api_enrich
+from app.services.paper_metadata_api_service import enrich_metadata as _api_enrich
 
 # Module-level lock for thread-safe history.json writes
 _history_lock = threading.Lock()
-
-# Section headers to skip when looking for the paper title
-_BOILERPLATE_HEADERS = {
-    "research", "research article", "original research", "original article",
-    "review", "review article", "short communication", "brief communication",
-    "case report", "letter", "commentary", "editorial", "perspective",
-    "open access", "edited by:", "reviewed by:", "*correspondence:",
-    "specialty section:", "citation:", "abstract", "background",
-    "introduction", "methods", "results", "discussion", "conclusions",
-    "references", "acknowledgements", "acknowledgments",
-    "articleinfo", "articlei n f o",
-}
 
 
 class PreprocessingService:
@@ -39,28 +28,6 @@ class PreprocessingService:
         self.pdf_input_dir = Path(pdf_input_dir or settings.pdf_input_dir)
         self.preprocessed_dir = Path(preprocessed_dir or settings.preprocessed_dir)
         self.history_path = self.preprocessed_dir / "history.json"
-
-        # Lean converter: text-only, no image/table generation (fast)
-        lean_options = PdfPipelineOptions()
-        lean_options.generate_picture_images = False
-        lean_options.generate_table_images = False
-
-        self.converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=lean_options)
-            }
-        )
-
-        # Full converter: with image/table generation (for extract_assets)
-        full_options = PdfPipelineOptions()
-        full_options.generate_picture_images = True
-        full_options.generate_table_images = True
-
-        self.full_converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=full_options)
-            }
-        )
 
     def list_directories(self) -> list[dict]:
         """List subdirectories under pdf_input_dir with PDF counts."""
@@ -111,14 +78,13 @@ class PreprocessingService:
 
         stem = source_path.stem
 
-        if backend == "pymupdf":
-            markdown_content = self._convert_with_pymupdf(source_path)
-            paper_meta = self._extract_metadata_from_markdown(markdown_content, stem)
+        converter = get_converter(backend)
+        # Use convert_and_extract if available (avoids double conversion for Docling)
+        if hasattr(converter, "convert_and_extract"):
+            markdown_content, paper_meta = converter.convert_and_extract(source_path, stem)
         else:
-            result = self.converter.convert(str(source_path))
-            doc = result.document
-            markdown_content = doc.export_to_markdown()
-            paper_meta = self._extract_paper_metadata(doc, stem)
+            markdown_content = converter.convert_to_markdown(source_path)
+            paper_meta = converter.extract_metadata(source_path, stem)
 
         # Write markdown
         md_path = output_dir / f"{stem}.md"
@@ -160,57 +126,6 @@ class PreprocessingService:
             "table_count": 0,
             "image_count": 0,
             "metadata_enriched": enriched,
-        }
-
-    @staticmethod
-    def _convert_with_pymupdf(source_path: Path) -> str:
-        """Convert PDF to markdown using pymupdf4llm (fast, text-based)."""
-        import pymupdf4llm
-        return pymupdf4llm.to_markdown(str(source_path))
-
-    def _extract_metadata_from_markdown(self, markdown_text: str, fallback_title: str) -> dict:
-        """Parse title and authors from markdown text."""
-        lines = markdown_text.strip().split("\n")
-
-        title = None
-        title_idx = None
-
-        # First # heading = title
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith("# ") and not stripped.startswith("## "):
-                title = stripped.lstrip("# ").strip()
-                title_idx = i
-                break
-
-        # Fallback: first non-empty line
-        if title is None:
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped and not stripped.startswith("!") and not stripped.startswith("["):
-                    title = stripped
-                    title_idx = i
-                    break
-
-        if title is None:
-            title = fallback_title
-
-        # Authors: first non-empty, non-heading line after title
-        authors = []
-        if title_idx is not None:
-            for line in lines[title_idx + 1 :]:
-                stripped = line.strip()
-                if stripped.startswith("#"):
-                    break
-                if stripped and len(stripped) > 5:
-                    authors = self._parse_authors(stripped)
-                    break
-
-        return {
-            "title": title,
-            "authors": authors,
-            "abstract": None,
-            "publication_date": None,
         }
 
     def enrich_with_api(self, dir_name: str, filename: str, backend: str) -> dict:
@@ -259,15 +174,16 @@ class PreprocessingService:
             raise FileNotFoundError(f"Metadata not found — preprocess {filename} first")
 
         # Re-run Docling with full converter (image/table generation enabled)
-        result = self.full_converter.convert(str(source_path))
-        doc = result.document
+        from app.services.docling_service import DoclingService
+        docling = DoclingService()
+        doc = docling.convert_full(source_path)
 
         # Extract tables and images
         tables_dir = output_dir / f"{stem}_tables"
-        table_info = self._extract_tables(doc, tables_dir)
+        table_info = docling.extract_tables(doc, tables_dir)
 
         images_dir = output_dir / f"{stem}_images"
-        image_info = self._extract_images(doc, images_dir)
+        image_info = docling.extract_images(doc, images_dir)
 
         # Update metadata JSON with tables/images arrays
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -280,200 +196,6 @@ class PreprocessingService:
             "table_count": len(table_info),
             "image_count": len(image_info),
         }
-
-    def _extract_paper_metadata(self, doc, fallback_title: str) -> dict:
-        """Extract title, authors, abstract, and date from Docling document structure."""
-        texts = getattr(doc, "texts", [])
-        if not texts:
-            return {"title": fallback_title, "authors": [], "abstract": None, "publication_date": None}
-
-        title = None
-        title_idx = None
-        authors = []
-        abstract = None
-        publication_date = None
-
-        # --- Title: longest section_header before body sections, skipping boilerplate ---
-        best_len = 0
-        for i, item in enumerate(texts):
-            label = item.label.value
-            text = (item.text or "").strip()
-            lower = text.lower().rstrip(":")
-            normalized = re.sub(r'\s+', '', lower)
-
-            if label == "section_header" and normalized in (
-                "background", "introduction", "methods", "abstract",
-                "1.introduction", "1introduction",
-            ):
-                break
-
-            if label == "section_header" and lower not in _BOILERPLATE_HEADERS and normalized not in _BOILERPLATE_HEADERS and len(text) > best_len:
-                best_len = len(text)
-                title = text
-                title_idx = i
-
-        if title is None:
-            title = fallback_title
-
-        # --- Authors: first text item after the title, before next section_header ---
-        if title_idx is not None:
-            for item in texts[title_idx + 1:]:
-                label = item.label.value
-                text = (item.text or "").strip()
-                if label == "section_header":
-                    break
-                if label == "text" and text:
-                    authors = self._parse_authors(text)
-                    break
-
-        # --- Abstract: text between "Abstract" header and next section_header ---
-        abstract_parts = []
-        in_abstract = False
-        for item in texts:
-            label = item.label.value
-            text = (item.text or "").strip()
-            normalized = re.sub(r'\s+', '', text).lower()
-
-            if label == "section_header" and normalized in ("abstract", "abstract:"):
-                in_abstract = True
-                continue
-            if in_abstract:
-                if label == "section_header":
-                    break
-                if label == "text" and text:
-                    abstract_parts.append(text)
-
-        if abstract_parts:
-            abstract = " ".join(abstract_parts)
-
-        # --- Publication date: look in page_headers for year patterns ---
-        for item in texts[:5]:
-            if item.label.value == "page_header":
-                text = item.text or ""
-                year_match = re.search(r'\b(19|20)\d{2}\b', text)
-                if year_match:
-                    publication_date = year_match.group()
-                    break
-
-        return {
-            "title": title,
-            "authors": authors,
-            "abstract": abstract,
-            "publication_date": publication_date,
-        }
-
-    @staticmethod
-    def _parse_authors(raw: str) -> list[str]:
-        """Parse an author line into a list of clean author names."""
-        cleaned = re.sub(r'\s+\d+(?:\s*,\s*\d+)*[*†‡§]*', '', raw)
-        cleaned = re.sub(r'[*†‡§]+', '', cleaned)
-        cleaned = re.sub(r'\s+[a-e]\b', '', cleaned)
-
-        parts = re.split(r'\s*,\s*|\s+and\s+|\s+&\s+', cleaned)
-
-        authors = []
-        for part in parts:
-            name = part.strip().strip(",")
-            if not name or len(name) < 3:
-                continue
-            if "@" in name or "university" in name.lower() or "department" in name.lower():
-                continue
-            alpha_chars = sum(1 for c in name if c.isalpha())
-            if alpha_chars < 3:
-                continue
-            authors.append(name)
-
-        return authors
-
-    def _extract_tables(self, doc, tables_dir: Path) -> list[dict]:
-        """Extract tables from a Docling document and save as CSV files."""
-        tables = getattr(doc, "tables", [])
-        if not tables:
-            return []
-
-        tables_dir.mkdir(parents=True, exist_ok=True)
-        table_info = []
-
-        for i, table in enumerate(tables):
-            caption = ""
-            try:
-                caption = table.caption_text(doc) or ""
-            except Exception:
-                pass
-
-            page_no = None
-            if table.prov:
-                page_no = table.prov[0].page_no
-
-            # Save as CSV
-            csv_path = tables_dir / f"table_{i}.csv"
-            try:
-                df = table.export_to_dataframe(doc)
-                df.to_csv(str(csv_path), index=False)
-            except Exception:
-                # Fallback: save markdown version
-                try:
-                    md_content = table.export_to_markdown(doc)
-                    csv_path = tables_dir / f"table_{i}.md"
-                    csv_path.write_text(md_content, encoding="utf-8")
-                except Exception:
-                    continue
-
-            table_info.append({
-                "index": i,
-                "caption": caption,
-                "page": page_no,
-                "file": csv_path.name,
-            })
-
-        return table_info
-
-    def _extract_images(self, doc, images_dir: Path) -> list[dict]:
-        """Extract images/pictures from a Docling document and save as PNG files."""
-        pictures = getattr(doc, "pictures", [])
-        if not pictures:
-            return []
-
-        images_dir.mkdir(parents=True, exist_ok=True)
-        image_info = []
-
-        for i, picture in enumerate(pictures):
-            caption = ""
-            try:
-                caption = picture.caption_text(doc) or ""
-            except Exception:
-                pass
-
-            page_no = None
-            if picture.prov:
-                page_no = picture.prov[0].page_no
-
-            # Try to get the PIL image
-            pil_img = None
-            if hasattr(picture, "image") and picture.image:
-                pil_img = getattr(picture.image, "pil_image", None)
-            if pil_img is None:
-                try:
-                    pil_img = picture.get_image(doc)
-                except Exception:
-                    pass
-
-            if pil_img is None:
-                continue
-
-            png_path = images_dir / f"image_{i}.png"
-            pil_img.save(str(png_path))
-
-            image_info.append({
-                "index": i,
-                "caption": caption,
-                "page": page_no,
-                "file": png_path.name,
-                "width": pil_img.size[0],
-                "height": pil_img.size[1],
-            })
-
-        return image_info
 
     def delete_preprocessed(self, dir_name: str, filename: str) -> dict:
         """Delete the preprocessed output (.md + _metadata.json + tables + images) for a single PDF."""
