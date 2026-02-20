@@ -99,30 +99,29 @@ def test_convert_pdf_not_found(client):
     assert response.status_code == 404
 
 
-@patch("app.services.preprocessing_service.DocumentConverter")
-def test_convert_pdf_success(mock_converter_cls, client, temp_dirs):
+def test_convert_pdf_success(client, temp_dirs):
     """Test successful PDF conversion."""
     pdf_input, preprocessed = temp_dirs
     dir1 = Path(pdf_input) / "my_papers"
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    # Mock Docling
-    mock_doc = MagicMock()
-    mock_doc.export_to_markdown.return_value = "# Converted markdown"
-    mock_doc.title = "Test Paper"
-    mock_doc.authors = ["Author"]
-    mock_doc.abstract = "Abstract text"
-    mock_doc.publication_date = "2024"
+    # Mock the converter backend
+    mock_converter = MagicMock()
+    mock_converter.convert_to_markdown.return_value = "# Converted markdown"
+    mock_converter.extract_metadata.return_value = {
+        "title": "Test Paper",
+        "authors": ["Author"],
+        "abstract": "Abstract text",
+        "publication_date": "2024",
+    }
+    del mock_converter.convert_and_extract
 
-    mock_result = MagicMock()
-    mock_result.document = mock_doc
-    mock_converter_cls.return_value.convert.return_value = mock_result
-
-    response = client.post(
-        "/preprocess/convert",
-        json={"dir_name": "my_papers", "filename": "paper1.pdf"}
-    )
+    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+        response = client.post(
+            "/preprocess/convert",
+            json={"dir_name": "my_papers", "filename": "paper1.pdf", "metadata_backend": "none"}
+        )
     assert response.status_code == 200
     data = response.json()
     assert data["filename"] == "paper1.pdf"
