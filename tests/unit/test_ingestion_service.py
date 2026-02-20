@@ -44,6 +44,7 @@ def mock_services():
     """Create mock services for ingestion."""
     chunking = ChunkingService(chunk_size=500, overlap=100)
     ollama = Mock()
+    ollama.generate_embedding.return_value = [0.1] * 1024
     ollama.generate_embeddings_batch.return_value = [[0.1] * 1024]  # One embedding
     qdrant = Mock()
     qdrant.create_collection = Mock()
@@ -69,7 +70,8 @@ def test_scan_preprocessed_not_found(service):
 
 def test_scan_preprocessed(service, temp_preprocessed_dir):
     """Test scanning preprocessed directory."""
-    files = service.scan_preprocessed(temp_preprocessed_dir)
+    result = service.scan_preprocessed(temp_preprocessed_dir)
+    files = result["files"]
     assert len(files) == 2
 
     paper1 = next(f for f in files if f["stem"] == "paper1")

@@ -123,20 +123,22 @@ def test_convert_single_pdf_success(service, temp_dirs):
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    # Mock the Docling converter
+    # Mock the Docling converter with proper texts structure
+    mock_title_item = MagicMock()
+    mock_title_item.label.value = "section_header"
+    mock_title_item.text = "Test Paper"
+
     mock_doc = MagicMock()
     mock_doc.export_to_markdown.return_value = "# Test Paper\n\nSome content here."
-    mock_doc.title = "Test Paper"
-    mock_doc.authors = ["Author One"]
-    mock_doc.abstract = "An abstract."
-    mock_doc.publication_date = "2024"
+    mock_doc.texts = [mock_title_item]
 
     mock_result = MagicMock()
     mock_result.document = mock_doc
     service.converter = MagicMock()
     service.converter.convert.return_value = mock_result
 
-    result = service.convert_single_pdf("my_papers", "paper1.pdf")
+    # Disable API enrichment for unit test
+    result = service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
 
     assert result["filename"] == "paper1.pdf"
     assert result["markdown_length"] > 0
@@ -149,7 +151,6 @@ def test_convert_single_pdf_success(service, temp_dirs):
     # Check metadata content
     metadata = json.loads((output_dir / "paper1_metadata.json").read_text())
     assert metadata["title"] == "Test Paper"
-    assert metadata["authors"] == ["Author One"]
     assert metadata["source_pdf"] == "paper1.pdf"
 
 
@@ -169,16 +170,13 @@ def test_history_updated_after_conversion(service, temp_dirs):
     # Mock Docling
     mock_doc = MagicMock()
     mock_doc.export_to_markdown.return_value = "# Content"
-    mock_doc.title = "Title"
-    mock_doc.authors = []
-    mock_doc.abstract = None
-    mock_doc.publication_date = None
+    mock_doc.texts = []
     mock_result = MagicMock()
     mock_result.document = mock_doc
     service.converter = MagicMock()
     service.converter.convert.return_value = mock_result
 
-    service.convert_single_pdf("my_papers", "paper1.pdf")
+    service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
 
     history = service.get_history()
     assert "my_papers" in history["directories"]

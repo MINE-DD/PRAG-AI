@@ -101,8 +101,8 @@ class PDFProcessor:
         # Extract metadata
         metadata = self.extract_metadata(doc, paper_id)
 
-        # Extract text content
-        text_content = doc.export_to_text()
+        # Extract text content (v2: export_to_markdown replaces export_to_text)
+        text_content = doc.export_to_markdown()
 
         # TODO: Extract tables and figures (Phase 4.3)
 

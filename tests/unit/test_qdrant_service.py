@@ -57,6 +57,12 @@ def test_search_chunks(qdrant_service):
     mock_response.points = []
     qdrant_service.client.query_points = Mock(return_value=mock_response)
 
+    # Mock get_collection for _collection_uses_named_vectors and _collection_has_sparse
+    mock_collection_info = Mock()
+    mock_collection_info.config.params.vectors = {"dense": Mock(size=768)}
+    mock_collection_info.config.params.sparse_vectors = None
+    qdrant_service.client.get_collection = Mock(return_value=mock_collection_info)
+
     results = qdrant_service.search(
         collection_name="test-collection",
         query_vector=[0.1] * 768,

@@ -33,6 +33,7 @@ def mock_qdrant():
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.collection_exists = Mock(return_value=True)
+        mock_instance.get_vector_size = Mock(return_value=1024)
 
         # Mock search results
         mock_chunk = Mock()

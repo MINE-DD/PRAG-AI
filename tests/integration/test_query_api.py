@@ -199,12 +199,12 @@ def test_rag_query_with_citations(client, test_collection):
     assert "citations" in data
     assert isinstance(data["citations"], dict)
 
-    # Citations should map paper_id to citation info
+    # Citations are keyed by unique_id (citation key)
     if len(data["results"]) > 0:
-        paper_id = data["results"][0]["paper_id"]
-        assert paper_id in data["citations"]
+        unique_id = data["results"][0]["unique_id"]
+        assert unique_id in data["citations"]
 
-        citation_info = data["citations"][paper_id]
+        citation_info = data["citations"][unique_id]
         assert "apa" in citation_info
         assert "bibtex" in citation_info
         assert "unique_id" in citation_info

@@ -57,6 +57,7 @@ def mock_ollama():
     """Mock Ollama service."""
     with patch("app.api.ingest.OllamaService") as mock_cls:
         mock_instance = Mock()
+        mock_instance.generate_embedding.return_value = [0.1] * 1024
         mock_instance.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
         mock_cls.return_value = mock_instance
         yield mock_instance

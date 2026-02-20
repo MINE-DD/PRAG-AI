@@ -88,7 +88,7 @@ def services(mock_pdf_processor, mock_qdrant, mock_ollama):
 @pytest.fixture
 def sample_pdf_path():
     """Path to a real test PDF"""
-    pdf_path = Path(__file__).parent.parent.parent / "data" / "pdf_input" / "TeachingNLP_short_CAMERA_READY.pdf"
+    pdf_path = Path(__file__).parent.parent.parent / "data" / "pdf_input" / "aliens.pdf"
     if not pdf_path.exists():
         pytest.skip(f"Test PDF not found at {pdf_path}")
     return pdf_path

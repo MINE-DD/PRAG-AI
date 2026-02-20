@@ -28,5 +28,5 @@ def test_load_config_from_yaml():
 
     assert "models" in config
     assert "chunking" in config
-    assert config["models"]["embedding"] == "mxbai-embed-large"
+    assert config["models"]["embedding"] == "nomic-embed-text:latest"
     assert config["chunking"]["size"] == 500
