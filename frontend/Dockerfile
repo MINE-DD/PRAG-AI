@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install streamlit httpx Pillow
 
 # Copy application code
-COPY frontend/app.py .
+COPY frontend/ .
 
 # Expose port
 EXPOSE 8501

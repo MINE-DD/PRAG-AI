@@ -19,3 +19,8 @@ class CollectionResponse(BaseModel):
     collection_id: str
     name: str
     papers: list[dict] = Field(default_factory=list)
+
+
+class CreateCollectionRequest(BaseModel):
+    name: str
+    description: str | None = None

@@ -3,14 +3,9 @@ from pydantic import BaseModel
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
 from app.core.config import settings
-from app.models.collection import Collection
+from app.models.collection import Collection, CreateCollectionRequest
 
 router = APIRouter()
-
-
-class CreateCollectionRequest(BaseModel):
-    name: str
-    description: str = None
 
 
 def get_collection_service():
