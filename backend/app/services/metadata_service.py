@@ -2,41 +2,23 @@ import json
 from pathlib import Path
 from typing import Optional
 from app.models.paper import PaperMetadata
-from app.services.pdf_processor import PDFProcessor
 
 
 class MetadataService:
-    """Service for loading paper metadata from JSON files or PDF fallback."""
+    """Service for loading paper metadata from JSON files."""
 
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
-        self._pdf_processor = None
-
-    @property
-    def pdf_processor(self) -> PDFProcessor:
-        """Lazy-load PDF processor only when needed for fallback."""
-        if self._pdf_processor is None:
-            self._pdf_processor = PDFProcessor()
-        return self._pdf_processor
 
     def get_paper_metadata(self, collection_id: str, paper_id: str) -> Optional[PaperMetadata]:
         """
-        Load paper metadata, preferring JSON file over PDF re-processing.
+        Load paper metadata from JSON file.
 
-        Lookup order:
-        1. /data/collections/{id}/metadata/{paper_id}.json (new ingestion flow)
-        2. /data/collections/{id}/pdfs/{paper_id}.pdf (legacy fallback)
+        Looks for: /data/collections/{id}/metadata/{paper_id}.json
         """
-        # Try JSON metadata first (fast path)
         json_path = self.data_dir / collection_id / "metadata" / f"{paper_id}.json"
         if json_path.exists():
             return self._load_from_json(json_path, paper_id)
-
-        # Fallback: re-process PDF (legacy collections)
-        pdf_path = self.data_dir / collection_id / "pdfs" / f"{paper_id}.pdf"
-        if pdf_path.exists():
-            result = self.pdf_processor.process_pdf(pdf_path, paper_id)
-            return result["metadata"]
 
         return None
 
