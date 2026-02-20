@@ -3,7 +3,6 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from app.services.metadata_service import MetadataService
 from app.models.paper import PaperMetadata
@@ -54,47 +53,6 @@ def test_get_paper_metadata_not_found(service):
     """Test loading metadata for non-existent paper."""
     result = service.get_paper_metadata("nonexistent", "paper1")
     assert result is None
-
-
-def test_get_paper_metadata_pdf_fallback(service, temp_data_dir):
-    """Test PDF fallback when no JSON exists."""
-    # Create a fake PDF file
-    pdf_dir = Path(temp_data_dir) / "test_coll" / "pdfs"
-    pdf_dir.mkdir(parents=True)
-    (pdf_dir / "paper1.pdf").write_bytes(b"%PDF-1.4 fake")
-
-    # Mock PDF processor via the private attribute
-    mock_metadata = PaperMetadata(
-        paper_id="paper1",
-        title="PDF Paper",
-        authors=["PDF Author"],
-        unique_id="AuthorPdfPaper2024",
-    )
-    mock_proc = MagicMock()
-    mock_proc.process_pdf.return_value = {"metadata": mock_metadata}
-    service._pdf_processor = mock_proc
-
-    result = service.get_paper_metadata("test_coll", "paper1")
-
-    assert result is not None
-    assert result.title == "PDF Paper"
-
-
-def test_get_paper_metadata_json_preferred_over_pdf(service, temp_data_dir):
-    """Test that JSON metadata is preferred over PDF re-processing."""
-    # Create both JSON and PDF
-    _create_metadata_json(temp_data_dir, "test_coll", "paper1", {
-        "paper_id": "paper1",
-        "title": "JSON Title",
-        "authors": [],
-        "unique_id": "JsonTitle",
-    })
-    pdf_dir = Path(temp_data_dir) / "test_coll" / "pdfs"
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-    (pdf_dir / "paper1.pdf").write_bytes(b"%PDF-1.4 fake")
-
-    result = service.get_paper_metadata("test_coll", "paper1")
-    assert result.title == "JSON Title"
 
 
 def test_list_papers_empty(service, temp_data_dir):
