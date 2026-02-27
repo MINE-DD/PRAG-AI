@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRAG-v2</title>
+  <style>
+    /* ── Reset & variables ───────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --sidebar-w: 260px;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --sidebar-bg: #1e293b;
+      --sidebar-text: #f1f5f9;
+      --sidebar-muted: #94a3b8;
+      --sidebar-hover: #334155;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    #app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0; background: var(--sidebar-bg);
+      color: var(--sidebar-text); display: flex; flex-direction: column;
+      position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 10;
+    }
+    .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column;
+            min-height: 100vh; }
+
+    /* ── Sidebar internals ───────────────────────────── */
+    .sidebar-header { padding: 20px 16px 12px; border-bottom: 1px solid #334155; }
+    .sidebar-header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .sidebar-header p  { font-size: 11px; color: var(--sidebar-muted); margin-top: 2px; }
+    .sidebar-section { padding: 12px 16px; border-bottom: 1px solid #334155; }
+    .sidebar-section-title { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                              letter-spacing: .8px; color: var(--sidebar-muted); margin-bottom: 8px; }
+    .status-row { display: flex; align-items: center; gap: 8px; font-size: 13px;
+                  padding: 3px 0; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--success); }
+    .dot-red    { background: var(--danger); }
+    .dot-yellow { background: var(--warning); }
+    .dot-gray   { background: var(--sidebar-muted); }
+    .sidebar-label { font-size: 11px; color: var(--sidebar-muted); margin-bottom: 4px; }
+    .sidebar-select {
+      width: 100%; background: #334155; color: var(--sidebar-text);
+      border: 1px solid #475569; border-radius: 6px; padding: 6px 8px;
+      font-size: 13px; cursor: pointer;
+    }
+    .sidebar-select:focus { outline: 2px solid var(--primary); }
+    .sidebar-footer { margin-top: auto; padding: 12px 16px;
+                      border-top: 1px solid #334155; }
+    .btn-ghost { width: 100%; background: none; border: 1px solid #475569;
+                 color: var(--sidebar-text); padding: 7px 12px; border-radius: 6px;
+                 font-size: 13px; cursor: pointer; display: flex; align-items: center;
+                 gap: 6px; justify-content: center; }
+    .btn-ghost:hover { background: var(--sidebar-hover); }
+
+    /* ── Tabs ────────────────────────────────────────── */
+    .tab-bar { display: flex; background: var(--card); border-bottom: 1px solid var(--border);
+               padding: 0 24px; gap: 0; position: sticky; top: 0; z-index: 5; }
+    .tab-btn { padding: 14px 18px; font-size: 13px; font-weight: 500; cursor: pointer;
+               border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent;
+               transition: color .15s, border-color .15s; }
+    .tab-btn:hover   { color: var(--text); }
+    .tab-btn.active  { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* ── Content area ────────────────────────────────── */
+    .content { flex: 1; padding: 28px 32px; max-width: 960px; }
+
+    /* ── Cards ───────────────────────────────────────── */
+    .card { background: var(--card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+            box-shadow: var(--shadow); }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+
+    /* ── Forms ───────────────────────────────────────── */
+    label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%; border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; font-size: 13px; color: var(--text);
+      background: var(--card); transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .form-group { margin-bottom: 12px; }
+
+    /* ── Buttons ─────────────────────────────────────── */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+           border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+           border: none; transition: background .15s, opacity .15s; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: var(--border); }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-block { width: 100%; justify-content: center; }
+
+    /* ── Alerts ──────────────────────────────────────── */
+    .alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;
+             display: flex; align-items: flex-start; gap: 8px; }
+    .alert-error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .alert-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .alert-info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .alert-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .alert-close { margin-left: auto; cursor: pointer; opacity: .6; background: none;
+                   border: none; font-size: 16px; line-height: 1; color: inherit; }
+    .alert-close:hover { opacity: 1; }
+
+    /* ── Badge / Tag ─────────────────────────────────── */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px;
+             font-weight: 500; }
+    .badge-blue   { background: #dbeafe; color: #1e40af; }
+    .badge-green  { background: #dcfce7; color: #166534; }
+    .badge-gray   { background: #f1f5f9; color: var(--muted); }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+
+    /* ── Spinner ─────────────────────────────────────── */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
+               border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Table ───────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600;
+         text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+
+    /* ── Misc helpers ────────────────────────────────── */
+    .flex   { display: flex; }
+    .items-center { align-items: center; }
+    .gap-8  { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .mt-8   { margin-top: 8px; }
+    .mt-16  { margin-top: 16px; }
+    .mb-16  { margin-bottom: 16px; }
+    .text-muted { color: var(--muted); }
+    .text-sm    { font-size: 12px; }
+    .font-mono  { font-family: 'SF Mono', 'Fira Code', monospace; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .empty-state { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .empty-state p { margin-top: 8px; font-size: 13px; }
+    pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+          padding: 12px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;
+          word-break: break-all; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+    /* ── Collapsible ─────────────────────────────────── */
+    .collapsible { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+    .collapsible-header { display: flex; align-items: center; justify-content: space-between;
+                          padding: 10px 14px; cursor: pointer; font-weight: 500; font-size: 13px; }
+    .collapsible-header:hover { background: var(--bg); border-radius: 6px; }
+    .collapsible-body { padding: 0 14px 12px; font-size: 13px; }
+    .chevron { transition: transform .2s; display: inline-block; }
+    .chevron.open { transform: rotate(90deg); }
+
+    /* ── Modal ───────────────────────────────────────── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4);
+                     z-index: 100; display: flex; align-items: center; justify-content: center; }
+    .modal { background: var(--card); border-radius: var(--radius); padding: 24px;
+             width: 460px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+    /* ── Progress bar ────────────────────────────────── */
+    .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--primary); border-radius: 2px;
+                     transition: width .3s ease; }
+
+    /* ── File list ───────────────────────────────────── */
+    .file-item { display: flex; align-items: center; justify-content: space-between;
+                 padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+                 margin-bottom: 6px; background: var(--card); }
+    .file-item:hover { border-color: var(--primary); }
+    .file-name { font-size: 13px; font-weight: 500; }
+    .file-meta { font-size: 11px; color: var(--muted); }
+
+    /* ── Citation box ────────────────────────────────── */
+    .citation-box { background: var(--bg); border-left: 3px solid var(--primary);
+                    padding: 10px 14px; border-radius: 0 6px 6px 0; margin-top: 8px; }
+
+    /* ── Passage ─────────────────────────────────────── */
+    .passage { border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+               margin-bottom: 8px; }
+    .passage-score { font-size: 11px; color: var(--primary); font-weight: 600; }
+    .passage-text { margin: 6px 0; line-height: 1.6; }
+    .passage-meta  { font-size: 11px; color: var(--muted); }
+
+    /* ── Checkbox toggle ─────────────────────────────── */
+    .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer;
+                      font-size: 13px; padding: 4px 0; }
+    .checkbox-label input[type=checkbox] { width: 14px; height: 14px; cursor: pointer; }
+
+    /* ── Radio ───────────────────────────────────────── */
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 100%; position: relative; height: auto; }
+      .main { margin-left: 0; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ───────────────── SIDEBAR ───────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>PRAG-v2</h1>
+      <p>Academic RAG System</p>
+    </div>
+
+    <!-- Connection status -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Status</div>
+      <div class="status-row">
+        <span class="dot" :class="health.backend ? 'dot-green' : 'dot-red'"></span>
+        <span>Backend</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.qdrant ? 'dot-green' : 'dot-red'"></span>
+        <span>Qdrant</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.ollama === true ? 'dot-green' : health.ollama === false ? 'dot-red' : 'dot-yellow'"></span>
+        <span>Ollama</span>
+      </div>
+    </div>
+
+    <!-- Collection picker -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Active collection</div>
+      <select class="sidebar-select" v-model="selectedCollection" @change="saveCollection">
+        <option value="">— none —</option>
+        <option v-for="c in collections" :key="c.collection_id" :value="c.collection_id">
+          {{ c.name || c.collection_id }}
+        </option>
+      </select>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-ghost" @click="showSettings = true">⚙ Settings</button>
+    </div>
+  </aside>
+
+  <!-- ───────────────── MAIN ───────────────── -->
+  <div class="main">
+
+    <!-- Tab bar -->
+    <nav class="tab-bar">
+      <button v-for="tab in tabs" :key="tab.id"
+              class="tab-btn" :class="{active: activeTab === tab.id}"
+              @click="activeTab = tab.id">
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <!-- Tab content -->
+    <div class="content">
+      <!-- Global error banner -->
+      <div v-if="globalError" class="alert alert-error">
+        {{ globalError }}
+        <button class="alert-close" @click="globalError = null">×</button>
+      </div>
+
+      <keep-alive>
+        <component :is="activeComponent"
+                   :selected-collection="selectedCollection"
+                   :collections="collections"
+                   @update:collection="setCollection"
+                   @refresh-collections="loadCollections" />
+      </keep-alive>
+    </div>
+  </div>
+
+  <!-- ───────────────── SETTINGS MODAL ───────────────── -->
+  <div class="modal-overlay" v-if="showSettings" @click.self="showSettings = false">
+    <div class="modal">
+      <div class="modal-title">⚙ Settings</div>
+
+      <div class="form-group">
+        <label>Backend URL</label>
+        <input type="text" v-model="settingsForm.backendUrl"
+               placeholder="http://localhost:8000" />
+      </div>
+      <div class="flex items-center gap-8" style="margin-bottom:12px">
+        <span class="dot" :class="settingsStatus === 'ok' ? 'dot-green' : settingsStatus === 'checking' ? 'dot-yellow' : 'dot-red'"></span>
+        <span class="text-muted text-sm">
+          {{ settingsStatus === 'ok' ? 'Connected' : settingsStatus === 'checking' ? 'Checking…' : 'Not reachable' }}
+        </span>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="showSettings = false">Cancel</button>
+        <button class="btn btn-primary" @click="saveSettings">Save & connect</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script type="module">
+import {
+  createApp, defineComponent, ref, reactive, computed,
+  onMounted, onUnmounted, watch
+} from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+
+/* ═══════════════════════════════════════════════
+   API WRAPPER
+═══════════════════════════════════════════════ */
+const api = {
+  url: () => localStorage.getItem('prag_backend_url') || 'http://localhost:8000',
+
+  async get(path) {
+    const r = await fetch(api.url() + path)
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async post(path, body = {}) {
+    const r = await fetch(api.url() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async del(path) {
+    const r = await fetch(api.url() + path, { method: 'DELETE' })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.status === 204 ? null : r.json()
+  },
+
+  async upload(path, formData) {
+    const r = await fetch(api.url() + path, { method: 'POST', body: formData })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async download(path) {
+    const r = await fetch(api.url() + path)
+    if (!r.ok) throw new Error(`${r.status}`)
+    return r.blob()
+  },
+}
+
+/* ═══════════════════════════════════════════════
+   SHARED UTILITY
+═══════════════════════════════════════════════ */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
+/* ═══════════════════════════════════════════════
+   PLACEHOLDER COMPONENTS
+   (replaced in Tasks 5-9)
+═══════════════════════════════════════════════ */
+const PdfTab = defineComponent({
+  name: 'PdfTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection', 'refresh-collections'],
+  template: `<div><div class="empty-state"><div style="font-size:32px">📄</div><p>PDF Management — coming soon</p></div></div>`,
+})
+
+const CollectionsTab = defineComponent({
+  name: 'CollectionsTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection', 'refresh-collections'],
+  template: `<div><div class="empty-state"><div style="font-size:32px">📚</div><p>Collections — coming soon</p></div></div>`,
+})
+
+const RagTab = defineComponent({
+  name: 'RagTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+  template: `<div><div class="empty-state"><div style="font-size:32px">🔍</div><p>RAG Query — coming soon</p></div></div>`,
+})
+
+const ExploreTab = defineComponent({
+  name: 'ExploreTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+  template: `<div><div class="empty-state"><div style="font-size:32px">🔬</div><p>Explore Paper — coming soon</p></div></div>`,
+})
+
+const CompareTab = defineComponent({
+  name: 'CompareTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+  template: `<div><div class="empty-state"><div style="font-size:32px">⚖️</div><p>Compare Papers — coming soon</p></div></div>`,
+})
+
+/* ═══════════════════════════════════════════════
+   ROOT APP
+═══════════════════════════════════════════════ */
+createApp({
+  components: { PdfTab, CollectionsTab, RagTab, ExploreTab, CompareTab },
+
+  setup() {
+    const activeTab = ref('pdf')
+    const selectedCollection = ref(localStorage.getItem('prag_collection') || '')
+    const collections = ref([])
+    const globalError = ref(null)
+    const showSettings = ref(false)
+    const health = reactive({ backend: false, qdrant: false, ollama: null })
+
+    const settingsForm = reactive({
+      backendUrl: localStorage.getItem('prag_backend_url') || 'http://localhost:8000',
+    })
+    const settingsStatus = ref('unknown')
+
+    const tabs = [
+      { id: 'pdf',         label: 'PDF Management' },
+      { id: 'collections', label: 'Collections' },
+      { id: 'rag',         label: 'RAG Query' },
+      { id: 'explore',     label: 'Explore Paper' },
+      { id: 'compare',     label: 'Compare' },
+    ]
+
+    const tabComponents = {
+      pdf:         'PdfTab',
+      collections: 'CollectionsTab',
+      rag:         'RagTab',
+      explore:     'ExploreTab',
+      compare:     'CompareTab',
+    }
+
+    const activeComponent = computed(() => tabComponents[activeTab.value])
+
+    async function checkHealth() {
+      try {
+        const data = await api.get('/health')
+        health.backend = true
+        health.qdrant  = data.qdrant === 'ok'
+        health.ollama  = data.ollama === 'ok'
+      } catch {
+        health.backend = false
+        health.qdrant  = false
+        health.ollama  = false
+      }
+    }
+
+    async function loadCollections() {
+      try {
+        collections.value = await api.get('/collections')
+      } catch (e) {
+        globalError.value = 'Could not load collections: ' + e.message
+      }
+    }
+
+    function setCollection(id) {
+      selectedCollection.value = id
+      localStorage.setItem('prag_collection', id)
+    }
+
+    function saveCollection() {
+      localStorage.setItem('prag_collection', selectedCollection.value)
+    }
+
+    async function saveSettings() {
+      settingsStatus.value = 'checking'
+      localStorage.setItem('prag_backend_url', settingsForm.backendUrl)
+      try {
+        await api.get('/health')
+        settingsStatus.value = 'ok'
+        showSettings.value = false
+        await checkHealth()
+        await loadCollections()
+      } catch {
+        settingsStatus.value = 'error'
+      }
+    }
+
+    let healthTimer
+    onMounted(async () => {
+      await checkHealth()
+      await loadCollections()
+      healthTimer = setInterval(checkHealth, 30_000)
+    })
+    onUnmounted(() => clearInterval(healthTimer))
+
+    return {
+      activeTab, tabs, activeComponent,
+      selectedCollection, collections,
+      globalError, showSettings, health,
+      settingsForm, settingsStatus,
+      setCollection, saveCollection, saveSettings, loadCollections,
+    }
+  },
+}).mount('#app')
+</script>
+</body>
+</html>
