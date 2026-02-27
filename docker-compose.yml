@@ -34,15 +34,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    ports:
-      - "8501:8501"
-    depends_on:
-      - backend
-    environment:
-      - BACKEND_URL=http://backend:8000
-    restart: unless-stopped

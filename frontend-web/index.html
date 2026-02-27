@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRAG-v2</title>
+  <style>
+    /* ── Reset & variables ───────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --sidebar-w: 260px;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --sidebar-bg: #1e293b;
+      --sidebar-text: #f1f5f9;
+      --sidebar-muted: #94a3b8;
+      --sidebar-hover: #334155;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    #app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0; background: var(--sidebar-bg);
+      color: var(--sidebar-text); display: flex; flex-direction: column;
+      position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 10;
+    }
+    .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column;
+            min-height: 100vh; }
+
+    /* ── Sidebar internals ───────────────────────────── */
+    .sidebar-header { padding: 20px 16px 12px; border-bottom: 1px solid #334155; }
+    .sidebar-header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .sidebar-header p  { font-size: 11px; color: var(--sidebar-muted); margin-top: 2px; }
+    .sidebar-section { padding: 12px 16px; border-bottom: 1px solid #334155; }
+    .sidebar-section-title { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                              letter-spacing: .8px; color: var(--sidebar-muted); margin-bottom: 8px; }
+    .status-row { display: flex; align-items: center; gap: 8px; font-size: 13px;
+                  padding: 3px 0; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--success); }
+    .dot-red    { background: var(--danger); }
+    .dot-yellow { background: var(--warning); }
+    .dot-gray   { background: var(--sidebar-muted); }
+    .sidebar-label { font-size: 11px; color: var(--sidebar-muted); margin-bottom: 4px; }
+    .sidebar-select {
+      width: 100%; background: #334155; color: var(--sidebar-text);
+      border: 1px solid #475569; border-radius: 6px; padding: 6px 8px;
+      font-size: 13px; cursor: pointer;
+    }
+    .sidebar-select:focus { outline: 2px solid var(--primary); }
+    .sidebar-footer { margin-top: auto; padding: 12px 16px;
+                      border-top: 1px solid #334155; }
+    .btn-ghost { width: 100%; background: none; border: 1px solid #475569;
+                 color: var(--sidebar-text); padding: 7px 12px; border-radius: 6px;
+                 font-size: 13px; cursor: pointer; display: flex; align-items: center;
+                 gap: 6px; justify-content: center; }
+    .btn-ghost:hover { background: var(--sidebar-hover); }
+
+    /* ── Tabs ────────────────────────────────────────── */
+    .tab-bar { display: flex; background: var(--card); border-bottom: 1px solid var(--border);
+               padding: 0 24px; gap: 0; position: sticky; top: 0; z-index: 5; }
+    .tab-btn { padding: 14px 18px; font-size: 13px; font-weight: 500; cursor: pointer;
+               border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent;
+               transition: color .15s, border-color .15s; }
+    .tab-btn:hover   { color: var(--text); }
+    .tab-btn.active  { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* ── Content area ────────────────────────────────── */
+    .content { flex: 1; padding: 28px 32px; max-width: 960px; }
+
+    /* ── Cards ───────────────────────────────────────── */
+    .card { background: var(--card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+            box-shadow: var(--shadow); }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+
+    /* ── Forms ───────────────────────────────────────── */
+    label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%; border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; font-size: 13px; color: var(--text);
+      background: var(--card); transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .form-group { margin-bottom: 12px; }
+
+    /* ── Buttons ─────────────────────────────────────── */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+           border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+           border: none; transition: background .15s, opacity .15s; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: var(--border); }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-block { width: 100%; justify-content: center; }
+
+    /* ── Alerts ──────────────────────────────────────── */
+    .alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;
+             display: flex; align-items: flex-start; gap: 8px; }
+    .alert-error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .alert-success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .alert-info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    .alert-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .alert-close { margin-left: auto; cursor: pointer; opacity: .6; background: none;
+                   border: none; font-size: 16px; line-height: 1; color: inherit; }
+    .alert-close:hover { opacity: 1; }
+
+    /* ── Badge / Tag ─────────────────────────────────── */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px;
+             font-weight: 500; }
+    .badge-blue   { background: #dbeafe; color: #1e40af; }
+    .badge-green  { background: #dcfce7; color: #166534; }
+    .badge-gray   { background: #f1f5f9; color: var(--muted); }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+
+    /* ── Spinner ─────────────────────────────────────── */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
+               border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Table ───────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600;
+         text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+
+    /* ── Misc helpers ────────────────────────────────── */
+    .flex   { display: flex; }
+    .items-center { align-items: center; }
+    .gap-8  { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .mt-8   { margin-top: 8px; }
+    .mt-16  { margin-top: 16px; }
+    .mb-16  { margin-bottom: 16px; }
+    .text-muted { color: var(--muted); }
+    .text-sm    { font-size: 12px; }
+    .font-mono  { font-family: 'SF Mono', 'Fira Code', monospace; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .page-sub   { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .empty-state { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .empty-state p { margin-top: 8px; font-size: 13px; }
+    pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+          padding: 12px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;
+          word-break: break-all; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+    /* ── Collapsible ─────────────────────────────────── */
+    .collapsible { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+    .collapsible-header { display: flex; align-items: center; justify-content: space-between;
+                          padding: 10px 14px; cursor: pointer; font-weight: 500; font-size: 13px; }
+    .collapsible-header:hover { background: var(--bg); border-radius: 6px; }
+    .collapsible-body { padding: 0 14px 12px; font-size: 13px; }
+    .chevron { transition: transform .2s; display: inline-block; }
+    .chevron.open { transform: rotate(90deg); }
+
+    /* ── Modal ───────────────────────────────────────── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4);
+                     z-index: 100; display: flex; align-items: center; justify-content: center; }
+    .modal { background: var(--card); border-radius: var(--radius); padding: 24px;
+             width: 460px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+    /* ── Progress bar ────────────────────────────────── */
+    .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--primary); border-radius: 2px;
+                     transition: width .3s ease; }
+
+    /* ── File list ───────────────────────────────────── */
+    .file-item { display: flex; align-items: center; justify-content: space-between;
+                 padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+                 margin-bottom: 6px; background: var(--card); }
+    .file-item:hover { border-color: var(--primary); }
+    .file-name { font-size: 13px; font-weight: 500; }
+    .file-meta { font-size: 11px; color: var(--muted); }
+
+    /* ── Citation box ────────────────────────────────── */
+    .citation-box { background: var(--bg); border-left: 3px solid var(--primary);
+                    padding: 10px 14px; border-radius: 0 6px 6px 0; margin-top: 8px; }
+
+    /* ── Passage ─────────────────────────────────────── */
+    .passage { border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+               margin-bottom: 8px; }
+    .passage-score { font-size: 11px; color: var(--primary); font-weight: 600; }
+    .passage-text { margin: 6px 0; line-height: 1.6; }
+    .passage-meta  { font-size: 11px; color: var(--muted); }
+
+    /* ── Checkbox toggle ─────────────────────────────── */
+    .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer;
+                      font-size: 13px; padding: 4px 0; }
+    .checkbox-label input[type=checkbox] { width: 14px; height: 14px; cursor: pointer; }
+
+    /* ── Radio ───────────────────────────────────────── */
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 100%; position: relative; height: auto; }
+      .main { margin-left: 0; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ───────────────── SIDEBAR ───────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>PRAG-v2</h1>
+      <p>Academic RAG System</p>
+    </div>
+
+    <!-- Connection status -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Status</div>
+      <div class="status-row">
+        <span class="dot" :class="health.backend ? 'dot-green' : 'dot-red'"></span>
+        <span>Backend</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.qdrant ? 'dot-green' : 'dot-red'"></span>
+        <span>Qdrant</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.ollama === true ? 'dot-green' : health.ollama === false ? 'dot-red' : 'dot-yellow'"></span>
+        <span>Ollama</span>
+      </div>
+    </div>
+
+    <!-- Collection picker -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Active collection</div>
+      <select class="sidebar-select" v-model="selectedCollection" @change="saveCollection">
+        <option value="">— none —</option>
+        <option v-for="c in collections" :key="c.collection_id" :value="c.collection_id">
+          {{ c.name || c.collection_id }}
+        </option>
+      </select>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-ghost" @click="showSettings = true; settingsStatus = 'unknown'">⚙ Settings</button>
+    </div>
+  </aside>
+
+  <!-- ───────────────── MAIN ───────────────── -->
+  <div class="main">
+
+    <!-- Tab bar -->
+    <nav class="tab-bar">
+      <button v-for="tab in tabs" :key="tab.id"
+              class="tab-btn" :class="{active: activeTab === tab.id}"
+              @click="activeTab = tab.id">
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <!-- Tab content -->
+    <div class="content">
+      <!-- Global error banner -->
+      <div v-if="globalError" class="alert alert-error">
+        {{ globalError }}
+        <button class="alert-close" @click="globalError = null">×</button>
+      </div>
+
+      <keep-alive>
+        <component :is="activeComponent"
+                   :selected-collection="selectedCollection"
+                   :collections="collections"
+                   @update:collection="setCollection"
+                   @refresh-collections="loadCollections" />
+      </keep-alive>
+    </div>
+  </div>
+
+  <!-- ───────────────── SETTINGS MODAL ───────────────── -->
+  <div class="modal-overlay" v-if="showSettings" @click.self="showSettings = false">
+    <div class="modal">
+      <div class="modal-title">⚙ Settings</div>
+
+      <div class="form-group">
+        <label>Backend URL</label>
+        <input type="text" v-model="settingsForm.backendUrl"
+               placeholder="http://localhost:8000" />
+      </div>
+      <div class="flex items-center gap-8" style="margin-bottom:12px">
+        <span class="dot" :class="settingsStatus === 'ok' ? 'dot-green' : settingsStatus === 'checking' ? 'dot-yellow' : 'dot-red'"></span>
+        <span class="text-muted text-sm">
+          {{ settingsStatus === 'ok' ? 'Connected' : settingsStatus === 'checking' ? 'Checking…' : 'Not reachable' }}
+        </span>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="showSettings = false">Cancel</button>
+        <button class="btn btn-primary" @click="saveSettings">Save & connect</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script type="module">
+import {
+  createApp, defineComponent, ref, reactive, computed,
+  onMounted, onUnmounted, watch
+} from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+
+/* ═══════════════════════════════════════════════
+   API WRAPPER
+═══════════════════════════════════════════════ */
+const api = {
+  url: () => localStorage.getItem('prag_backend_url') || 'http://localhost:8000',
+
+  async get(path) {
+    const r = await fetch(api.url() + path)
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async post(path, body = {}) {
+    const r = await fetch(api.url() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async del(path) {
+    const r = await fetch(api.url() + path, { method: 'DELETE' })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.status === 204 ? null : r.json()
+  },
+
+  async upload(path, formData) {
+    const r = await fetch(api.url() + path, { method: 'POST', body: formData })
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+    return r.json()
+  },
+
+  async download(path) {
+    const r = await fetch(api.url() + path)
+    if (!r.ok) throw new Error(`${r.status}`)
+    return r.blob()
+  },
+}
+
+/* ═══════════════════════════════════════════════
+   SHARED UTILITY
+═══════════════════════════════════════════════ */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/* ═══════════════════════════════════════════════
+   PLACEHOLDER COMPONENTS
+   (replaced in Tasks 5-9)
+═══════════════════════════════════════════════ */
+const PdfTab = defineComponent({
+  name: 'PdfTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection', 'refresh-collections'],
+
+  setup(props, { emit }) {
+    const error       = ref(null)
+    const directories = ref([])
+    const loading     = ref(false)
+    const uploadDir   = ref('')
+    const converting  = reactive({})
+    const expanded    = reactive({})
+
+    async function loadDirs() {
+      error.value = null
+      try {
+        directories.value = await api.get('/preprocess/directories')
+      } catch (e) { error.value = e.message }
+    }
+
+    async function uploadFiles(evt) {
+      const files = evt.target.files
+      if (!files.length) return
+      const dir = uploadDir.value.trim() || 'uploads'
+      const fd = new FormData()
+      fd.append('dir_name', dir)
+      for (const f of files) fd.append('files', f)
+      loading.value = true
+      error.value = null
+      try {
+        await api.upload('/preprocess/upload', fd)
+        await loadDirs()
+        uploadDir.value = ''
+        evt.target.value = ''
+      } catch (e) { error.value = e.message }
+      finally { loading.value = false }
+    }
+
+    async function convertFile(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      converting[key] = true
+      error.value = null
+      try {
+        await api.post('/preprocess/convert', {
+          dir_name: dirName,
+          filename,
+          backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
+          enrich_metadata: true,
+          metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+        })
+        await loadDirs()
+      } catch (e) { error.value = e.message }
+      finally { delete converting[key] }
+    }
+
+    async function deleteFile(dirName, filename) {
+      if (!confirm(`Delete ${filename}?`)) return
+      error.value = null
+      try {
+        await api.post('/preprocess/delete-pdf', { dir_name: dirName, filename })
+        await loadDirs()
+      } catch (e) { error.value = e.message }
+    }
+
+    function toggleDir(d) { expanded[d] = !expanded[d] }
+
+    onMounted(loadDirs)
+
+    return {
+      error, directories, loading, uploadDir,
+      converting, expanded,
+      loadDirs, uploadFiles, convertFile, deleteFile, toggleDir,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">PDF Management</h2>
+  <p class="page-sub">Upload and convert PDFs to markdown for ingestion.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}
+    <button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <!-- Upload card -->
+  <div class="card">
+    <div class="card-title">Upload PDFs</div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0">
+        <label>Directory name</label>
+        <input type="text" v-model="uploadDir" placeholder="my-papers" />
+      </div>
+      <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
+        <input type="file" accept=".pdf" multiple @change="uploadFiles"
+               :disabled="loading" style="font-size:13px;width:100%;padding:6px 0;" />
+      </div>
+    </div>
+    <div v-if="loading" class="flex items-center gap-8 mt-8">
+      <span class="spinner"></span>
+      <span class="text-muted">Uploading…</span>
+    </div>
+  </div>
+
+  <!-- Directory list -->
+  <div v-if="directories.length === 0 && !loading" class="empty-state">
+    <div style="font-size:32px">📂</div>
+    <p>No PDFs uploaded yet. Use the form above to get started.</p>
+  </div>
+
+  <div v-for="dir in directories" :key="dir.dir_name" class="card" style="padding:0;overflow:hidden">
+    <!-- Directory header -->
+    <div class="collapsible-header" @click="toggleDir(dir.dir_name)"
+         style="background:var(--bg);border-radius:0;padding:14px 20px;">
+      <span>
+        <strong>{{ dir.dir_name }}</strong>
+        <span class="badge badge-gray" style="margin-left:8px">{{ dir.files.length }} file{{ dir.files.length !== 1 ? 's' : '' }}</span>
+      </span>
+      <span class="chevron" :class="{open: expanded[dir.dir_name]}">▶</span>
+    </div>
+
+    <div v-if="expanded[dir.dir_name]" style="padding:8px 20px 16px">
+      <div v-if="dir.files.length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
+
+      <div v-for="file in dir.files" :key="file.filename" class="file-item">
+        <div>
+          <div class="file-name">{{ file.filename }}</div>
+          <div class="file-meta">
+            <span v-if="file.has_markdown" class="badge badge-green">Converted</span>
+            <span v-else class="badge badge-gray">Not converted</span>
+          </div>
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-secondary btn-sm"
+                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
+                  @click="convertFile(dir.dir_name, file.filename)">
+            <span v-if="converting[dir.dir_name+'/'+file.filename]" class="spinner"></span>
+            <span v-else>Convert</span>
+          </button>
+          <button class="btn btn-danger btn-sm"
+                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
+                  @click="deleteFile(dir.dir_name, file.filename)">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="directories.length > 0" class="mt-16">
+    <button class="btn btn-secondary" @click="loadDirs">↻ Refresh</button>
+  </div>
+</div>
+`,
+})
+
+const CollectionsTab = defineComponent({
+  name: 'CollectionsTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection', 'refresh-collections'],
+
+  setup(props, { emit }) {
+    const error      = ref(null)
+    const creating   = ref(false)
+    const deleting   = reactive({})
+    const newForm    = reactive({ collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+    const createMsg  = ref(null)
+
+    async function createCollection() {
+      if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
+      creating.value = true
+      error.value = null
+      createMsg.value = null
+      try {
+        if (newForm.dir_name.trim()) {
+          const data = await api.post('/ingest/create', {
+            collection_id: newForm.collection_id.trim(),
+            name: newForm.name.trim() || newForm.collection_id.trim(),
+            search_type: newForm.search_type,
+            dir_name: newForm.dir_name.trim(),
+          })
+          createMsg.value = `Created. Ingested ${data.ingested ?? 0} file(s).`
+        } else {
+          await api.post('/collections', {
+            collection_id: newForm.collection_id.trim(),
+            name: newForm.name.trim() || newForm.collection_id.trim(),
+            search_type: newForm.search_type,
+          })
+          createMsg.value = 'Collection created.'
+        }
+        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+        emit('refresh-collections')
+      } catch (e) { error.value = e.message }
+      finally { creating.value = false }
+    }
+
+    async function deleteCollection(id) {
+      if (!confirm(`Delete collection "${id}"? This cannot be undone.`)) return
+      deleting[id] = true
+      error.value = null
+      try {
+        await api.del(`/collections/${id}`)
+        if (props.selectedCollection === id) emit('update:collection', '')
+        emit('refresh-collections')
+      } catch (e) { error.value = e.message }
+      finally { delete deleting[id] }
+    }
+
+    return {
+      error, creating, deleting, newForm, createMsg,
+      createCollection, deleteCollection,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">Collections</h2>
+  <p class="page-sub">Create collections and ingest converted papers.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}<button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <!-- Create form -->
+  <div class="card">
+    <div class="card-title">Create collection</div>
+
+    <div class="form-row">
+      <div class="form-group" style="margin:0">
+        <label>Collection ID *</label>
+        <input type="text" v-model="newForm.collection_id" placeholder="my-collection" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Display name</label>
+        <input type="text" v-model="newForm.name" placeholder="My Papers" />
+      </div>
+    </div>
+
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Search type</label>
+        <select v-model="newForm.search_type">
+          <option value="dense">Dense (vector only)</option>
+          <option value="hybrid">Hybrid (vector + BM42)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Ingest from directory (optional)</label>
+        <input type="text" v-model="newForm.dir_name" placeholder="my-papers" />
+      </div>
+    </div>
+
+    <div class="mt-16 flex gap-8 items-center">
+      <button class="btn btn-primary" :disabled="creating" @click="createCollection">
+        <span v-if="creating" class="spinner"></span>
+        <span>{{ creating ? 'Creating…' : 'Create' }}</span>
+      </button>
+      <span v-if="createMsg" class="text-sm" style="color:var(--success)">{{ createMsg }}</span>
+    </div>
+  </div>
+
+  <!-- Existing collections -->
+  <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">
+    Existing collections ({{ collections.length }})
+  </h2>
+
+  <div v-if="collections.length === 0" class="empty-state">
+    <div style="font-size:32px">📚</div>
+    <p>No collections yet. Create one above.</p>
+  </div>
+
+  <div v-for="col in collections" :key="col.collection_id" class="card">
+    <div class="flex items-center gap-8">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:15px">{{ col.name || col.collection_id }}</div>
+        <div class="text-sm text-muted" style="margin-top:2px">
+          <code class="font-mono" style="font-size:11px">{{ col.collection_id }}</code>
+          &nbsp;·&nbsp;
+          <span class="badge badge-blue">{{ col.search_type }}</span>
+          &nbsp;·&nbsp;
+          {{ col.paper_count ?? '?' }} paper{{ col.paper_count !== 1 ? 's' : '' }}
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm"
+              @click="$emit('update:collection', col.collection_id)">
+        {{ selectedCollection === col.collection_id ? '✓ Active' : 'Select' }}
+      </button>
+      <button class="btn btn-danger btn-sm"
+              :disabled="!!deleting[col.collection_id]"
+              @click="deleteCollection(col.collection_id)">
+        <span v-if="deleting[col.collection_id]" class="spinner"></span>
+        <span v-else>Delete</span>
+      </button>
+    </div>
+  </div>
+</div>
+`,
+})
+
+const RagTab = defineComponent({
+  name: 'RagTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+
+  setup(props) {
+    const error        = ref(null)
+    const loading      = ref(false)
+    const query        = ref('')
+    const topK         = ref(10)
+    const maxTokens    = ref(500)
+    const result       = ref(null)
+    const papers       = ref([])
+    const selectedIds  = ref([])
+    const showFilters  = ref(false)
+    const citationMode = ref('apa')
+
+    const collectionId = computed(() => props.selectedCollection)
+    const collection   = computed(() => props.collections.find(c => c.collection_id === collectionId.value))
+    const useHybrid    = computed(() => collection.value?.search_type === 'hybrid')
+
+    watch(collectionId, async (id) => {
+      papers.value = []
+      selectedIds.value = []
+      result.value = null
+      if (id) {
+        try { papers.value = await api.get(`/collections/${id}/papers`) }
+        catch { papers.value = [] }
+      }
+    }, { immediate: true })
+
+    async function runQuery() {
+      if (!collectionId.value) { error.value = 'Select a collection from the sidebar first.'; return }
+      if (!query.value.trim()) { error.value = 'Please enter a question.'; return }
+      loading.value = true
+      error.value = null
+      result.value = null
+      try {
+        const body = {
+          query_text: query.value.trim(),
+          limit: topK.value,
+          max_tokens: maxTokens.value,
+          include_citations: true,
+          use_hybrid: useHybrid.value,
+        }
+        if (selectedIds.value.length) body.paper_ids = selectedIds.value
+        result.value = await api.post(`/collections/${collectionId.value}/rag`, body)
+      } catch (e) { error.value = e.message }
+      finally { loading.value = false }
+    }
+
+    function togglePassage(r) { r._open = !r._open }
+
+    function exportMd() {
+      if (!result.value) return
+      const lines = [
+        '# RAG Export', '',
+        `**Query:** ${query.value}`, '',
+        '## Answer', '',
+        result.value.answer || '(no answer)', '',
+        '## Retrieved Passages', '',
+      ]
+      for (const [i, r] of (result.value.results || []).entries()) {
+        lines.push(`### ${i + 1}. ${r.unique_id} (score: ${r.score?.toFixed(3)})`)
+        lines.push(`> ${r.chunk_text}`)
+        lines.push(`*Page ${r.page_number} · ${r.chunk_type}*`, '')
+      }
+      lines.push('## Citations', '')
+      for (const c of Object.values(result.value.citations || {})) {
+        lines.push(`**${c.unique_id}**`, c.apa, '```bibtex', c.bibtex, '```', '')
+      }
+      downloadBlob(new Blob([lines.join('\n')], { type: 'text/markdown' }), 'rag-export.md')
+    }
+
+    return {
+      error, loading, query, topK, maxTokens,
+      result, papers, selectedIds, showFilters, citationMode,
+      collectionId, useHybrid,
+      runQuery, togglePassage, exportMd,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">RAG Query</h2>
+  <p class="page-sub">Ask questions across your paper collection.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}<button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <div v-if="!collectionId" class="alert alert-info">
+    Select a collection from the sidebar to get started.
+  </div>
+
+  <template v-else>
+    <!-- Query card -->
+    <div class="card">
+      <div class="form-group">
+        <label>Question</label>
+        <textarea v-model="query" rows="3"
+          placeholder="e.g., What are the main findings about attention mechanisms?"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="margin:0">
+          <label>Top-K chunks: {{ topK }}</label>
+          <input type="range" v-model.number="topK" min="1" max="50" style="width:100%;margin-top:6px" />
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Max response tokens: {{ maxTokens }}</label>
+          <input type="range" v-model.number="maxTokens" min="50" max="2000" step="50" style="width:100%;margin-top:6px" />
+        </div>
+      </div>
+
+      <div v-if="useHybrid" class="text-sm text-muted mt-8">
+        ⚡ Hybrid search enabled for this collection
+      </div>
+
+      <!-- Paper filter -->
+      <div style="margin-top:12px">
+        <button class="btn btn-secondary btn-sm" @click="showFilters = !showFilters">
+          {{ showFilters ? '▲' : '▼' }}
+          Filter by paper
+          <span v-if="selectedIds.length" class="badge badge-blue" style="margin-left:4px">{{ selectedIds.length }}</span>
+          <span v-else class="text-muted" style="margin-left:4px;font-weight:400">(all papers)</span>
+        </button>
+
+        <div v-if="showFilters" style="margin-top:8px;max-height:180px;overflow-y:auto;
+             border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+          <div v-if="papers.length === 0" class="text-muted text-sm">No papers in this collection.</div>
+          <label v-for="p in papers" :key="p.paper_id" class="checkbox-label">
+            <input type="checkbox" :value="p.paper_id" v-model="selectedIds" />
+            {{ p.title || p.filename || p.paper_id }}
+          </label>
+        </div>
+      </div>
+
+      <div class="mt-16">
+        <button class="btn btn-primary btn-block" :disabled="loading" @click="runQuery">
+          <span v-if="loading" class="spinner"></span>
+          <span>{{ loading ? 'Searching…' : '🔍 Search' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <template v-if="result">
+      <!-- Answer -->
+      <div class="card" v-if="result.answer">
+        <div class="flex items-center gap-8" style="margin-bottom:12px">
+          <div class="card-title" style="margin:0;flex:1">Answer</div>
+          <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
+        </div>
+        <div style="line-height:1.75;white-space:pre-wrap">{{ result.answer }}</div>
+      </div>
+
+      <!-- Retrieved passages -->
+      <div class="card" v-if="result.results && result.results.length">
+        <div class="card-title">
+          Retrieved passages
+          <span class="badge badge-gray" style="margin-left:6px">{{ result.results.length }}</span>
+        </div>
+        <div v-for="(r, i) in result.results" :key="i" class="collapsible">
+          <div class="collapsible-header" @click="togglePassage(r)">
+            <span>
+              <span class="passage-score">{{ r.score?.toFixed(3) }}</span>
+              &nbsp;·&nbsp;{{ r.unique_id }}
+              &nbsp;·&nbsp;p.{{ r.page_number }}
+              &nbsp;·&nbsp;<span class="badge badge-gray">{{ r.chunk_type }}</span>
+            </span>
+            <span class="chevron" :class="{open: r._open}">▶</span>
+          </div>
+          <div v-if="r._open" class="collapsible-body">
+            <p style="line-height:1.6;margin-bottom:8px">{{ r.chunk_text }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Citations -->
+      <div class="card" v-if="result.citations && Object.keys(result.citations).length">
+        <div class="flex items-center gap-8" style="margin-bottom:12px">
+          <div class="card-title" style="margin:0;flex:1">
+            Citations
+            <span class="badge badge-gray" style="margin-left:6px">{{ Object.keys(result.citations).length }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm"
+                  :style="citationMode==='apa' ? 'border-color:var(--primary);color:var(--primary)' : ''"
+                  @click="citationMode='apa'">APA</button>
+          <button class="btn btn-secondary btn-sm"
+                  :style="citationMode==='bibtex' ? 'border-color:var(--primary);color:var(--primary)' : ''"
+                  @click="citationMode='bibtex'">BibTeX</button>
+        </div>
+        <div v-for="(c, key) in result.citations" :key="key" class="citation-box" style="margin-bottom:10px">
+          <div style="font-weight:600;font-size:12px;margin-bottom:4px">{{ c.unique_id }}</div>
+          <pre v-if="citationMode==='bibtex'" style="font-size:11px">{{ c.bibtex }}</pre>
+          <p v-else style="font-size:13px;line-height:1.5">{{ c.apa }}</p>
+        </div>
+      </div>
+    </template>
+  </template>
+</div>
+`,
+})
+
+const ExploreTab = defineComponent({
+  name: 'ExploreTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+
+  setup(props) {
+    const error    = ref(null)
+    const papers   = ref([])
+    const selected = ref(null)
+    const detail   = ref(null)
+    const loading  = ref(false)
+
+    const collectionId = computed(() => props.selectedCollection)
+
+    watch(collectionId, async (id) => {
+      papers.value = []
+      selected.value = null
+      detail.value = null
+      error.value = null
+      if (id) {
+        try { papers.value = await api.get(`/collections/${id}/papers`) }
+        catch (e) { error.value = e.message }
+      }
+    }, { immediate: true })
+
+    async function selectPaper(paper) {
+      selected.value = paper
+      loading.value = true
+      detail.value = null
+      error.value = null
+      try {
+        detail.value = await api.get(`/collections/${collectionId.value}/papers/${paper.paper_id}`)
+      } catch (e) { error.value = e.message }
+      finally { loading.value = false }
+    }
+
+    return { error, papers, selected, detail, loading, collectionId, selectPaper }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">Explore Paper</h2>
+  <p class="page-sub">Browse and inspect papers in the active collection.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}<button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <div v-if="!collectionId" class="alert alert-info">
+    Select a collection from the sidebar.
+  </div>
+
+  <template v-else>
+    <div style="display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start">
+
+      <!-- Paper list -->
+      <div class="card" style="padding:0;overflow:hidden;position:sticky;top:72px">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);
+                    font-weight:600;font-size:13px;background:var(--bg)">
+          Papers
+          <span class="badge badge-gray" style="margin-left:6px">{{ papers.length }}</span>
+        </div>
+        <div style="max-height:65vh;overflow-y:auto">
+          <div v-if="papers.length === 0" class="text-muted text-sm" style="padding:16px">
+            No papers in this collection.
+          </div>
+          <div v-for="p in papers" :key="p.paper_id"
+               style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);
+                      transition:background .1s"
+               :style="selected && selected.paper_id === p.paper_id
+                 ? 'background:var(--primary);color:#fff'
+                 : 'background:var(--card)'"
+               @click="selectPaper(p)">
+            <div style="font-size:13px;font-weight:500;line-height:1.4">
+              {{ p.title || p.filename || p.paper_id }}
+            </div>
+            <div style="font-size:11px;opacity:.7;margin-top:2px">
+              {{ (p.authors || []).slice(0, 2).join(', ') }}
+              <span v-if="(p.authors || []).length > 2"> et al.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail panel -->
+      <div>
+        <div v-if="loading" class="card flex items-center gap-8">
+          <span class="spinner"></span>
+          <span class="text-muted">Loading paper details…</span>
+        </div>
+
+        <template v-else-if="detail">
+          <div class="card">
+            <h3 style="font-size:18px;font-weight:700;line-height:1.4;margin-bottom:8px">
+              {{ detail.title || detail.filename }}
+            </h3>
+            <div class="text-muted text-sm" style="margin-bottom:12px">
+              {{ (detail.authors || []).join(', ') }}
+              <span v-if="detail.year"> · {{ detail.year }}</span>
+              <span v-if="detail.journal"> · <em>{{ detail.journal }}</em></span>
+            </div>
+
+            <div v-if="detail.doi" style="margin-bottom:10px">
+              <span class="text-sm text-muted">DOI: </span>
+              <a :href="detail.doi.startsWith('http') ? detail.doi : 'https://doi.org/' + detail.doi"
+                 target="_blank" rel="noopener"
+                 style="color:var(--primary);font-size:13px">{{ detail.doi }}</a>
+            </div>
+
+            <div class="flex gap-8" style="flex-wrap:wrap;margin-bottom:12px">
+              <span v-if="detail.chunk_count" class="badge badge-gray">
+                {{ detail.chunk_count }} chunks
+              </span>
+              <span v-if="detail.metadata_source" class="badge badge-blue">
+                metadata: {{ detail.metadata_source }}
+              </span>
+              <span v-if="detail.backend" class="badge badge-yellow">
+                {{ detail.backend }}
+              </span>
+            </div>
+
+            <!-- Abstract -->
+            <div v-if="detail.abstract" class="collapsible">
+              <div class="collapsible-header" @click="detail._showAbstract = !detail._showAbstract">
+                Abstract
+                <span class="chevron" :class="{open: detail._showAbstract}">▶</span>
+              </div>
+              <div v-if="detail._showAbstract" class="collapsible-body">
+                <p style="line-height:1.7">{{ detail.abstract }}</p>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div v-else class="empty-state">
+          <div style="font-size:32px">🔬</div>
+          <p>Select a paper from the list to view its details.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+`,
+})
+
+const CompareTab = defineComponent({
+  name: 'CompareTab',
+  props: ['selectedCollection', 'collections'],
+  emits: ['update:collection'],
+
+  setup(props) {
+    const error       = ref(null)
+    const loading     = ref(false)
+    const papers      = ref([])
+    const selectedIds = ref([])
+    const aspect      = ref('all')
+    const maxTokens   = ref(800)
+    const result      = ref(null)
+
+    const aspects = [
+      { value: 'all',           label: 'All aspects' },
+      { value: 'methodology',   label: 'Methodology' },
+      { value: 'results',       label: 'Results & findings' },
+      { value: 'limitations',   label: 'Limitations' },
+      { value: 'contributions', label: 'Contributions' },
+    ]
+
+    const collectionId = computed(() => props.selectedCollection)
+
+    watch(collectionId, async (id) => {
+      papers.value = []
+      selectedIds.value = []
+      result.value = null
+      error.value = null
+      if (id) {
+        try { papers.value = await api.get(`/collections/${id}/papers`) }
+        catch (e) { error.value = e.message }
+      }
+    }, { immediate: true })
+
+    async function compare() {
+      if (selectedIds.value.length < 2) {
+        error.value = 'Select at least 2 papers to compare.'
+        return
+      }
+      loading.value = true
+      error.value = null
+      result.value = null
+      try {
+        result.value = await api.post(`/collections/${collectionId.value}/compare`, {
+          paper_ids: selectedIds.value,
+          aspect: aspect.value,
+          max_tokens: maxTokens.value,
+        })
+      } catch (e) { error.value = e.message }
+      finally { loading.value = false }
+    }
+
+    function exportMd() {
+      if (!result.value) return
+      const lines = [
+        '# Paper Comparison', '',
+        `**Aspect:** ${aspect.value}`, '',
+        '## Comparison', '',
+        result.value.comparison || '', '',
+        '## Papers Compared', '',
+        ...(result.value.papers || []).map(p =>
+          `- **${p.title}** (${p.year ?? 'n.d.'}) — ${(p.authors || []).join(', ')}`
+        ),
+      ]
+      downloadBlob(new Blob([lines.join('\n')], { type: 'text/markdown' }), 'comparison.md')
+    }
+
+    return {
+      error, loading, papers, selectedIds, aspect, maxTokens, result, aspects,
+      collectionId, compare, exportMd,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">Compare Papers</h2>
+  <p class="page-sub">Ask the LLM to compare multiple papers on a specific aspect.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}<button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <div v-if="!collectionId" class="alert alert-info">
+    Select a collection from the sidebar.
+  </div>
+
+  <template v-else>
+    <div class="card">
+      <div class="card-title">Select papers</div>
+
+      <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);
+                  border-radius:6px;padding:8px 12px;margin-bottom:12px">
+        <div v-if="papers.length === 0" class="text-muted text-sm">No papers in this collection.</div>
+        <label v-for="p in papers" :key="p.paper_id" class="checkbox-label">
+          <input type="checkbox" :value="p.paper_id" v-model="selectedIds" />
+          {{ p.title || p.filename || p.paper_id }}
+        </label>
+      </div>
+
+      <div v-if="selectedIds.length" class="text-sm text-muted mb-16">
+        {{ selectedIds.length }} paper{{ selectedIds.length !== 1 ? 's' : '' }} selected
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="margin:0">
+          <label>Comparison aspect</label>
+          <select v-model="aspect">
+            <option v-for="a in aspects" :key="a.value" :value="a.value">{{ a.label }}</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Max tokens: {{ maxTokens }}</label>
+          <input type="range" v-model.number="maxTokens" min="100" max="2000" step="50"
+                 style="width:100%;margin-top:6px" />
+        </div>
+      </div>
+
+      <div class="mt-16">
+        <button class="btn btn-primary btn-block"
+                :disabled="loading || selectedIds.length < 2"
+                @click="compare">
+          <span v-if="loading" class="spinner"></span>
+          <span v-if="loading">Comparing…</span>
+          <span v-else-if="selectedIds.length < 2">Select at least 2 papers</span>
+          <span v-else>⚖️ Compare {{ selectedIds.length }} papers</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div v-if="result" class="card">
+      <div class="flex items-center gap-8" style="margin-bottom:14px">
+        <div class="card-title" style="margin:0;flex:1">Comparison</div>
+        <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
+      </div>
+
+      <div style="white-space:pre-wrap;line-height:1.75">{{ result.comparison }}</div>
+
+      <hr class="divider" />
+
+      <div class="text-sm text-muted">
+        <strong>Papers compared:</strong>
+        <ul style="margin-top:6px;padding-left:20px">
+          <li v-for="p in result.papers" :key="p.paper_id" style="margin-bottom:2px">
+            <strong>{{ p.title }}</strong>
+            <span v-if="p.year"> ({{ p.year }})</span>
+            <span v-if="p.authors && p.authors.length"> — {{ p.authors.slice(0,3).join(', ') }}<span v-if="p.authors.length > 3"> et al.</span></span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </template>
+</div>
+`,
+})
+
+/* ═══════════════════════════════════════════════
+   ROOT APP
+═══════════════════════════════════════════════ */
+createApp({
+  components: { PdfTab, CollectionsTab, RagTab, ExploreTab, CompareTab },
+
+  setup() {
+    const activeTab = ref('pdf')
+    const selectedCollection = ref(localStorage.getItem('prag_collection') || '')
+    const collections = ref([])
+    const globalError = ref(null)
+    const showSettings = ref(false)
+    const health = reactive({ backend: false, qdrant: false, ollama: null })
+
+    const settingsForm = reactive({
+      backendUrl: localStorage.getItem('prag_backend_url') || 'http://localhost:8000',
+    })
+    const settingsStatus = ref('unknown')
+
+    const tabs = [
+      { id: 'pdf',         label: 'PDF Management' },
+      { id: 'collections', label: 'Collections' },
+      { id: 'rag',         label: 'RAG Query' },
+      { id: 'explore',     label: 'Explore Paper' },
+      { id: 'compare',     label: 'Compare' },
+    ]
+
+    const tabComponents = {
+      pdf:         PdfTab,
+      collections: CollectionsTab,
+      rag:         RagTab,
+      explore:     ExploreTab,
+      compare:     CompareTab,
+    }
+
+    const activeComponent = computed(() => tabComponents[activeTab.value])
+
+    async function checkHealth() {
+      try {
+        const data = await api.get('/health')
+        health.backend = true
+        health.qdrant  = data.qdrant === 'ok'
+        health.ollama  = data.ollama === 'ok'
+      } catch {
+        health.backend = false
+        health.qdrant  = false
+        health.ollama  = null  // null = unknown (yellow), not false = down (red)
+      }
+    }
+
+    async function loadCollections() {
+      try {
+        collections.value = await api.get('/collections')
+      } catch (e) {
+        globalError.value = 'Could not load collections: ' + e.message
+      }
+    }
+
+    function setCollection(id) {
+      selectedCollection.value = id
+      localStorage.setItem('prag_collection', id)
+    }
+
+    function saveCollection() {
+      localStorage.setItem('prag_collection', selectedCollection.value)
+    }
+
+    async function saveSettings() {
+      settingsStatus.value = 'checking'
+      localStorage.setItem('prag_backend_url', settingsForm.backendUrl)
+      try {
+        await api.get('/health')
+        settingsStatus.value = 'ok'
+        showSettings.value = false
+        await checkHealth()
+        await loadCollections()
+      } catch {
+        settingsStatus.value = 'error'
+      }
+    }
+
+    let healthTimer
+    onMounted(async () => {
+      await checkHealth()
+      await loadCollections()
+      healthTimer = setInterval(checkHealth, 30_000)
+    })
+    onUnmounted(() => clearInterval(healthTimer))
+
+    return {
+      activeTab, tabs, activeComponent,
+      selectedCollection, collections,
+      globalError, showSettings, health,
+      settingsForm, settingsStatus,
+      setCollection, saveCollection, saveSettings, loadCollections,
+    }
+  },
+}).mount('#app')
+</script>
+</body>
+</html>
