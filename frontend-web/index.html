@@ -548,7 +548,143 @@ const CollectionsTab = defineComponent({
   name: 'CollectionsTab',
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection', 'refresh-collections'],
-  template: `<div><div class="empty-state"><div style="font-size:32px">📚</div><p>Collections — coming soon</p></div></div>`,
+
+  setup(props, { emit }) {
+    const error      = ref(null)
+    const creating   = ref(false)
+    const deleting   = reactive({})
+    const newForm    = reactive({ collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+    const createMsg  = ref(null)
+
+    async function createCollection() {
+      if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
+      creating.value = true
+      error.value = null
+      createMsg.value = null
+      try {
+        if (newForm.dir_name.trim()) {
+          const data = await api.post('/ingest/create', {
+            collection_id: newForm.collection_id.trim(),
+            name: newForm.name.trim() || newForm.collection_id.trim(),
+            search_type: newForm.search_type,
+            dir_name: newForm.dir_name.trim(),
+          })
+          createMsg.value = `Created. Ingested ${data.ingested ?? 0} file(s).`
+        } else {
+          await api.post('/collections', {
+            collection_id: newForm.collection_id.trim(),
+            name: newForm.name.trim() || newForm.collection_id.trim(),
+            search_type: newForm.search_type,
+          })
+          createMsg.value = 'Collection created.'
+        }
+        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+        emit('refresh-collections')
+      } catch (e) { error.value = e.message }
+      finally { creating.value = false }
+    }
+
+    async function deleteCollection(id) {
+      if (!confirm(`Delete collection "${id}"? This cannot be undone.`)) return
+      deleting[id] = true
+      error.value = null
+      try {
+        await api.del(`/collections/${id}`)
+        if (props.selectedCollection === id) emit('update:collection', '')
+        emit('refresh-collections')
+      } catch (e) { error.value = e.message }
+      finally { delete deleting[id] }
+    }
+
+    return {
+      error, creating, deleting, newForm, createMsg,
+      createCollection, deleteCollection,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">Collections</h2>
+  <p class="page-sub">Create collections and ingest converted papers.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}<button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <!-- Create form -->
+  <div class="card">
+    <div class="card-title">Create collection</div>
+
+    <div class="form-row">
+      <div class="form-group" style="margin:0">
+        <label>Collection ID *</label>
+        <input type="text" v-model="newForm.collection_id" placeholder="my-collection" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Display name</label>
+        <input type="text" v-model="newForm.name" placeholder="My Papers" />
+      </div>
+    </div>
+
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Search type</label>
+        <select v-model="newForm.search_type">
+          <option value="dense">Dense (vector only)</option>
+          <option value="hybrid">Hybrid (vector + BM42)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Ingest from directory (optional)</label>
+        <input type="text" v-model="newForm.dir_name" placeholder="my-papers" />
+      </div>
+    </div>
+
+    <div class="mt-16 flex gap-8 items-center">
+      <button class="btn btn-primary" :disabled="creating" @click="createCollection">
+        <span v-if="creating" class="spinner"></span>
+        <span>{{ creating ? 'Creating…' : 'Create' }}</span>
+      </button>
+      <span v-if="createMsg" class="text-sm" style="color:var(--success)">{{ createMsg }}</span>
+    </div>
+  </div>
+
+  <!-- Existing collections -->
+  <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">
+    Existing collections ({{ collections.length }})
+  </h2>
+
+  <div v-if="collections.length === 0" class="empty-state">
+    <div style="font-size:32px">📚</div>
+    <p>No collections yet. Create one above.</p>
+  </div>
+
+  <div v-for="col in collections" :key="col.collection_id" class="card">
+    <div class="flex items-center gap-8">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:15px">{{ col.name || col.collection_id }}</div>
+        <div class="text-sm text-muted" style="margin-top:2px">
+          <code class="font-mono" style="font-size:11px">{{ col.collection_id }}</code>
+          &nbsp;·&nbsp;
+          <span class="badge badge-blue">{{ col.search_type }}</span>
+          &nbsp;·&nbsp;
+          {{ col.paper_count ?? '?' }} paper{{ col.paper_count !== 1 ? 's' : '' }}
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm"
+              @click="$emit('update:collection', col.collection_id)">
+        {{ selectedCollection === col.collection_id ? '✓ Active' : 'Select' }}
+      </button>
+      <button class="btn btn-danger btn-sm"
+              :disabled="!!deleting[col.collection_id]"
+              @click="deleteCollection(col.collection_id)">
+        <span v-if="deleting[col.collection_id]" class="spinner"></span>
+        <span v-else>Delete</span>
+      </button>
+    </div>
+  </div>
+</div>
+`,
 })
 
 const RagTab = defineComponent({
