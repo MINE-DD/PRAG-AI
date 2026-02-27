@@ -392,7 +392,156 @@ const PdfTab = defineComponent({
   name: 'PdfTab',
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection', 'refresh-collections'],
-  template: `<div><div class="empty-state"><div style="font-size:32px">📄</div><p>PDF Management — coming soon</p></div></div>`,
+
+  setup(props, { emit }) {
+    const error       = ref(null)
+    const directories = ref([])
+    const loading     = ref(false)
+    const uploadDir   = ref('')
+    const converting  = reactive({})
+    const expanded    = reactive({})
+
+    async function loadDirs() {
+      error.value = null
+      try {
+        directories.value = await api.get('/preprocess/directories')
+      } catch (e) { error.value = e.message }
+    }
+
+    async function uploadFiles(evt) {
+      const files = evt.target.files
+      if (!files.length) return
+      const dir = uploadDir.value.trim() || 'uploads'
+      const fd = new FormData()
+      fd.append('dir_name', dir)
+      for (const f of files) fd.append('files', f)
+      loading.value = true
+      error.value = null
+      try {
+        await api.upload('/preprocess/upload', fd)
+        await loadDirs()
+        uploadDir.value = ''
+        evt.target.value = ''
+      } catch (e) { error.value = e.message }
+      finally { loading.value = false }
+    }
+
+    async function convertFile(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      converting[key] = true
+      error.value = null
+      try {
+        await api.post('/preprocess/convert', {
+          dir_name: dirName,
+          filename,
+          backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
+          enrich_metadata: true,
+          metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+        })
+        await loadDirs()
+      } catch (e) { error.value = e.message }
+      finally { delete converting[key] }
+    }
+
+    async function deleteFile(dirName, filename) {
+      if (!confirm(`Delete ${filename}?`)) return
+      error.value = null
+      try {
+        await api.post('/preprocess/delete-pdf', { dir_name: dirName, filename })
+        await loadDirs()
+      } catch (e) { error.value = e.message }
+    }
+
+    function toggleDir(d) { expanded[d] = !expanded[d] }
+
+    onMounted(loadDirs)
+
+    return {
+      error, directories, loading, uploadDir,
+      converting, expanded,
+      loadDirs, uploadFiles, convertFile, deleteFile, toggleDir,
+    }
+  },
+
+  template: `
+<div>
+  <h2 class="page-title">PDF Management</h2>
+  <p class="page-sub">Upload and convert PDFs to markdown for ingestion.</p>
+
+  <div v-if="error" class="alert alert-error">
+    {{ error }}
+    <button class="alert-close" @click="error=null">×</button>
+  </div>
+
+  <!-- Upload card -->
+  <div class="card">
+    <div class="card-title">Upload PDFs</div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0">
+        <label>Directory name</label>
+        <input type="text" v-model="uploadDir" placeholder="my-papers" />
+      </div>
+      <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
+        <input type="file" accept=".pdf" multiple @change="uploadFiles"
+               :disabled="loading" style="font-size:13px;width:100%;padding:6px 0;" />
+      </div>
+    </div>
+    <div v-if="loading" class="flex items-center gap-8 mt-8">
+      <span class="spinner"></span>
+      <span class="text-muted">Uploading…</span>
+    </div>
+  </div>
+
+  <!-- Directory list -->
+  <div v-if="directories.length === 0 && !loading" class="empty-state">
+    <div style="font-size:32px">📂</div>
+    <p>No PDFs uploaded yet. Use the form above to get started.</p>
+  </div>
+
+  <div v-for="dir in directories" :key="dir.dir_name" class="card" style="padding:0;overflow:hidden">
+    <!-- Directory header -->
+    <div class="collapsible-header" @click="toggleDir(dir.dir_name)"
+         style="background:var(--bg);border-radius:0;padding:14px 20px;">
+      <span>
+        <strong>{{ dir.dir_name }}</strong>
+        <span class="badge badge-gray" style="margin-left:8px">{{ dir.files.length }} file{{ dir.files.length !== 1 ? 's' : '' }}</span>
+      </span>
+      <span class="chevron" :class="{open: expanded[dir.dir_name]}">▶</span>
+    </div>
+
+    <div v-if="expanded[dir.dir_name]" style="padding:8px 20px 16px">
+      <div v-if="dir.files.length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
+
+      <div v-for="file in dir.files" :key="file.filename" class="file-item">
+        <div>
+          <div class="file-name">{{ file.filename }}</div>
+          <div class="file-meta">
+            <span v-if="file.has_markdown" class="badge badge-green">Converted</span>
+            <span v-else class="badge badge-gray">Not converted</span>
+          </div>
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-secondary btn-sm"
+                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
+                  @click="convertFile(dir.dir_name, file.filename)">
+            <span v-if="converting[dir.dir_name+'/'+file.filename]" class="spinner"></span>
+            <span v-else>Convert</span>
+          </button>
+          <button class="btn btn-danger btn-sm"
+                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
+                  @click="deleteFile(dir.dir_name, file.filename)">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="directories.length > 0" class="mt-16">
+    <button class="btn btn-secondary" @click="loadDirs">↻ Refresh</button>
+  </div>
+</div>
+`,
 })
 
 const CollectionsTab = defineComponent({
