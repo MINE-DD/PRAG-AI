@@ -263,7 +263,7 @@
     </div>
 
     <div class="sidebar-footer">
-      <button class="btn-ghost" @click="showSettings = true">⚙ Settings</button>
+      <button class="btn-ghost" @click="showSettings = true; settingsStatus = 'unknown'">⚙ Settings</button>
     </div>
   </aside>
 
@@ -376,7 +376,11 @@ const api = {
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url; a.download = filename; a.click()
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
 
@@ -447,11 +451,11 @@ createApp({
     ]
 
     const tabComponents = {
-      pdf:         'PdfTab',
-      collections: 'CollectionsTab',
-      rag:         'RagTab',
-      explore:     'ExploreTab',
-      compare:     'CompareTab',
+      pdf:         PdfTab,
+      collections: CollectionsTab,
+      rag:         RagTab,
+      explore:     ExploreTab,
+      compare:     CompareTab,
     }
 
     const activeComponent = computed(() => tabComponents[activeTab.value])
@@ -465,7 +469,7 @@ createApp({
       } catch {
         health.backend = false
         health.qdrant  = false
-        health.ollama  = false
+        health.ollama  = null  // null = unknown (yellow), not false = down (red)
       }
     }
 
