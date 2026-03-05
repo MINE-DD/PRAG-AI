@@ -217,6 +217,33 @@
     .radio-group { display: flex; flex-direction: column; gap: 6px; }
     .radio-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
 
+    /* ── File picker panel ───────────────────────────── */
+    .picker-panel {
+      margin: 12px -20px -20px -20px;
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+    .picker-filters { display: flex; gap: 8px; margin-bottom: 10px; }
+    .picker-filters select { flex: 0 0 160px; }
+    .picker-filters input  { flex: 1; }
+    .picker-list {
+      max-height: 260px; overflow-y: auto;
+      border: 1px solid var(--border); border-radius: 6px; background: var(--card);
+    }
+    .picker-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-bottom: 1px solid var(--border);
+      font-size: 13px; cursor: pointer;
+    }
+    .picker-row:last-child { border-bottom: none; }
+    .picker-row:hover { background: var(--bg); }
+    .picker-row input[type=checkbox] { width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+    .picker-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-dir-tag  { font-size: 11px; color: var(--muted); }
+    .picker-status   { font-size: 12px; min-width: 16px; text-align: right; flex-shrink: 0; }
+
     @media (max-width: 768px) {
       .sidebar { width: 100%; position: relative; height: auto; }
       .main { margin-left: 0; }
@@ -307,11 +334,20 @@
         <input type="text" v-model="settingsForm.backendUrl"
                placeholder="http://localhost:8000" />
       </div>
-      <div class="flex items-center gap-8" style="margin-bottom:12px">
+      <div class="flex items-center gap-8" style="margin-bottom:16px">
         <span class="dot" :class="settingsStatus === 'ok' ? 'dot-green' : settingsStatus === 'checking' ? 'dot-yellow' : 'dot-red'"></span>
         <span class="text-muted text-sm">
           {{ settingsStatus === 'ok' ? 'Connected' : settingsStatus === 'checking' ? 'Checking…' : 'Not reachable' }}
         </span>
+      </div>
+
+      <div class="form-group">
+        <label>Preprocessed files directory (server path)</label>
+        <input type="text" v-model="settingsForm.preprocessedBase"
+               placeholder="/data/preprocessed" />
+        <div class="text-muted text-sm" style="margin-top:4px">
+          Server-side path where converted .md files are stored. Default: <code>/data/preprocessed</code>
+        </div>
       </div>
 
       <div class="modal-footer">
@@ -570,32 +606,47 @@ const CollectionsTab = defineComponent({
     const error      = ref(null)
     const creating   = ref(false)
     const deleting   = reactive({})
-    const newForm    = reactive({ collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+    const newForm    = reactive({ collection_id: '', name: '', search_type: 'dense' })
     const createMsg  = ref(null)
 
+    // ── File picker state ──────────────────────────────
+    const pickerCollId    = ref(null)
+    const allFiles        = ref([])   // [{dirName, mdName}]
+    const loadingFiles    = ref(false)
+    const checked         = reactive({})
+    const pickerSearch    = ref('')
+    const pickerDir       = ref('all')
+    const ingesting       = ref(false)
+    const ingestStatuses  = reactive({})  // key → 'pending'|'ok'|'error'
+    const ingestMsg       = ref(null)
+
+    const allDirs = computed(() => [...new Set(allFiles.value.map(f => f.dirName))])
+
+    const filteredFiles = computed(() => {
+      const q = pickerSearch.value.toLowerCase()
+      return allFiles.value.filter(f => {
+        if (pickerDir.value !== 'all' && f.dirName !== pickerDir.value) return false
+        if (q && !f.mdName.toLowerCase().includes(q) && !f.dirName.toLowerCase().includes(q)) return false
+        return true
+      })
+    })
+
+    const checkedCount = computed(() => Object.values(checked).filter(Boolean).length)
+
+    // ── Collection CRUD ────────────────────────────────
     async function createCollection() {
       if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
       creating.value = true
       error.value = null
       createMsg.value = null
       try {
-        if (newForm.dir_name.trim()) {
-          const data = await api.post('/ingest/create', {
-            collection_id: newForm.collection_id.trim(),
-            name: newForm.name.trim() || newForm.collection_id.trim(),
-            search_type: newForm.search_type,
-            dir_name: newForm.dir_name.trim(),
-          })
-          createMsg.value = `Created. Ingested ${data.ingested ?? 0} file(s).`
-        } else {
-          await api.post('/collections', {
-            collection_id: newForm.collection_id.trim(),
-            name: newForm.name.trim() || newForm.collection_id.trim(),
-            search_type: newForm.search_type,
-          })
-          createMsg.value = 'Collection created.'
-        }
-        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', dir_name: '' })
+        await api.post('/collections', {
+          collection_id: newForm.collection_id.trim(),
+          name: newForm.name.trim() || newForm.collection_id.trim(),
+          search_type: newForm.search_type,
+        })
+        createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
+        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -608,14 +659,80 @@ const CollectionsTab = defineComponent({
       try {
         await api.del(`/collections/${id}`)
         if (props.selectedCollection === id) emit('update:collection', '')
+        if (pickerCollId.value === id) pickerCollId.value = null
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { delete deleting[id] }
     }
 
+    // ── File picker ────────────────────────────────────
+    async function loadAllFiles() {
+      loadingFiles.value = true
+      try {
+        const dirs = await api.get('/preprocess/directories')
+        const results = []
+        for (const dir of dirs) {
+          try {
+            const res = await api.post('/preprocess/scan', { dir_name: dir.name })
+            for (const f of res.files) {
+              if (f.processed) results.push({
+                dirName: dir.name,
+                mdName:  f.filename.replace(/\.pdf$/i, '.md'),
+              })
+            }
+          } catch { /* skip dir on error */ }
+        }
+        allFiles.value = results
+      } catch (e) { error.value = e.message }
+      finally { loadingFiles.value = false }
+    }
+
+    async function openPicker(collId) {
+      if (pickerCollId.value === collId) { pickerCollId.value = null; return }
+      pickerCollId.value = collId
+      pickerSearch.value = ''
+      pickerDir.value    = 'all'
+      ingestMsg.value    = null
+      if (!allFiles.value.length) await loadAllFiles()
+    }
+
+    function checkAll()   { for (const f of filteredFiles.value) checked[f.dirName + '/' + f.mdName] = true }
+    function uncheckAll() { for (const f of filteredFiles.value) checked[f.dirName + '/' + f.mdName] = false }
+
+    async function ingestSelected(collId) {
+      const toIngest = allFiles.value.filter(f => checked[f.dirName + '/' + f.mdName])
+      if (!toIngest.length) return
+      ingesting.value = true
+      ingestMsg.value = null
+      const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
+      let ok = 0, fail = 0
+      for (const f of toIngest) {
+        const key = f.dirName + '/' + f.mdName
+        ingestStatuses[key] = 'pending'
+        try {
+          await api.post(`/ingest/${collId}/file`, {
+            markdown_file:     f.mdName,
+            preprocessed_path: `${base}/${f.dirName}`,
+          })
+          ingestStatuses[key] = 'ok'
+          ok++
+        } catch (e) {
+          ingestStatuses[key] = 'error'
+          fail++
+        }
+      }
+      ingesting.value = false
+      ingestMsg.value = `Done: ${ok} ingested${fail ? `, ${fail} failed` : ''}.`
+      emit('refresh-collections')
+    }
+
     return {
       error, creating, deleting, newForm, createMsg,
       createCollection, deleteCollection,
+      pickerCollId, allFiles, loadingFiles, checked, pickerSearch, pickerDir,
+      ingesting, ingestStatuses, ingestMsg,
+      allDirs, filteredFiles, checkedCount,
+      openPicker, loadAllFiles, checkAll, uncheckAll, ingestSelected,
     }
   },
 
@@ -643,18 +760,12 @@ const CollectionsTab = defineComponent({
       </div>
     </div>
 
-    <div class="form-row" style="margin-top:8px">
-      <div class="form-group" style="margin:0">
-        <label>Search type</label>
-        <select v-model="newForm.search_type">
-          <option value="dense">Dense (vector only)</option>
-          <option value="hybrid">Hybrid (vector + BM42)</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Ingest from directory (optional)</label>
-        <input type="text" v-model="newForm.dir_name" placeholder="my-papers" />
-      </div>
+    <div class="form-group" style="margin-top:8px">
+      <label>Search type</label>
+      <select v-model="newForm.search_type" style="width:auto;min-width:200px">
+        <option value="dense">Dense (vector only)</option>
+        <option value="hybrid">Hybrid (vector + BM42)</option>
+      </select>
     </div>
 
     <div class="mt-16 flex gap-8 items-center">
@@ -677,6 +788,7 @@ const CollectionsTab = defineComponent({
   </div>
 
   <div v-for="col in collections" :key="col.collection_id" class="card">
+    <!-- Collection header row -->
     <div class="flex items-center gap-8">
       <div style="flex:1">
         <div style="font-weight:600;font-size:15px">{{ col.name || col.collection_id }}</div>
@@ -692,12 +804,86 @@ const CollectionsTab = defineComponent({
               @click="$emit('update:collection', col.collection_id)">
         {{ selectedCollection === col.collection_id ? '✓ Active' : 'Select' }}
       </button>
+      <button class="btn btn-secondary btn-sm" @click="openPicker(col.collection_id)">
+        {{ pickerCollId === col.collection_id ? '✕ Close' : '+ Add files' }}
+      </button>
       <button class="btn btn-danger btn-sm"
               :disabled="!!deleting[col.collection_id]"
               @click="deleteCollection(col.collection_id)">
         <span v-if="deleting[col.collection_id]" class="spinner"></span>
         <span v-else>Delete</span>
       </button>
+    </div>
+
+    <!-- File picker panel (expands below the header row) -->
+    <div v-if="pickerCollId === col.collection_id" class="picker-panel">
+
+      <div v-if="loadingFiles" class="flex items-center gap-8">
+        <span class="spinner"></span><span class="text-muted text-sm">Loading converted files…</span>
+      </div>
+
+      <div v-else-if="allFiles.length === 0">
+        <p class="text-muted text-sm">No converted files found. Convert PDFs in the PDF Management tab first.</p>
+        <button class="btn btn-secondary btn-sm" style="margin-top:8px" @click="loadAllFiles">↻ Retry</button>
+      </div>
+
+      <template v-else>
+        <!-- Filters row -->
+        <div class="picker-filters">
+          <select v-model="pickerDir">
+            <option value="all">All folders</option>
+            <option v-for="d in allDirs" :key="d" :value="d">{{ d }}</option>
+          </select>
+          <input type="text" v-model="pickerSearch" placeholder="Search files…" />
+        </div>
+
+        <!-- Bulk actions -->
+        <div class="flex items-center gap-8" style="margin-bottom:8px">
+          <button class="btn btn-secondary btn-sm" @click="checkAll" :disabled="ingesting">Check all</button>
+          <button class="btn btn-secondary btn-sm" @click="uncheckAll" :disabled="ingesting">Uncheck all</button>
+          <span class="text-muted text-sm" style="margin-left:auto">
+            {{ checkedCount }} selected · {{ filteredFiles.length }} shown
+          </span>
+        </div>
+
+        <!-- Scrollable file list -->
+        <div class="picker-list">
+          <div v-if="filteredFiles.length === 0" class="text-muted text-sm" style="padding:12px 14px">
+            No files match the current filter.
+          </div>
+          <label v-for="f in filteredFiles" :key="f.dirName+'/'+f.mdName" class="picker-row">
+            <input type="checkbox"
+                   :checked="!!checked[f.dirName+'/'+f.mdName]"
+                   @change="e => checked[f.dirName+'/'+f.mdName] = e.target.checked"
+                   :disabled="ingesting" />
+            <span class="picker-row-name">
+              <span class="picker-dir-tag">{{ f.dirName }}/</span>{{ f.mdName }}
+            </span>
+            <span class="picker-status">
+              <span v-if="ingestStatuses[f.dirName+'/'+f.mdName] === 'pending'" class="spinner" style="width:12px;height:12px;border-width:2px"></span>
+              <span v-else-if="ingestStatuses[f.dirName+'/'+f.mdName] === 'ok'"    style="color:var(--success)">✓</span>
+              <span v-else-if="ingestStatuses[f.dirName+'/'+f.mdName] === 'error'" style="color:var(--danger)">✗</span>
+            </span>
+          </label>
+        </div>
+
+        <!-- Ingest button -->
+        <div class="flex items-center gap-8" style="margin-top:12px">
+          <button class="btn btn-primary btn-sm"
+                  :disabled="ingesting || checkedCount === 0"
+                  @click="ingestSelected(col.collection_id)">
+            <span v-if="ingesting" class="spinner"></span>
+            <span>{{ ingesting ? 'Ingesting…' : 'Ingest ' + checkedCount + ' file' + (checkedCount !== 1 ? 's' : '') }}</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" @click="loadAllFiles" :disabled="loadingFiles || ingesting">
+            ↻ Refresh list
+          </button>
+          <span v-if="ingestMsg" class="text-sm"
+                :style="ingestMsg.startsWith('Done') ? 'color:var(--success)' : 'color:var(--danger)'">
+            {{ ingestMsg }}
+          </span>
+        </div>
+      </template>
     </div>
   </div>
 </div>
@@ -1226,7 +1412,8 @@ createApp({
     const health = reactive({ backend: false, qdrant: false, ollama: null })
 
     const settingsForm = reactive({
-      backendUrl: localStorage.getItem('prag_backend_url') || 'http://localhost:8000',
+      backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
+      preprocessedBase: localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed',
     })
     const settingsStatus = ref('unknown')
 
@@ -1280,7 +1467,8 @@ createApp({
 
     async function saveSettings() {
       settingsStatus.value = 'checking'
-      localStorage.setItem('prag_backend_url', settingsForm.backendUrl)
+      localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
+      localStorage.setItem('prag_preprocessed_dir', settingsForm.preprocessedBase)
       try {
         await api.get('/health')
         settingsStatus.value = 'ok'
