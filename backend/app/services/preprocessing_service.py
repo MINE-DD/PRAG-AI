@@ -292,6 +292,31 @@ class PreprocessingService:
             return {"directories": {}}
         return json.loads(self.history_path.read_text(encoding="utf-8"))
 
+    def delete_directory(self, dir_name: str) -> dict:
+        """Delete an entire PDF input directory and all its preprocessed output."""
+        import shutil
+
+        pdf_dir  = self.pdf_input_dir   / dir_name
+        prep_dir = self.preprocessed_dir / dir_name
+
+        pdf_count = 0
+        if pdf_dir.is_dir():
+            pdf_count = len(list(pdf_dir.glob("*.pdf")))
+            shutil.rmtree(pdf_dir)
+
+        if prep_dir.is_dir():
+            shutil.rmtree(prep_dir)
+
+        # Remove all history entries for this directory
+        with _history_lock:
+            history = self.get_history()
+            if dir_name in history.get("directories", {}):
+                del history["directories"][dir_name]
+                self.preprocessed_dir.mkdir(parents=True, exist_ok=True)
+                self.history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+        return {"dir_name": dir_name, "deleted_pdfs": pdf_count}
+
     def _update_history(self, dir_name: str, filename: str):
         """Update history.json with a newly processed file."""
         with _history_lock:

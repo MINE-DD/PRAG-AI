@@ -499,6 +499,21 @@ const PdfTab = defineComponent({
       } catch (e) { error.value = e.message }
     }
 
+    const deletingDir = reactive({})
+
+    async function deleteDir(dirName) {
+      if (!confirm(`Delete directory "${dirName}" and all its PDFs?\nThis cannot be undone.`)) return
+      deletingDir[dirName] = true
+      error.value = null
+      try {
+        await api.post('/preprocess/delete-directory', { dir_name: dirName })
+        delete dirFiles[dirName]
+        delete expanded[dirName]
+        await loadDirs()
+      } catch (e) { error.value = e.message }
+      finally { delete deletingDir[dirName] }
+    }
+
     async function toggleDir(d) {
       expanded[d] = !expanded[d]
       if (expanded[d] && !dirFiles[d]) await loadFiles(d)
@@ -508,8 +523,8 @@ const PdfTab = defineComponent({
 
     return {
       error, directories, loading, uploadDir,
-      converting, expanded, dirFiles,
-      loadDirs, uploadFiles, convertFile, deleteFile, toggleDir,
+      converting, expanded, dirFiles, deletingDir,
+      loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
     }
   },
 
@@ -551,12 +566,19 @@ const PdfTab = defineComponent({
   <div v-for="dir in directories" :key="dir.name" class="card" style="padding:0;overflow:hidden">
     <!-- Directory header -->
     <div class="collapsible-header" @click="toggleDir(dir.name)"
-         style="background:var(--bg);border-radius:0;padding:14px 20px;">
-      <span>
+         style="background:var(--bg);border-radius:0;padding:10px 20px;">
+      <span class="flex items-center gap-8">
         <strong>{{ dir.name }}</strong>
-        <span class="badge badge-gray" style="margin-left:8px">{{ dir.pdf_count }} file{{ dir.pdf_count !== 1 ? 's' : '' }}</span>
+        <span class="badge badge-gray">{{ dir.pdf_count }} file{{ dir.pdf_count !== 1 ? 's' : '' }}</span>
       </span>
-      <span class="chevron" :class="{open: expanded[dir.name]}">▶</span>
+      <span class="flex items-center gap-8">
+        <button class="btn btn-danger btn-sm" @click.stop="deleteDir(dir.name)"
+                :disabled="!!deletingDir[dir.name]">
+          <span v-if="deletingDir[dir.name]" class="spinner"></span>
+          <span v-else>Delete folder</span>
+        </button>
+        <span class="chevron" :class="{open: expanded[dir.name]}">▶</span>
+      </span>
     </div>
 
     <div v-if="expanded[dir.name]" style="padding:8px 20px 16px">
@@ -783,26 +805,67 @@ const CollectionsTab = defineComponent({
   emits: ['update:collection', 'refresh-collections'],
 
   setup(props, { emit }) {
-    const error        = ref(null)
-    const creating     = ref(false)
-    const deleting     = reactive({})
-    const newForm      = reactive({ collection_id: '', name: '', search_type: 'dense' })
-    const createMsg    = ref(null)
-    const pickerCollId = ref(null)
+    const error          = ref(null)
+    const creating       = ref(false)
+    const deleting       = reactive({})
+    const newForm        = reactive({ collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
+    const createMsg      = ref(null)
+    const pickerCollId   = ref(null)
+    const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
+    const loadingDirs    = ref(false)
+
+    async function loadConvertedDirs() {
+      loadingDirs.value = true
+      try {
+        const dirs = await api.get('/preprocess/directories')
+        const result = []
+        for (const dir of dirs) {
+          if (dir.pdf_count === 0) continue
+          try {
+            const res = await api.post('/preprocess/scan', { dir_name: dir.name })
+            const converted = res.files
+              .filter(f => f.processed)
+              .map(f => ({ mdName: f.filename.replace(/\.pdf$/i, '.md') }))
+            if (converted.length > 0) result.push({ name: dir.name, files: converted })
+          } catch { /* skip */ }
+        }
+        convertedDirs.value = result
+      } catch { /* ignore — not critical */ }
+      finally { loadingDirs.value = false }
+    }
 
     async function createCollection() {
       if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
-      creating.value = true
-      error.value    = null
+      creating.value  = true
+      error.value     = null
       createMsg.value = null
+      const collId    = newForm.collection_id.trim()
       try {
         await api.post('/collections', {
-          collection_id: newForm.collection_id.trim(),
-          name: newForm.name.trim() || newForm.collection_id.trim(),
-          search_type: newForm.search_type,
+          collection_id: collId,
+          name:          newForm.name.trim() || collId,
+          search_type:   newForm.search_type,
         })
-        createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
-        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense' })
+
+        if (newForm.ingestDir) {
+          const dir  = convertedDirs.value.find(d => d.name === newForm.ingestDir)
+          const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
+          let ok = 0
+          for (const f of (dir?.files ?? [])) {
+            try {
+              await api.post(`/ingest/${collId}/file`, {
+                markdown_file:     f.mdName,
+                preprocessed_path: `${base}/${newForm.ingestDir}`,
+              })
+              ok++
+            } catch { /* continue with remaining files */ }
+          }
+          createMsg.value = `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+        } else {
+          createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
+        }
+
+        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -825,8 +888,11 @@ const CollectionsTab = defineComponent({
       pickerCollId.value = pickerCollId.value === collId ? null : collId
     }
 
+    onMounted(loadConvertedDirs)
+
     return {
       error, creating, deleting, newForm, createMsg, pickerCollId,
+      convertedDirs, loadingDirs,
       createCollection, deleteCollection, togglePicker,
     }
   },
@@ -855,18 +921,35 @@ const CollectionsTab = defineComponent({
       </div>
     </div>
 
-    <div class="form-group" style="margin-top:8px">
-      <label>Search type</label>
-      <select v-model="newForm.search_type" style="width:auto;min-width:200px">
-        <option value="dense">Dense (vector only)</option>
-        <option value="hybrid">Hybrid (vector + BM42)</option>
-      </select>
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Search type</label>
+        <select v-model="newForm.search_type">
+          <option value="dense">Dense (vector only)</option>
+          <option value="hybrid">Hybrid (vector + BM42)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>
+          Ingest from directory
+          <span v-if="loadingDirs" class="spinner" style="width:10px;height:10px;border-width:2px;margin-left:4px"></span>
+        </label>
+        <select v-model="newForm.ingestDir" :disabled="loadingDirs">
+          <option value="">— none (empty collection) —</option>
+          <option v-for="d in convertedDirs" :key="d.name" :value="d.name">
+            {{ d.name }} ({{ d.files.length }} converted file{{ d.files.length !== 1 ? 's' : '' }})
+          </option>
+        </select>
+        <div v-if="!loadingDirs && convertedDirs.length === 0" class="text-muted text-sm" style="margin-top:4px">
+          No converted files found — convert PDFs first.
+        </div>
+      </div>
     </div>
 
     <div class="mt-16 flex gap-8 items-center">
       <button class="btn btn-primary" :disabled="creating" @click="createCollection">
         <span v-if="creating" class="spinner"></span>
-        <span>{{ creating ? 'Creating…' : 'Create' }}</span>
+        <span>{{ creating ? (newForm.ingestDir ? 'Creating & ingesting…' : 'Creating…') : (newForm.ingestDir ? 'Create & Ingest' : 'Create') }}</span>
       </button>
       <span v-if="createMsg" class="text-sm" style="color:var(--success)">{{ createMsg }}</span>
     </div>
