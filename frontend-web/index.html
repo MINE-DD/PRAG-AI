@@ -697,7 +697,7 @@ const CollectionsTab = defineComponent({
     }
 
     function checkAll()   { for (const f of filteredFiles.value) checked[f.dirName + '/' + f.mdName] = true }
-    function uncheckAll() { for (const f of filteredFiles.value) checked[f.dirName + '/' + f.mdName] = false }
+    function uncheckAll() { for (const key of Object.keys(checked)) checked[key] = false }
 
     async function ingestSelected(collId) {
       const toIngest = allFiles.value.filter(f => checked[f.dirName + '/' + f.mdName])
@@ -715,6 +715,7 @@ const CollectionsTab = defineComponent({
             preprocessed_path: `${base}/${f.dirName}`,
           })
           ingestStatuses[key] = 'ok'
+          checked[key] = false
           ok++
         } catch (e) {
           ingestStatuses[key] = 'error'
