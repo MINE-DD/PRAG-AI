@@ -400,12 +400,20 @@ const PdfTab = defineComponent({
     const uploadDir   = ref('')
     const converting  = reactive({})
     const expanded    = reactive({})
+    const dirFiles    = reactive({})
 
     async function loadDirs() {
       error.value = null
       try {
         directories.value = await api.get('/preprocess/directories')
       } catch (e) { error.value = e.message }
+    }
+
+    async function loadFiles(dirName) {
+      try {
+        const res = await api.post('/preprocess/scan', { dir_name: dirName })
+        dirFiles[dirName] = res.files
+      } catch (e) { dirFiles[dirName] = []; error.value = e.message }
     }
 
     async function uploadFiles(evt) {
@@ -419,6 +427,8 @@ const PdfTab = defineComponent({
       error.value = null
       try {
         await api.upload('/preprocess/upload', fd)
+        // Clear cached file lists so they reload on next expand
+        for (const k of Object.keys(dirFiles)) delete dirFiles[k]
         await loadDirs()
         uploadDir.value = ''
         evt.target.value = ''
@@ -438,7 +448,7 @@ const PdfTab = defineComponent({
           enrich_metadata: true,
           metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
         })
-        await loadDirs()
+        await loadFiles(dirName)
       } catch (e) { error.value = e.message }
       finally { delete converting[key] }
     }
@@ -448,17 +458,21 @@ const PdfTab = defineComponent({
       error.value = null
       try {
         await api.post('/preprocess/delete-pdf', { dir_name: dirName, filename })
+        await loadFiles(dirName)
         await loadDirs()
       } catch (e) { error.value = e.message }
     }
 
-    function toggleDir(d) { expanded[d] = !expanded[d] }
+    async function toggleDir(d) {
+      expanded[d] = !expanded[d]
+      if (expanded[d] && !dirFiles[d]) await loadFiles(d)
+    }
 
     onMounted(loadDirs)
 
     return {
       error, directories, loading, uploadDir,
-      converting, expanded,
+      converting, expanded, dirFiles,
       loadDirs, uploadFiles, convertFile, deleteFile, toggleDir,
     }
   },
@@ -498,38 +512,41 @@ const PdfTab = defineComponent({
     <p>No PDFs uploaded yet. Use the form above to get started.</p>
   </div>
 
-  <div v-for="dir in directories" :key="dir.dir_name" class="card" style="padding:0;overflow:hidden">
+  <div v-for="dir in directories" :key="dir.name" class="card" style="padding:0;overflow:hidden">
     <!-- Directory header -->
-    <div class="collapsible-header" @click="toggleDir(dir.dir_name)"
+    <div class="collapsible-header" @click="toggleDir(dir.name)"
          style="background:var(--bg);border-radius:0;padding:14px 20px;">
       <span>
-        <strong>{{ dir.dir_name }}</strong>
-        <span class="badge badge-gray" style="margin-left:8px">{{ dir.files.length }} file{{ dir.files.length !== 1 ? 's' : '' }}</span>
+        <strong>{{ dir.name }}</strong>
+        <span class="badge badge-gray" style="margin-left:8px">{{ dir.pdf_count }} file{{ dir.pdf_count !== 1 ? 's' : '' }}</span>
       </span>
-      <span class="chevron" :class="{open: expanded[dir.dir_name]}">▶</span>
+      <span class="chevron" :class="{open: expanded[dir.name]}">▶</span>
     </div>
 
-    <div v-if="expanded[dir.dir_name]" style="padding:8px 20px 16px">
-      <div v-if="dir.files.length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
+    <div v-if="expanded[dir.name]" style="padding:8px 20px 16px">
+      <div v-if="!dirFiles[dir.name]" class="flex items-center gap-8 mt-8">
+        <span class="spinner"></span><span class="text-muted">Loading…</span>
+      </div>
+      <div v-else-if="dirFiles[dir.name].length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
 
-      <div v-for="file in dir.files" :key="file.filename" class="file-item">
+      <div v-for="file in (dirFiles[dir.name] || [])" :key="file.filename" class="file-item">
         <div>
           <div class="file-name">{{ file.filename }}</div>
           <div class="file-meta">
-            <span v-if="file.has_markdown" class="badge badge-green">Converted</span>
+            <span v-if="file.processed" class="badge badge-green">Converted</span>
             <span v-else class="badge badge-gray">Not converted</span>
           </div>
         </div>
         <div class="flex gap-8">
           <button class="btn btn-secondary btn-sm"
-                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
-                  @click="convertFile(dir.dir_name, file.filename)">
-            <span v-if="converting[dir.dir_name+'/'+file.filename]" class="spinner"></span>
+                  :disabled="!!converting[dir.name+'/'+file.filename]"
+                  @click="convertFile(dir.name, file.filename)">
+            <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
             <span v-else>Convert</span>
           </button>
           <button class="btn btn-danger btn-sm"
-                  :disabled="!!converting[dir.dir_name+'/'+file.filename]"
-                  @click="deleteFile(dir.dir_name, file.filename)">
+                  :disabled="!!converting[dir.name+'/'+file.filename]"
+                  @click="deleteFile(dir.name, file.filename)">
             Delete
           </button>
         </div>
