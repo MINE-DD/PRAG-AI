@@ -290,7 +290,7 @@
     </div>
 
     <div class="sidebar-footer">
-      <button class="btn-ghost" @click="showSettings = true; settingsStatus = 'unknown'">⚙ Settings</button>
+      <button class="btn-ghost" @click="openSettings">⚙ Settings</button>
     </div>
   </aside>
 
@@ -329,6 +329,8 @@
     <div class="modal">
       <div class="modal-title">⚙ Settings</div>
 
+      <!-- Connection -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Connection</div>
       <div class="form-group">
         <label>Backend URL</label>
         <input type="text" v-model="settingsForm.backendUrl"
@@ -342,13 +344,40 @@
       </div>
 
       <div class="form-group">
-        <label>Preprocessed files directory (server path)</label>
+        <label>Preprocessed files directory (server-side path)</label>
         <input type="text" v-model="settingsForm.preprocessedBase"
                placeholder="/data/preprocessed" />
-        <div class="text-muted text-sm" style="margin-top:4px">
-          Server-side path where converted .md files are stored. Default: <code>/data/preprocessed</code>
-        </div>
+        <div class="text-muted text-sm" style="margin-top:4px">Default: <code>/data/preprocessed</code></div>
       </div>
+
+      <hr class="divider" />
+
+      <!-- Models -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Ollama Models</div>
+
+      <div v-if="loadingModels" class="flex items-center gap-8" style="margin-bottom:16px">
+        <span class="spinner"></span>
+        <span class="text-muted text-sm">Loading available models…</span>
+      </div>
+
+      <div v-else-if="modelError" class="alert alert-warning" style="margin-bottom:16px;font-size:12px">
+        Could not reach Ollama: {{ modelError }}
+      </div>
+
+      <template v-else>
+        <div class="form-group">
+          <label>Embedding model</label>
+          <select v-model="settingsForm.embeddingModel">
+            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Generation (LLM) model</label>
+          <select v-model="settingsForm.llmModel">
+            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+      </template>
 
       <div class="modal-footer">
         <button class="btn btn-secondary" @click="showSettings = false">Cancel</button>
@@ -1527,8 +1556,13 @@ createApp({
     const settingsForm = reactive({
       backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
       preprocessedBase: localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed',
+      embeddingModel: '',
+      llmModel:       '',
     })
-    const settingsStatus = ref('unknown')
+    const settingsStatus  = ref('unknown')
+    const ollamaModels    = ref([])
+    const loadingModels   = ref(false)
+    const modelError      = ref(null)
 
     const tabs = [
       { id: 'pdf',         label: 'PDF Management' },
@@ -1578,6 +1612,26 @@ createApp({
       localStorage.setItem('prag_collection', selectedCollection.value)
     }
 
+    async function openSettings() {
+      showSettings.value   = true
+      settingsStatus.value = 'unknown'
+      modelError.value     = null
+      loadingModels.value  = true
+      try {
+        const [cfg, models] = await Promise.all([
+          api.get('/settings'),
+          api.get('/ollama/models'),
+        ])
+        settingsForm.embeddingModel = cfg.embedding_model
+        settingsForm.llmModel       = cfg.llm_model
+        ollamaModels.value          = models.map(m => m.name)
+      } catch (e) {
+        modelError.value = e.message
+      } finally {
+        loadingModels.value = false
+      }
+    }
+
     async function saveSettings() {
       settingsStatus.value = 'checking'
       localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
@@ -1585,6 +1639,11 @@ createApp({
       try {
         await api.get('/health')
         settingsStatus.value = 'ok'
+        // Persist model changes to config.yaml
+        const body = {}
+        if (settingsForm.embeddingModel) body.embedding_model = settingsForm.embeddingModel
+        if (settingsForm.llmModel)       body.llm_model       = settingsForm.llmModel
+        if (Object.keys(body).length)    await api.post('/settings', body)
         showSettings.value = false
         await checkHealth()
         await loadCollections()
@@ -1605,8 +1664,8 @@ createApp({
       activeTab, tabs, activeComponent,
       selectedCollection, collections,
       globalError, showSettings, health,
-      settingsForm, settingsStatus,
-      setCollection, saveCollection, saveSettings, loadCollections,
+      settingsForm, settingsStatus, ollamaModels, loadingModels, modelError,
+      setCollection, saveCollection, openSettings, saveSettings, loadCollections,
     }
   },
 }).mount('#app')
