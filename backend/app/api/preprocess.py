@@ -105,6 +105,21 @@ def delete_preprocessed(request: DeleteRequest):
     return result
 
 
+class DeleteDirRequest(BaseModel):
+    dir_name: str
+
+
+@router.post("/preprocess/delete-directory")
+def delete_directory(request: DeleteDirRequest):
+    """Delete an entire PDF directory and all its preprocessed output."""
+    service = get_preprocessing_service()
+    pdf_dir  = Path(settings.pdf_input_dir)   / request.dir_name
+    prep_dir = service.preprocessed_dir       / request.dir_name
+    if not pdf_dir.is_dir() and not prep_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"Directory '{request.dir_name}' not found")
+    return service.delete_directory(request.dir_name)
+
+
 @router.post("/preprocess/delete-pdf")
 def delete_source_pdf(request: DeleteRequest):
     """Delete the source PDF (and its preprocessed output if any)."""
