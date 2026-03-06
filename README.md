@@ -1,12 +1,12 @@
 # PRAG-v2 — Personal RAG for Academic Papers
 
-PRAG-v2 is a local tool that lets you chat with your academic PDF papers using AI. You upload PDFs, convert them, and then ask questions across your library — all privately on your own machine.
+PRAG-v2 is a local tool that lets you chat with your academic PDF papers using Large Language Models (LLMs). You can select hundreds of PDFs, organize them into collections, convert them into searchable vectors, and get answers to your questions based on your own library — all privately on your machine.
 
 **How it works at a glance:**
 
 ```
-Your browser (GitHub Pages)
-        │  HTTP requests
+Your browser (GitHub Pages) ← no installation needed
+        │  HTTP requests to localhost
         ▼
 FastAPI backend ── Qdrant vector DB    (both run in Docker on your laptop)
         │
@@ -14,7 +14,7 @@ FastAPI backend ── Qdrant vector DB    (both run in Docker on your laptop)
 Ollama (also on your laptop, runs the AI models)
 ```
 
-The web interface is hosted on GitHub Pages so you don't need to run anything extra, but **all your data and AI processing stay on your machine**.
+The web interface is hosted on GitHub Pages — **you don't download or install it**, you just open the URL in your browser. What you do need to run locally is the backend (Docker) and the AI models (Ollama).
 
 ---
 
@@ -22,7 +22,7 @@ The web interface is hosted on GitHub Pages so you don't need to run anything ex
 
 | Tool | Purpose | Install |
 |---|---|---|
-| **Git** | Download the repo | [git-scm.com](https://git-scm.com) |
+| **Git** | Clone the repo (needed to build the backend) | [git-scm.com](https://git-scm.com) |
 | **Docker Desktop** | Runs the backend and database | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
 | **Ollama** | Runs the AI models locally | [ollama.com](https://ollama.com) |
 
@@ -34,7 +34,7 @@ No Python installation needed to use the app — only if you want to run the tes
 
 1. Install Ollama from [ollama.com](https://ollama.com) and make sure it is running (you should see the Ollama icon in your menu bar on Mac, or run `ollama serve` on Linux/Windows).
 
-2. Open a terminal and pull the two models PRAG-v2 uses by default:
+2. You can download the two models PRAG-v2 uses by default using the Ollama visual interface, or open a terminal:
 
 ```bash
 # Embedding model — converts text into vectors for search
@@ -44,11 +44,12 @@ ollama pull nomic-embed-text
 ollama pull llama3.2
 ```
 
-> You can use different models later from the Settings panel. These are just the defaults.
+> You can use different models later. These are just the defaults. 
 
 ---
 
 ## Step 2 — Download the repository
+In your terminal type:
 
 ```bash
 git clone https://github.com/mine-dd/PRAG-AI.git
@@ -57,9 +58,9 @@ cd PRAG-AI
 
 ---
 
-## Step 3 — Configure environment variables
+## Step 3 — OPTIONAL: Configure environment variables
 
-Copy the example environment file and edit it if needed:
+It is possible to use remote powerful LLMs to obtain better results, however have in mind that **this will send your information to remote servers**. The full papers are not sent but your queries and the Top-N chunks of text used to answer those queries will be public if you decide to use this mode:
 
 ```bash
 cp .env.example .env
@@ -74,6 +75,8 @@ Open `.env` in any text editor. The defaults work for most setups — you only n
 ANTHROPIC_API_KEY=
 GOOGLE_API_KEY=
 ```
+
+The API keys will be saved locally in your browswer and never be shared.
 
 ---
 

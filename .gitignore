@@ -15,3 +15,4 @@ data/
 *.swp
 *.swo
 .worktrees/
+uv.lock
