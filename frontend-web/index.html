@@ -628,6 +628,8 @@ const PdfTab = defineComponent({
     const deletingDir = reactive({})
     const convertingAllMap = reactive({})
     // Structure per dir: { active: false, current: 0, total: 0, failed: 0 }
+    const expandedFiles = reactive({})   // key: "dirName/filename" → true/false
+    const fileMetadata  = reactive({})   // key: "dirName/filename" → null|object|'not_converted'|'error'
 
     async function deleteDir(dirName) {
       if (!confirm(`Delete directory "${dirName}" and all its PDFs?\nThis cannot be undone.`)) return
@@ -672,6 +674,68 @@ const PdfTab = defineComponent({
       return (dirFiles[dirName] || []).some(f => !f.processed)
     }
 
+    async function toggleFileMeta(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      expandedFiles[key] = !expandedFiles[key]
+      if (expandedFiles[key] && fileMetadata[key] === undefined) {
+        fileMetadata[key] = null  // loading
+        try {
+          const encDir  = encodeURIComponent(dirName)
+          const encFile = encodeURIComponent(filename)
+          fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        } catch (e) {
+          // 404 = not converted yet; anything else = server error
+          fileMetadata[key] = e.message.startsWith('404') ? 'not_converted' : 'error'
+        }
+      }
+    }
+
+    const reenrichState = reactive({})
+    // key: "dirName/filename" → { open: false, selected: '', confirming: false, loading: false }
+
+    function openReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key] = { open: true, selected: '', confirming: false, loading: false }
+    }
+
+    function selectReenrichProvider(dirName, filename, provider) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key].selected = provider
+      reenrichState[key].confirming = true
+    }
+
+    function cancelReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+    }
+
+    async function confirmReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      const provider = reenrichState[key].selected
+      reenrichState[key].loading = true
+      try {
+        await api.post('/preprocess/enrich-metadata', {
+          dir_name: dirName,
+          filename,
+          backend: provider,
+        })
+        // Reload metadata
+        const encDir  = encodeURIComponent(dirName)
+        const encFile = encodeURIComponent(filename)
+        fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+      } catch (e) {
+        error.value = `Re-enrich failed: ${e.message}`
+      } finally {
+        reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+      }
+    }
+
+    function extractYear(dateStr) {
+      if (!dateStr) return null
+      const m = String(dateStr).match(/\d{4}/)
+      return m ? m[0] : null
+    }
+
     async function toggleDir(d) {
       expanded[d] = !expanded[d]
       if (expanded[d] && !dirFiles[d]) await loadFiles(d)
@@ -683,8 +747,11 @@ const PdfTab = defineComponent({
       error, directories, loading, uploadDir,
       converting, expanded, dirFiles, deletingDir,
       convertingAllMap,
+      expandedFiles, fileMetadata, reenrichState,
       loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
       convertAll, hasUnconverted,
+      toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
+      extractYear,
     }
   },
 
