@@ -111,7 +111,6 @@
     .btn-secondary:hover:not(:disabled) { background: var(--border); }
     .btn-danger   { background: var(--danger); color: #fff; }
     .btn-danger:hover:not(:disabled) { background: #dc2626; }
-    .btn-sm { padding: 3px 10px; font-size: 12px; }
 
     /* ── Provider tabs ───────────────────────────────── */
     .provider-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -430,7 +429,7 @@
           <label>Anthropic API key</label>
           <div v-if="settingsForm.hasAnthropicKey && !settingsForm.clearAnthropicKey"
                class="flex items-center gap-8" style="margin-bottom:8px">
-            <span style="color:var(--green);font-size:13px">✓ Key saved</span>
+            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
             <button class="btn btn-secondary btn-sm" @click="settingsForm.clearAnthropicKey = true">Clear key</button>
           </div>
           <input v-else type="password" v-model="settingsForm.anthropicKey"
@@ -454,7 +453,7 @@
           <label>Google API key</label>
           <div v-if="settingsForm.hasGoogleKey && !settingsForm.clearGoogleKey"
                class="flex items-center gap-8" style="margin-bottom:8px">
-            <span style="color:var(--green);font-size:13px">✓ Key saved</span>
+            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
             <button class="btn btn-secondary btn-sm" @click="settingsForm.clearGoogleKey = true">Clear key</button>
           </div>
           <input v-else type="password" v-model="settingsForm.googleKey"
@@ -615,7 +614,6 @@ const PdfTab = defineComponent({
           dir_name: dirName,
           filename,
           backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
-          enrich_metadata: true,
           metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
         })
         await loadFiles(dirName)
@@ -633,6 +631,11 @@ const PdfTab = defineComponent({
         await api.post('/preprocess/delete-pdf', { dir_name: dirName, filename })
         await loadFiles(dirName)
         await loadDirs()
+        // Clean up metadata panel state for deleted file
+        const fileKey = `${dirName}/${filename}`
+        delete expandedFiles[fileKey]
+        delete fileMetadata[fileKey]
+        delete reenrichState[fileKey]
       } catch (e) { error.value = e.message }
     }
 
@@ -910,7 +913,8 @@ const PdfTab = defineComponent({
               <strong>Authors:</strong>
               {{ (fileMetadata[dir.name+'/'+file.filename].authors || []).join(', ') }}
             </div>
-            <div class="file-meta-row">
+            <div class="file-meta-row"
+                 v-if="extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date) || fileMetadata[dir.name+'/'+file.filename].journal">
               <template v-if="extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date)">
                 <strong>Year:</strong>
                 {{ extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date) }}
@@ -923,7 +927,7 @@ const PdfTab = defineComponent({
             <div class="file-meta-row" v-if="fileMetadata[dir.name+'/'+file.filename].doi">
               <strong>DOI:</strong>
               <a :href="'https://doi.org/' + fileMetadata[dir.name+'/'+file.filename].doi"
-                 target="_blank" style="color:var(--primary)">
+                 target="_blank" rel="noopener noreferrer" style="color:var(--primary)">
                 {{ fileMetadata[dir.name+'/'+file.filename].doi }}
               </a>
             </div>
