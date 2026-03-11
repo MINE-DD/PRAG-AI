@@ -837,26 +837,133 @@ const PdfTab = defineComponent({
       </div>
       <div v-else-if="dirFiles[dir.name].length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
 
-      <div v-for="file in (dirFiles[dir.name] || [])" :key="file.filename" class="file-item">
-        <div>
-          <div class="file-name">{{ file.filename }}</div>
-          <div class="file-meta">
-            <span v-if="file.processed" class="badge badge-green">Converted</span>
-            <span v-else class="badge badge-gray">Not converted</span>
+      <div v-for="file in (dirFiles[dir.name] || [])" :key="file.filename"
+           style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;overflow:hidden">
+        <!-- File row -->
+        <div class="file-item" style="border:none;margin:0">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-secondary btn-sm"
+                    style="padding:2px 6px;font-size:12px;min-width:20px"
+                    @click="toggleFileMeta(dir.name, file.filename)">
+              <span :style="expandedFiles[dir.name+'/'+file.filename] ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
+            </button>
+            <div>
+              <div class="file-name">{{ file.filename }}</div>
+              <div class="file-meta">
+                <span v-if="file.processed" class="badge badge-green">Converted</span>
+                <span v-else class="badge badge-gray">Not converted</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-8">
+            <button class="btn btn-secondary btn-sm"
+                    :disabled="!!converting[dir.name+'/'+file.filename]"
+                    @click="convertFile(dir.name, file.filename)">
+              <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
+              <span v-else>Convert</span>
+            </button>
+            <button class="btn btn-danger btn-sm"
+                    :disabled="!!converting[dir.name+'/'+file.filename]"
+                    @click="deleteFile(dir.name, file.filename)">
+              Delete
+            </button>
           </div>
         </div>
-        <div class="flex gap-8">
-          <button class="btn btn-secondary btn-sm"
-                  :disabled="!!converting[dir.name+'/'+file.filename]"
-                  @click="convertFile(dir.name, file.filename)">
-            <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
-            <span v-else>Convert</span>
-          </button>
-          <button class="btn btn-danger btn-sm"
-                  :disabled="!!converting[dir.name+'/'+file.filename]"
-                  @click="deleteFile(dir.name, file.filename)">
-            Delete
-          </button>
+
+        <!-- Metadata panel -->
+        <div v-if="expandedFiles[dir.name+'/'+file.filename]" class="file-meta-panel">
+          <!-- Loading -->
+          <div v-if="fileMetadata[dir.name+'/'+file.filename] === null"
+               class="flex items-center gap-8">
+            <span class="spinner"></span>
+            <span class="text-muted text-sm">Loading metadata…</span>
+          </div>
+          <!-- Not converted -->
+          <div v-else-if="fileMetadata[dir.name+'/'+file.filename] === 'not_converted'"
+               class="text-muted text-sm">
+            Not converted yet — convert the file to see metadata.
+          </div>
+          <!-- Server error -->
+          <div v-else-if="fileMetadata[dir.name+'/'+file.filename] === 'error'"
+               class="text-sm" style="color:var(--danger)">
+            Could not load metadata — check the backend connection.
+          </div>
+          <!-- Metadata -->
+          <template v-else-if="fileMetadata[dir.name+'/'+file.filename]">
+            <div class="file-meta-title">
+              {{ fileMetadata[dir.name+'/'+file.filename].title || file.filename }}
+            </div>
+            <div class="file-meta-row" v-if="(fileMetadata[dir.name+'/'+file.filename].authors || []).length">
+              <strong>Authors:</strong>
+              {{ (fileMetadata[dir.name+'/'+file.filename].authors || []).join(', ') }}
+            </div>
+            <div class="file-meta-row">
+              <template v-if="extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date)">
+                <strong>Year:</strong>
+                {{ extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date) }}
+              </template>
+              <template v-if="fileMetadata[dir.name+'/'+file.filename].journal">
+                &nbsp;·&nbsp; <strong>Journal:</strong>
+                {{ fileMetadata[dir.name+'/'+file.filename].journal }}
+              </template>
+            </div>
+            <div class="file-meta-row" v-if="fileMetadata[dir.name+'/'+file.filename].doi">
+              <strong>DOI:</strong>
+              <a :href="'https://doi.org/' + fileMetadata[dir.name+'/'+file.filename].doi"
+                 target="_blank" style="color:var(--primary)">
+                {{ fileMetadata[dir.name+'/'+file.filename].doi }}
+              </a>
+            </div>
+            <div class="file-meta-row">
+              <span class="badge-source">
+                {{ fileMetadata[dir.name+'/'+file.filename].metadata_source || 'None' }}
+              </span>
+            </div>
+
+            <!-- Re-enrich -->
+            <div style="margin-top:10px">
+              <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
+                <button class="btn btn-secondary btn-sm"
+                        @click="openReenrich(dir.name, file.filename)">
+                  Re-enrich metadata
+                </button>
+              </template>
+              <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
+                <span class="text-sm" style="margin-right:8px">
+                  Re-enrich with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
+                </span>
+                <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">
+                  Cancel
+                </button>
+                <button class="btn btn-primary btn-sm" style="margin-left:6px"
+                        :disabled="reenrichState[dir.name+'/'+file.filename].loading"
+                        @click="confirmReenrich(dir.name, file.filename)">
+                  <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
+                  <span v-else>Confirm</span>
+                </button>
+              </template>
+              <template v-else>
+                <div class="flex gap-8">
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">
+                    OpenAlex
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">
+                    CrossRef
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">
+                    Semantic Scholar
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="cancelReenrich(dir.name, file.filename)">
+                    ✕
+                  </button>
+                </div>
+              </template>
+            </div>
+          </template>
         </div>
       </div>
     </div>
