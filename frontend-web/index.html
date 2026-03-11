@@ -738,9 +738,9 @@ const PdfTab = defineComponent({
           backend: provider,
         })
         if (!result.enriched) {
-          // API returned no data for this paper — show feedback, don't reload
-          error.value = `No metadata found with ${provider} — try another provider.`
-          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+          // Show feedback inline in the panel
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: `No metadata found with ${provider} — try another provider.`, messageType: 'warn' }
           return
         }
         // Step 2: Data was found — reload metadata panel
@@ -748,14 +748,16 @@ const PdfTab = defineComponent({
           const encDir  = encodeURIComponent(dirName)
           const encFile = encodeURIComponent(filename)
           fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: `Metadata updated from ${provider}.`, messageType: 'ok' }
         } catch {
           delete fileMetadata[key]
-          error.value = 'Metadata updated, but failed to reload — click ▶ to refresh.'
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: 'Metadata updated, but failed to reload — click ▶ to refresh.', messageType: 'warn' }
         }
       } catch (e) {
-        error.value = `Get metadata failed: ${e.message}`
-      } finally {
-        reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+        reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+          message: `Failed: ${e.message}`, messageType: 'error' }
       }
     }
 
@@ -1000,6 +1002,13 @@ const PdfTab = defineComponent({
                   </button>
                 </div>
               </template>
+            </div>
+            <div v-if="reenrichState[dir.name+'/'+file.filename] && reenrichState[dir.name+'/'+file.filename].message"
+                 class="text-sm" style="margin-top:6px"
+                 :style="reenrichState[dir.name+'/'+file.filename].messageType === 'ok' ? 'color:var(--success)' :
+                         reenrichState[dir.name+'/'+file.filename].messageType === 'error' ? 'color:var(--danger)' :
+                         'color:var(--warning)'">
+              {{ reenrichState[dir.name+'/'+file.filename].message }}
             </div>
           </template>
         </div>
