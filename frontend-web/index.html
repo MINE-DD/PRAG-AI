@@ -626,6 +626,8 @@ const PdfTab = defineComponent({
     }
 
     const deletingDir = reactive({})
+    const convertingAllMap = reactive({})
+    // Structure per dir: { active: false, current: 0, total: 0, failed: 0 }
 
     async function deleteDir(dirName) {
       if (!confirm(`Delete directory "${dirName}" and all its PDFs?\nThis cannot be undone.`)) return
@@ -640,6 +642,36 @@ const PdfTab = defineComponent({
       finally { delete deletingDir[dirName] }
     }
 
+    async function convertAll(dirName) {
+      const files = (dirFiles[dirName] || []).filter(f => !f.processed)
+      if (!files.length) return
+      convertingAllMap[dirName] = { active: true, current: 0, total: files.length, failed: 0 }
+      for (const file of files) {
+        convertingAllMap[dirName].current++
+        const key = `${dirName}/${file.filename}`
+        converting[key] = true
+        try {
+          await api.post('/preprocess/convert', {
+            dir_name: dirName,
+            filename: file.filename,
+            backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+          })
+          await loadFiles(dirName)
+        } catch (e) {
+          convertingAllMap[dirName].failed++
+          console.error(`Convert failed for ${file.filename}:`, e.message)
+        } finally {
+          delete converting[key]
+        }
+      }
+      convertingAllMap[dirName].active = false
+    }
+
+    function hasUnconverted(dirName) {
+      return (dirFiles[dirName] || []).some(f => !f.processed)
+    }
+
     async function toggleDir(d) {
       expanded[d] = !expanded[d]
       if (expanded[d] && !dirFiles[d]) await loadFiles(d)
@@ -650,7 +682,9 @@ const PdfTab = defineComponent({
     return {
       error, directories, loading, uploadDir,
       converting, expanded, dirFiles, deletingDir,
+      convertingAllMap,
       loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
+      convertAll, hasUnconverted,
     }
   },
 
