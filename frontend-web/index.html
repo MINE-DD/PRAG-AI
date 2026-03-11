@@ -731,26 +731,43 @@ const PdfTab = defineComponent({
       const provider = reenrichState[key].selected
       reenrichState[key].loading = true
       try {
-        // Step 1: Call enrich endpoint
-        await api.post('/preprocess/enrich-metadata', {
+        // Step 1: Call enrich endpoint — response tells us if data was found
+        const result = await api.post('/preprocess/enrich-metadata', {
           dir_name: dirName,
           filename,
           backend: provider,
         })
-        // Step 2: Reload metadata (separate error path)
+        if (!result.enriched) {
+          // API returned no data for this paper — show feedback, don't reload
+          error.value = `No metadata found with ${provider} — try another provider.`
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+          return
+        }
+        // Step 2: Data was found — reload metadata panel
         try {
           const encDir  = encodeURIComponent(dirName)
           const encFile = encodeURIComponent(filename)
           fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
         } catch {
-          // Enrich succeeded, but metadata reload failed — clear cache so user can retry
           delete fileMetadata[key]
-          error.value = 'Metadata enriched, but failed to reload — click ▶ to refresh.'
+          error.value = 'Metadata updated, but failed to reload — click ▶ to refresh.'
         }
       } catch (e) {
-        error.value = `Re-enrich failed: ${e.message}`
+        error.value = `Get metadata failed: ${e.message}`
       } finally {
         reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+      }
+    }
+
+    async function downloadMetadata(dirName, filename) {
+      const encDir  = encodeURIComponent(dirName)
+      const encFile = encodeURIComponent(filename)
+      const stem = filename.replace(/\.pdf$/i, '')
+      try {
+        const blob = await api.download(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        downloadBlob(blob, `${stem}_metadata.json`)
+      } catch (e) {
+        error.value = `Download failed: ${e.message}`
       }
     }
 
@@ -775,7 +792,7 @@ const PdfTab = defineComponent({
       loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
       convertAll, hasUnconverted,
       toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
-      extractYear,
+      downloadMetadata, extractYear,
     }
   },
 
@@ -937,17 +954,21 @@ const PdfTab = defineComponent({
               </span>
             </div>
 
-            <!-- Re-enrich -->
-            <div style="margin-top:10px">
+            <!-- Get Metadata / Download -->
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
                 <button class="btn btn-secondary btn-sm"
                         @click="openReenrich(dir.name, file.filename)">
-                  Re-enrich metadata
+                  Get Metadata
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        @click="downloadMetadata(dir.name, file.filename)">
+                  ⬇ metadata.json
                 </button>
               </template>
               <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
                 <span class="text-sm" style="margin-right:8px">
-                  Re-enrich with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
+                  Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
                 </span>
                 <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">
                   Cancel
