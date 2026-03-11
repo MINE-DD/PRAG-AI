@@ -732,6 +732,21 @@ const PdfTab = defineComponent({
         <span class="badge badge-gray">{{ dir.pdf_count }} file{{ dir.pdf_count !== 1 ? 's' : '' }}</span>
       </span>
       <span class="flex items-center gap-8">
+        <template v-if="expanded[dir.name] && hasUnconverted(dir.name)">
+          <span v-if="convertingAllMap[dir.name] && convertingAllMap[dir.name].active"
+                class="text-sm text-muted">
+            Converting {{ convertingAllMap[dir.name].current }}/{{ convertingAllMap[dir.name].total }}…
+          </span>
+          <button v-else class="btn btn-sm"
+                  style="background:var(--success);color:#fff;border-color:var(--success)"
+                  @click.stop="convertAll(dir.name)">
+            Convert All
+          </button>
+        </template>
+        <span v-if="convertingAllMap[dir.name] && !convertingAllMap[dir.name].active && convertingAllMap[dir.name].failed > 0"
+              class="text-sm" style="color:var(--warning)">
+          {{ convertingAllMap[dir.name].failed }} failed
+        </span>
         <button class="btn btn-danger btn-sm" @click.stop="deleteDir(dir.name)"
                 :disabled="!!deletingDir[dir.name]">
           <span v-if="deletingDir[dir.name]" class="spinner"></span>
