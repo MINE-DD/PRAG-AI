@@ -111,6 +111,16 @@
     .btn-secondary:hover:not(:disabled) { background: var(--border); }
     .btn-danger   { background: var(--danger); color: #fff; }
     .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-sm { padding: 3px 10px; font-size: 12px; }
+
+    /* ── Provider tabs ───────────────────────────────── */
+    .provider-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .provider-tab {
+      padding: 6px 14px; font-size: 13px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); cursor: pointer; transition: all .15s;
+    }
+    .provider-tab:hover { background: var(--border); color: var(--text); }
+    .provider-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
     .btn-sm { padding: 5px 10px; font-size: 12px; }
     .btn-block { width: 100%; justify-content: center; }
 
@@ -180,7 +190,8 @@
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4);
                      z-index: 100; display: flex; align-items: center; justify-content: center; }
     .modal { background: var(--card); border-radius: var(--radius); padding: 24px;
-             width: 460px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+             width: 460px; max-width: 95vw; max-height: 80vh; overflow-y: auto;
+             box-shadow: 0 20px 60px rgba(0,0,0,.2); }
     .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
     .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
@@ -371,11 +382,76 @@
             <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" v-if="settingsForm.llmProvider === 'local'">
           <label>Generation (LLM) model</label>
           <select v-model="settingsForm.llmModel">
             <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
           </select>
+        </div>
+      </template>
+
+      <hr class="divider" />
+
+      <!-- Cloud LLM -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Generation provider</div>
+      <div class="text-muted text-sm" style="margin-bottom:12px">
+        Local (Ollama) keeps everything on your machine. Cloud providers send your queries and retrieved passages to remote servers.
+      </div>
+
+      <div class="provider-tabs" style="margin-bottom:16px">
+        <button :class="['provider-tab', settingsForm.llmProvider === 'local' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'local'">🖥 Local (Ollama)</button>
+        <button :class="['provider-tab', settingsForm.llmProvider === 'anthropic' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'anthropic'">☁ Anthropic</button>
+        <button :class="['provider-tab', settingsForm.llmProvider === 'google' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'google'">☁ Google Gemini</button>
+      </div>
+
+      <!-- Anthropic -->
+      <template v-if="settingsForm.llmProvider === 'anthropic'">
+        <div class="alert alert-warning" style="margin-bottom:12px;font-size:12px">
+          ⚠️ Queries and retrieved passages will be sent to Anthropic's servers.
+        </div>
+        <div class="form-group">
+          <label>Claude model</label>
+          <select v-model="settingsForm.anthropicModel">
+            <option v-for="m in anthropicModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Anthropic API key</label>
+          <div v-if="settingsForm.hasAnthropicKey && !settingsForm.clearAnthropicKey"
+               class="flex items-center gap-8" style="margin-bottom:8px">
+            <span style="color:var(--green);font-size:13px">✓ Key saved</span>
+            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearAnthropicKey = true">Clear key</button>
+          </div>
+          <input v-else type="password" v-model="settingsForm.anthropicKey"
+                 :placeholder="settingsForm.clearAnthropicKey ? 'Enter new key…' : 'sk-ant-…'"
+                 autocomplete="off" />
+        </div>
+      </template>
+
+      <!-- Google -->
+      <template v-if="settingsForm.llmProvider === 'google'">
+        <div class="alert alert-warning" style="margin-bottom:12px;font-size:12px">
+          ⚠️ Queries and retrieved passages will be sent to Google's servers.
+        </div>
+        <div class="form-group">
+          <label>Gemini model</label>
+          <select v-model="settingsForm.googleModel">
+            <option v-for="m in googleModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Google API key</label>
+          <div v-if="settingsForm.hasGoogleKey && !settingsForm.clearGoogleKey"
+               class="flex items-center gap-8" style="margin-bottom:8px">
+            <span style="color:var(--green);font-size:13px">✓ Key saved</span>
+            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearGoogleKey = true">Clear key</button>
+          </div>
+          <input v-else type="password" v-model="settingsForm.googleKey"
+                 :placeholder="settingsForm.clearGoogleKey ? 'Enter new key…' : 'AIzaSy…'"
+                 autocomplete="off" />
         </div>
       </template>
 
@@ -1556,13 +1632,27 @@ createApp({
     const settingsForm = reactive({
       backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
       preprocessedBase: localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed',
+      metaBackend:      localStorage.getItem('prag_meta_backend')      || 'openalex',
+      pdfBackend:       localStorage.getItem('prag_pdf_backend')        || 'pymupdf',
       embeddingModel: '',
       llmModel:       '',
+      // Cloud LLM
+      llmProvider:      'local',
+      anthropicModel:   'claude-opus-4-6',
+      googleModel:      'gemini-2.0-flash',
+      anthropicKey:     '',
+      googleKey:        '',
+      hasAnthropicKey:  false,
+      hasGoogleKey:     false,
+      clearAnthropicKey: false,
+      clearGoogleKey:    false,
     })
     const settingsStatus  = ref('unknown')
     const ollamaModels    = ref([])
     const loadingModels   = ref(false)
     const modelError      = ref(null)
+    const anthropicModels = ref(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
+    const googleModels    = ref(['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'])
 
     const tabs = [
       { id: 'pdf',         label: 'PDF Management' },
@@ -1617,14 +1707,25 @@ createApp({
       settingsStatus.value = 'unknown'
       modelError.value     = null
       loadingModels.value  = true
+      settingsForm.metaBackend = localStorage.getItem('prag_meta_backend') || 'openalex'
+      settingsForm.pdfBackend  = localStorage.getItem('prag_pdf_backend')  || 'pymupdf'
       try {
         const [cfg, models] = await Promise.all([
           api.get('/settings'),
           api.get('/ollama/models'),
         ])
-        settingsForm.embeddingModel = cfg.embedding_model
-        settingsForm.llmModel       = cfg.llm_model
-        ollamaModels.value          = models.map(m => m.name)
+        settingsForm.embeddingModel    = cfg.embedding_model
+        settingsForm.llmModel          = cfg.llm_model
+        settingsForm.llmProvider       = cfg.llm_provider || 'local'
+        settingsForm.anthropicModel    = cfg.anthropic_model || 'claude-opus-4-6'
+        settingsForm.googleModel       = cfg.google_model   || 'gemini-2.0-flash'
+        settingsForm.hasAnthropicKey   = !!cfg.has_anthropic_key
+        settingsForm.hasGoogleKey      = !!cfg.has_google_key
+        settingsForm.anthropicKey      = ''
+        settingsForm.googleKey         = ''
+        settingsForm.clearAnthropicKey = false
+        settingsForm.clearGoogleKey    = false
+        ollamaModels.value             = models.map(m => m.name)
       } catch (e) {
         modelError.value = e.message
       } finally {
@@ -1636,14 +1737,27 @@ createApp({
       settingsStatus.value = 'checking'
       localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
       localStorage.setItem('prag_preprocessed_dir', settingsForm.preprocessedBase)
+      localStorage.setItem('prag_meta_backend', settingsForm.metaBackend)
+      localStorage.setItem('prag_pdf_backend',  settingsForm.pdfBackend)
       try {
         await api.get('/health')
         settingsStatus.value = 'ok'
-        // Persist model changes to config.yaml
+        // Persist settings to config.yaml / api_keys.json
         const body = {}
         if (settingsForm.embeddingModel) body.embedding_model = settingsForm.embeddingModel
         if (settingsForm.llmModel)       body.llm_model       = settingsForm.llmModel
-        if (Object.keys(body).length)    await api.post('/settings', body)
+        body.llm_provider = settingsForm.llmProvider
+        if (settingsForm.llmProvider === 'anthropic') {
+          body.anthropic_model = settingsForm.anthropicModel
+          if (settingsForm.clearAnthropicKey)        body.clear_anthropic_key = true
+          else if (settingsForm.anthropicKey.trim()) body.anthropic_key = settingsForm.anthropicKey.trim()
+        }
+        if (settingsForm.llmProvider === 'google') {
+          body.google_model = settingsForm.googleModel
+          if (settingsForm.clearGoogleKey)        body.clear_google_key = true
+          else if (settingsForm.googleKey.trim()) body.google_key = settingsForm.googleKey.trim()
+        }
+        await api.post('/settings', body)
         showSettings.value = false
         await checkHealth()
         await loadCollections()
@@ -1665,6 +1779,7 @@ createApp({
       selectedCollection, collections,
       globalError, showSettings, health,
       settingsForm, settingsStatus, ollamaModels, loadingModels, modelError,
+      anthropicModels, googleModels,
       setCollection, saveCollection, openSettings, saveSettings, loadCollections,
     }
   },
