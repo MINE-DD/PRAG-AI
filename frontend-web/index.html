@@ -619,6 +619,9 @@ const PdfTab = defineComponent({
           metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
         })
         await loadFiles(dirName)
+        // Invalidate cached metadata so panel re-fetches after conversion
+        const metaKey = `${dirName}/${filename}`
+        if (metaKey in fileMetadata) delete fileMetadata[metaKey]
       } catch (e) { error.value = e.message }
       finally { delete converting[key] }
     }
@@ -668,6 +671,9 @@ const PdfTab = defineComponent({
             metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
           })
           await loadFiles(dirName)
+          // Invalidate cached metadata so panel re-fetches after conversion
+          const metaKey = `${dirName}/${file.filename}`
+          if (metaKey in fileMetadata) delete fileMetadata[metaKey]
         } catch (e) {
           convertingAllMap[dirName].failed++
           console.error(`Convert failed for ${file.filename}:`, e.message)
@@ -722,15 +728,22 @@ const PdfTab = defineComponent({
       const provider = reenrichState[key].selected
       reenrichState[key].loading = true
       try {
+        // Step 1: Call enrich endpoint
         await api.post('/preprocess/enrich-metadata', {
           dir_name: dirName,
           filename,
           backend: provider,
         })
-        // Reload metadata
-        const encDir  = encodeURIComponent(dirName)
-        const encFile = encodeURIComponent(filename)
-        fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        // Step 2: Reload metadata (separate error path)
+        try {
+          const encDir  = encodeURIComponent(dirName)
+          const encFile = encodeURIComponent(filename)
+          fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        } catch {
+          // Enrich succeeded, but metadata reload failed — clear cache so user can retry
+          delete fileMetadata[key]
+          error.value = 'Metadata enriched, but failed to reload — click ▶ to refresh.'
+        }
       } catch (e) {
         error.value = `Re-enrich failed: ${e.message}`
       } finally {
