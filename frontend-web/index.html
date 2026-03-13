@@ -1296,6 +1296,13 @@ const CollectionsTab = defineComponent({
       pickerCollId.value = pickerCollId.value === collId ? null : collId
     }
 
+    const CHUNK_DEFAULTS = { tokens: { size: 500, overlap: 100 }, characters: { size: 2000, overlap: 200 } }
+
+    watch(() => newForm.chunkMode, mode => {
+      const d = CHUNK_DEFAULTS[mode]
+      if (d) { newForm.chunkSize = d.size; newForm.chunkOverlap = d.overlap }
+    })
+
     onMounted(loadConvertedDirs)
 
     return {
@@ -1326,6 +1333,13 @@ const CollectionsTab = defineComponent({
           ID: <code>{{ newForm.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }}</code>
         </div>
       </div>
+      <div class="form-group" style="margin:0">
+        <label>Chunk mode</label>
+        <select v-model="newForm.chunkMode">
+          <option value="tokens">Tokens (approx)</option>
+          <option value="characters">Characters</option>
+        </select>
+      </div>
     </div>
 
     <div class="form-row" style="margin-top:8px">
@@ -1354,13 +1368,6 @@ const CollectionsTab = defineComponent({
     </div>
 
     <div class="form-row" style="margin-top:8px">
-      <div class="form-group" style="margin:0">
-        <label>Chunk mode</label>
-        <select v-model="newForm.chunkMode">
-          <option value="tokens">Tokens (approx)</option>
-          <option value="characters">Characters</option>
-        </select>
-      </div>
       <div class="form-group" style="margin:0">
         <label>Chunk size</label>
         <input type="number" v-model.number="newForm.chunkSize" min="50" max="4000" step="50" />
