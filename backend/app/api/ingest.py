@@ -26,7 +26,7 @@ class CreateRequest(BaseModel):
 
 class IngestFileRequest(BaseModel):
     markdown_file: str
-    preprocessed_path: str
+    dir_name: str               # subfolder under settings.preprocessed_dir
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
     chunk_mode: Optional[str] = None  # "characters" or "tokens"
@@ -119,8 +119,8 @@ def ingest_file(collection_id: str, request: IngestFileRequest):
     if not collection_path.exists():
         raise HTTPException(status_code=404, detail=f"Collection '{collection_id}' not found")
 
-    # Build full paths
-    preprocessed_path = Path(request.preprocessed_path)
+    # Build full paths from backend-controlled preprocessed_dir
+    preprocessed_path = Path(settings.preprocessed_dir) / request.dir_name
     stem = Path(request.markdown_file).stem
     md_path = preprocessed_path / request.markdown_file
     metadata_path = preprocessed_path / f"{stem}_metadata.json"

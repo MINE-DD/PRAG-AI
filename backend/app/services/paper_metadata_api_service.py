@@ -70,7 +70,7 @@ def fetch_crossref(title: str) -> dict:
             authors.append(" ".join(name_parts))
 
     pub_date = None
-    date_parts = item.get("published-print", item.get("published-online", {})).get("date-parts", [[]])
+    date_parts = (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[]])
     if date_parts and date_parts[0]:
         parts = date_parts[0]
         pub_date = "-".join(str(p).zfill(2) for p in parts)

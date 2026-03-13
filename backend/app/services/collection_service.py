@@ -1,12 +1,12 @@
 import json
+import re
 from pathlib import Path
 from datetime import datetime, UTC
-import uuid
 import shutil
 from typing import Optional
 from app.models.collection import Collection
 from app.services.qdrant_service import QdrantService
-from app.core.config import settings
+from app.core.config import settings, load_config
 
 
 class CollectionService:
@@ -17,17 +17,19 @@ class CollectionService:
         self.data_dir = Path(settings.data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_collection(self, name: str, description: Optional[str] = None) -> Collection:
+    def create_collection(
+        self, name: str, description: Optional[str] = None, search_type: str = "hybrid"
+    ) -> Collection:
         """Create a new collection"""
-        # Generate collection ID (sanitized name)
-        collection_id = name.lower().replace(" ", "_")
+        # Generate collection ID: lowercase, spaces/special chars → dashes
+        collection_id = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
 
         # Check if already exists
         collection_path = self.data_dir / collection_id
         if collection_path.exists():
             raise ValueError(
-                f'Collection "{name}" already exists at {collection_path}. '
-                f'Please use a different name or reprocess the existing collection.'
+                f'Collection "{name}" already exists. '
+                f'Please use a different name.'
             )
 
         # Create directories
@@ -36,13 +38,40 @@ class CollectionService:
         (collection_path / "figures").mkdir()
         (collection_path / "metadata").mkdir()
 
-        # Create Qdrant collection
-        self.qdrant.create_collection(collection_id)
+        # Detect embedding vector size from Ollama
+        vector_size = 768  # fallback for nomic-embed-text
+        try:
+            from app.services.ollama_service import OllamaService
+            config = load_config("config.yaml")
+            ollama = OllamaService(
+                url=settings.ollama_url,
+                embedding_model=config["models"]["embedding"],
+            )
+            sample = ollama.generate_embedding("test")
+            vector_size = len(sample)
+        except Exception:
+            pass
+
+        # Create Qdrant collection with correct settings
+        self.qdrant.create_collection(collection_id, vector_size=vector_size, search_type=search_type)
+
+        # Write collection_info.json so ingestion can read search_type
+        info = {
+            "collection_id": collection_id,
+            "name": name,
+            "description": description,
+            "search_type": search_type,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        (collection_path / "collection_info.json").write_text(
+            json.dumps(info, indent=2), encoding="utf-8"
+        )
 
         return Collection(
             collection_id=collection_id,
             name=name,
-            description=description
+            description=description,
+            search_type=search_type,
         )
 
     def _read_collection_info(self, collection_path: Path) -> dict:

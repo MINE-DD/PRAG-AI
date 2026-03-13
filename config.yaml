@@ -1,8 +1,9 @@
 models:
   embedding: nomic-embed-text:latest
   llm:
-    type: local
+    type: google
     model: llama3.2:latest
+    google_model: gemini-2.5-flash
 chunking:
   size: 500
   overlap: 100

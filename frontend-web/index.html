@@ -111,6 +111,15 @@
     .btn-secondary:hover:not(:disabled) { background: var(--border); }
     .btn-danger   { background: var(--danger); color: #fff; }
     .btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+    /* ── Provider tabs ───────────────────────────────── */
+    .provider-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .provider-tab {
+      padding: 6px 14px; font-size: 13px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); cursor: pointer; transition: all .15s;
+    }
+    .provider-tab:hover { background: var(--border); color: var(--text); }
+    .provider-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
     .btn-sm { padding: 5px 10px; font-size: 12px; }
     .btn-block { width: 100%; justify-content: center; }
 
@@ -180,7 +189,8 @@
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4);
                      z-index: 100; display: flex; align-items: center; justify-content: center; }
     .modal { background: var(--card); border-radius: var(--radius); padding: 24px;
-             width: 460px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+             width: 460px; max-width: 95vw; max-height: 80vh; overflow-y: auto;
+             box-shadow: 0 20px 60px rgba(0,0,0,.2); }
     .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
     .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
@@ -196,6 +206,14 @@
     .file-item:hover { border-color: var(--primary); }
     .file-name { font-size: 13px; font-weight: 500; }
     .file-meta { font-size: 11px; color: var(--muted); }
+    .file-meta-panel { background: var(--bg); border-top: 1px solid var(--border);
+                       padding: 12px 16px 14px; font-size: 13px; }
+    .file-meta-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }
+    .file-meta-row   { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px;
+                       font-size: 12px; color: var(--muted); }
+    .file-meta-row strong { color: var(--text); font-weight: 500; }
+    .badge-source    { display: inline-block; padding: 1px 7px; border-radius: 10px;
+                       font-size: 11px; font-weight: 500; background: #eff6ff; color: #1d4ed8; }
 
     /* ── Citation box ────────────────────────────────── */
     .citation-box { background: var(--bg); border-left: 3px solid var(--primary);
@@ -371,13 +389,99 @@
             <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" v-if="settingsForm.llmProvider === 'local'">
           <label>Generation (LLM) model</label>
           <select v-model="settingsForm.llmModel">
             <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
           </select>
         </div>
       </template>
+
+      <hr class="divider" />
+
+      <!-- Cloud LLM -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Generation provider</div>
+      <div class="text-muted text-sm" style="margin-bottom:12px">
+        Local (Ollama) keeps everything on your machine. Cloud providers send your queries and retrieved passages to remote servers.
+      </div>
+
+      <div class="provider-tabs" style="margin-bottom:16px">
+        <button :class="['provider-tab', settingsForm.llmProvider === 'local' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'local'">🖥 Local (Ollama)</button>
+        <button :class="['provider-tab', settingsForm.llmProvider === 'anthropic' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'anthropic'">☁ Anthropic</button>
+        <button :class="['provider-tab', settingsForm.llmProvider === 'google' ? 'active' : '']"
+                @click="settingsForm.llmProvider = 'google'">☁ Google Gemini</button>
+      </div>
+
+      <!-- Anthropic -->
+      <template v-if="settingsForm.llmProvider === 'anthropic'">
+        <div class="alert alert-warning" style="margin-bottom:12px;font-size:12px">
+          ⚠️ Queries and retrieved passages will be sent to Anthropic's servers.
+        </div>
+        <div class="form-group">
+          <label>Claude model</label>
+          <select v-model="settingsForm.anthropicModel">
+            <option v-for="m in anthropicModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Anthropic API key</label>
+          <div v-if="settingsForm.hasAnthropicKey && !settingsForm.clearAnthropicKey"
+               class="flex items-center gap-8" style="margin-bottom:8px">
+            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
+            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearAnthropicKey = true">Clear key</button>
+          </div>
+          <input v-else type="password" v-model="settingsForm.anthropicKey"
+                 :placeholder="settingsForm.clearAnthropicKey ? 'Enter new key…' : 'sk-ant-…'"
+                 autocomplete="off" />
+        </div>
+      </template>
+
+      <!-- Google -->
+      <template v-if="settingsForm.llmProvider === 'google'">
+        <div class="alert alert-warning" style="margin-bottom:12px;font-size:12px">
+          ⚠️ Queries and retrieved passages will be sent to Google's servers.
+        </div>
+        <div class="form-group">
+          <label>Gemini model</label>
+          <select v-model="settingsForm.googleModel">
+            <option v-for="m in googleModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Google API key</label>
+          <div v-if="settingsForm.hasGoogleKey && !settingsForm.clearGoogleKey"
+               class="flex items-center gap-8" style="margin-bottom:8px">
+            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
+            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearGoogleKey = true">Clear key</button>
+          </div>
+          <input v-else type="password" v-model="settingsForm.googleKey"
+                 :placeholder="settingsForm.clearGoogleKey ? 'Enter new key…' : 'AIzaSy…'"
+                 autocomplete="off" />
+        </div>
+      </template>
+
+      <hr class="divider" />
+
+      <!-- PDF Processing -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">PDF Processing</div>
+      <div class="form-group">
+        <label>Metadata provider</label>
+        <select v-model="settingsForm.metaBackend">
+          <option value="openalex">OpenAlex (default)</option>
+          <option value="crossref">CrossRef</option>
+          <option value="semantic_scholar">Semantic Scholar</option>
+          <option value="none">None (skip enrichment)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>PDF conversion backend</label>
+        <select v-model="settingsForm.pdfBackend">
+          <option value="pymupdf">PyMuPDF (fast)</option>
+          <option value="docling">Docling (thorough, slow)</option>
+        </select>
+      </div>
 
       <div class="modal-footer">
         <button class="btn btn-secondary" @click="showSettings = false">Cancel</button>
@@ -510,10 +614,12 @@ const PdfTab = defineComponent({
           dir_name: dirName,
           filename,
           backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
-          enrich_metadata: true,
           metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
         })
         await loadFiles(dirName)
+        // Invalidate cached metadata so panel re-fetches after conversion
+        const metaKey = `${dirName}/${filename}`
+        if (metaKey in fileMetadata) delete fileMetadata[metaKey]
       } catch (e) { error.value = e.message }
       finally { delete converting[key] }
     }
@@ -525,10 +631,19 @@ const PdfTab = defineComponent({
         await api.post('/preprocess/delete-pdf', { dir_name: dirName, filename })
         await loadFiles(dirName)
         await loadDirs()
+        // Clean up metadata panel state for deleted file
+        const fileKey = `${dirName}/${filename}`
+        delete expandedFiles[fileKey]
+        delete fileMetadata[fileKey]
+        delete reenrichState[fileKey]
       } catch (e) { error.value = e.message }
     }
 
     const deletingDir = reactive({})
+    const convertingAllMap = reactive({})
+    // Structure per dir: { active: false, current: 0, total: 0, failed: 0 }
+    const expandedFiles = reactive({})   // key: "dirName/filename" → true/false
+    const fileMetadata  = reactive({})   // key: "dirName/filename" → null|object|'not_converted'|'error'
 
     async function deleteDir(dirName) {
       if (!confirm(`Delete directory "${dirName}" and all its PDFs?\nThis cannot be undone.`)) return
@@ -543,6 +658,127 @@ const PdfTab = defineComponent({
       finally { delete deletingDir[dirName] }
     }
 
+    async function convertAll(dirName) {
+      const files = (dirFiles[dirName] || []).filter(f => !f.processed)
+      if (!files.length) return
+      convertingAllMap[dirName] = { active: true, current: 0, total: files.length, failed: 0 }
+      for (const file of files) {
+        convertingAllMap[dirName].current++
+        const key = `${dirName}/${file.filename}`
+        converting[key] = true
+        try {
+          await api.post('/preprocess/convert', {
+            dir_name: dirName,
+            filename: file.filename,
+            backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+          })
+          await loadFiles(dirName)
+          // Invalidate cached metadata so panel re-fetches after conversion
+          const metaKey = `${dirName}/${file.filename}`
+          if (metaKey in fileMetadata) delete fileMetadata[metaKey]
+        } catch (e) {
+          convertingAllMap[dirName].failed++
+          console.error(`Convert failed for ${file.filename}:`, e.message)
+        } finally {
+          delete converting[key]
+        }
+      }
+      convertingAllMap[dirName].active = false
+    }
+
+    function hasUnconverted(dirName) {
+      return (dirFiles[dirName] || []).some(f => !f.processed)
+    }
+
+    async function toggleFileMeta(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      expandedFiles[key] = !expandedFiles[key]
+      if (expandedFiles[key] && fileMetadata[key] === undefined) {
+        fileMetadata[key] = null  // loading
+        try {
+          const encDir  = encodeURIComponent(dirName)
+          const encFile = encodeURIComponent(filename)
+          fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        } catch (e) {
+          // 404 = not converted yet; anything else = server error
+          fileMetadata[key] = e.message.startsWith('404') ? 'not_converted' : 'error'
+        }
+      }
+    }
+
+    const reenrichState = reactive({})
+    // key: "dirName/filename" → { open: false, selected: '', confirming: false, loading: false }
+
+    function openReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key] = { open: true, selected: '', confirming: false, loading: false }
+    }
+
+    function selectReenrichProvider(dirName, filename, provider) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key].selected = provider
+      reenrichState[key].confirming = true
+    }
+
+    function cancelReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      reenrichState[key] = { open: false, selected: '', confirming: false, loading: false }
+    }
+
+    async function confirmReenrich(dirName, filename) {
+      const key = `${dirName}/${filename}`
+      const provider = reenrichState[key].selected
+      reenrichState[key].loading = true
+      try {
+        // Step 1: Call enrich endpoint — response tells us if data was found
+        const result = await api.post('/preprocess/enrich-metadata', {
+          dir_name: dirName,
+          filename,
+          backend: provider,
+        })
+        if (!result.enriched) {
+          // Show feedback inline in the panel
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: `No metadata found with ${provider} — try another provider.`, messageType: 'warn' }
+          return
+        }
+        // Step 2: Data was found — reload metadata panel
+        try {
+          const encDir  = encodeURIComponent(dirName)
+          const encFile = encodeURIComponent(filename)
+          fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: `Metadata updated from ${provider}.`, messageType: 'ok' }
+        } catch {
+          delete fileMetadata[key]
+          reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+            message: 'Metadata updated, but failed to reload — click ▶ to refresh.', messageType: 'warn' }
+        }
+      } catch (e) {
+        reenrichState[key] = { open: false, selected: '', confirming: false, loading: false,
+          message: `Failed: ${e.message}`, messageType: 'error' }
+      }
+    }
+
+    async function downloadMetadata(dirName, filename) {
+      const encDir  = encodeURIComponent(dirName)
+      const encFile = encodeURIComponent(filename)
+      const stem = filename.replace(/\.pdf$/i, '')
+      try {
+        const blob = await api.download(`/preprocess/download/${encDir}/${encFile}/metadata`)
+        downloadBlob(blob, `${stem}_metadata.json`)
+      } catch (e) {
+        error.value = `Download failed: ${e.message}`
+      }
+    }
+
+    function extractYear(dateStr) {
+      if (!dateStr) return null
+      const m = String(dateStr).match(/\d{4}/)
+      return m ? m[0] : null
+    }
+
     async function toggleDir(d) {
       expanded[d] = !expanded[d]
       if (expanded[d] && !dirFiles[d]) await loadFiles(d)
@@ -553,7 +789,12 @@ const PdfTab = defineComponent({
     return {
       error, directories, loading, uploadDir,
       converting, expanded, dirFiles, deletingDir,
+      convertingAllMap,
+      expandedFiles, fileMetadata, reenrichState,
       loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
+      convertAll, hasUnconverted,
+      toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
+      downloadMetadata, extractYear,
     }
   },
 
@@ -601,6 +842,21 @@ const PdfTab = defineComponent({
         <span class="badge badge-gray">{{ dir.pdf_count }} file{{ dir.pdf_count !== 1 ? 's' : '' }}</span>
       </span>
       <span class="flex items-center gap-8">
+        <template v-if="expanded[dir.name] && hasUnconverted(dir.name)">
+          <span v-if="convertingAllMap[dir.name] && convertingAllMap[dir.name].active"
+                class="text-sm text-muted">
+            Converting {{ convertingAllMap[dir.name].current }}/{{ convertingAllMap[dir.name].total }}…
+          </span>
+          <button v-else class="btn btn-sm"
+                  style="background:var(--success);color:#fff;border-color:var(--success)"
+                  @click.stop="convertAll(dir.name)">
+            Convert All
+          </button>
+        </template>
+        <span v-if="convertingAllMap[dir.name] && !convertingAllMap[dir.name].active && convertingAllMap[dir.name].failed > 0"
+              class="text-sm" style="color:var(--warning)">
+          {{ convertingAllMap[dir.name].failed }} failed
+        </span>
         <button class="btn btn-danger btn-sm" @click.stop="deleteDir(dir.name)"
                 :disabled="!!deletingDir[dir.name]">
           <span v-if="deletingDir[dir.name]" class="spinner"></span>
@@ -616,26 +872,145 @@ const PdfTab = defineComponent({
       </div>
       <div v-else-if="dirFiles[dir.name].length === 0" class="text-muted text-sm mt-8">No files in this directory.</div>
 
-      <div v-for="file in (dirFiles[dir.name] || [])" :key="file.filename" class="file-item">
-        <div>
-          <div class="file-name">{{ file.filename }}</div>
-          <div class="file-meta">
-            <span v-if="file.processed" class="badge badge-green">Converted</span>
-            <span v-else class="badge badge-gray">Not converted</span>
+      <div v-for="file in (dirFiles[dir.name] || [])" :key="file.filename"
+           style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;overflow:hidden">
+        <!-- File row -->
+        <div class="file-item" style="border:none;margin:0">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-secondary btn-sm"
+                    style="padding:2px 6px;font-size:12px;min-width:20px"
+                    @click="toggleFileMeta(dir.name, file.filename)">
+              <span :style="expandedFiles[dir.name+'/'+file.filename] ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
+            </button>
+            <div>
+              <div class="file-name">{{ file.filename }}</div>
+              <div class="file-meta">
+                <span v-if="file.processed" class="badge badge-green">Converted</span>
+                <span v-else class="badge badge-gray">Not converted</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-8">
+            <button class="btn btn-secondary btn-sm"
+                    :disabled="!!converting[dir.name+'/'+file.filename]"
+                    @click="convertFile(dir.name, file.filename)">
+              <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
+              <span v-else>Convert</span>
+            </button>
+            <button class="btn btn-danger btn-sm"
+                    :disabled="!!converting[dir.name+'/'+file.filename]"
+                    @click="deleteFile(dir.name, file.filename)">
+              Delete
+            </button>
           </div>
         </div>
-        <div class="flex gap-8">
-          <button class="btn btn-secondary btn-sm"
-                  :disabled="!!converting[dir.name+'/'+file.filename]"
-                  @click="convertFile(dir.name, file.filename)">
-            <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
-            <span v-else>Convert</span>
-          </button>
-          <button class="btn btn-danger btn-sm"
-                  :disabled="!!converting[dir.name+'/'+file.filename]"
-                  @click="deleteFile(dir.name, file.filename)">
-            Delete
-          </button>
+
+        <!-- Metadata panel -->
+        <div v-if="expandedFiles[dir.name+'/'+file.filename]" class="file-meta-panel">
+          <!-- Loading -->
+          <div v-if="fileMetadata[dir.name+'/'+file.filename] === null"
+               class="flex items-center gap-8">
+            <span class="spinner"></span>
+            <span class="text-muted text-sm">Loading metadata…</span>
+          </div>
+          <!-- Not converted -->
+          <div v-else-if="fileMetadata[dir.name+'/'+file.filename] === 'not_converted'"
+               class="text-muted text-sm">
+            Not converted yet — convert the file to see metadata.
+          </div>
+          <!-- Server error -->
+          <div v-else-if="fileMetadata[dir.name+'/'+file.filename] === 'error'"
+               class="text-sm" style="color:var(--danger)">
+            Could not load metadata — check the backend connection.
+          </div>
+          <!-- Metadata -->
+          <template v-else-if="fileMetadata[dir.name+'/'+file.filename]">
+            <div class="file-meta-title">
+              {{ fileMetadata[dir.name+'/'+file.filename].title || file.filename }}
+            </div>
+            <div class="file-meta-row" v-if="(fileMetadata[dir.name+'/'+file.filename].authors || []).length">
+              <strong>Authors:</strong>
+              {{ (fileMetadata[dir.name+'/'+file.filename].authors || []).join(', ') }}
+            </div>
+            <div class="file-meta-row"
+                 v-if="extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date) || fileMetadata[dir.name+'/'+file.filename].journal">
+              <template v-if="extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date)">
+                <strong>Year:</strong>
+                {{ extractYear(fileMetadata[dir.name+'/'+file.filename].publication_date) }}
+              </template>
+              <template v-if="fileMetadata[dir.name+'/'+file.filename].journal">
+                &nbsp;·&nbsp; <strong>Journal:</strong>
+                {{ fileMetadata[dir.name+'/'+file.filename].journal }}
+              </template>
+            </div>
+            <div class="file-meta-row" v-if="fileMetadata[dir.name+'/'+file.filename].doi">
+              <strong>DOI:</strong>
+              <a :href="'https://doi.org/' + fileMetadata[dir.name+'/'+file.filename].doi"
+                 target="_blank" rel="noopener noreferrer" style="color:var(--primary)">
+                {{ fileMetadata[dir.name+'/'+file.filename].doi }}
+              </a>
+            </div>
+            <div class="file-meta-row">
+              <span class="badge-source">
+                {{ fileMetadata[dir.name+'/'+file.filename].metadata_source || 'None' }}
+              </span>
+            </div>
+
+            <!-- Get Metadata / Download -->
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
+                <button class="btn btn-secondary btn-sm"
+                        @click="openReenrich(dir.name, file.filename)">
+                  Get Metadata
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                        @click="downloadMetadata(dir.name, file.filename)">
+                  ⬇ metadata.json
+                </button>
+              </template>
+              <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
+                <span class="text-sm" style="margin-right:8px">
+                  Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
+                </span>
+                <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">
+                  Cancel
+                </button>
+                <button class="btn btn-primary btn-sm" style="margin-left:6px"
+                        :disabled="reenrichState[dir.name+'/'+file.filename].loading"
+                        @click="confirmReenrich(dir.name, file.filename)">
+                  <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
+                  <span v-else>Confirm</span>
+                </button>
+              </template>
+              <template v-else>
+                <div class="flex gap-8">
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">
+                    OpenAlex
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">
+                    CrossRef
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">
+                    Semantic Scholar
+                  </button>
+                  <button class="btn btn-secondary btn-sm"
+                          @click="cancelReenrich(dir.name, file.filename)">
+                    ✕
+                  </button>
+                </div>
+              </template>
+            </div>
+            <div v-if="reenrichState[dir.name+'/'+file.filename] && reenrichState[dir.name+'/'+file.filename].message"
+                 class="text-sm" style="margin-top:6px"
+                 :style="reenrichState[dir.name+'/'+file.filename].messageType === 'ok' ? 'color:var(--success)' :
+                         reenrichState[dir.name+'/'+file.filename].messageType === 'error' ? 'color:var(--danger)' :
+                         'color:var(--warning)'">
+              {{ reenrichState[dir.name+'/'+file.filename].message }}
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -714,15 +1089,14 @@ const FilePickerPanel = defineComponent({
       if (!toIngest.length) return
       ingesting.value = true
       ingestMsg.value = null
-      const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
       let ok = 0, fail = 0
       for (const f of toIngest) {
         const key = f.dirName + '/' + f.mdName
         ingestStatuses[key] = 'pending'
         try {
           await api.post(`/ingest/${props.collectionId}/file`, {
-            markdown_file:     f.mdName,
-            preprocessed_path: `${base}/${f.dirName}`,
+            markdown_file: f.mdName,
+            dir_name:      f.dirName,
           })
           ingestStatuses[key] = 'ok'
           checked[key] = false
@@ -837,7 +1211,8 @@ const CollectionsTab = defineComponent({
     const error          = ref(null)
     const creating       = ref(false)
     const deleting       = reactive({})
-    const newForm        = reactive({ collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
+    const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
+                                      chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
     const createMsg      = ref(null)
     const pickerCollId   = ref(null)
     const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
@@ -864,37 +1239,41 @@ const CollectionsTab = defineComponent({
     }
 
     async function createCollection() {
-      if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
+      if (!newForm.name.trim()) { error.value = 'Collection name is required.'; return }
       creating.value  = true
       error.value     = null
       createMsg.value = null
-      const collId    = newForm.collection_id.trim()
       try {
-        await api.post('/collections', {
-          collection_id: collId,
-          name:          newForm.name.trim() || collId,
-          search_type:   newForm.search_type,
+        const coll = await api.post('/collections', {
+          name:        newForm.name.trim(),
+          search_type: newForm.search_type,
         })
+        const collId = coll.collection_id
 
         if (newForm.ingestDir) {
-          const dir  = convertedDirs.value.find(d => d.name === newForm.ingestDir)
-          const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
-          let ok = 0
+          const dir = convertedDirs.value.find(d => d.name === newForm.ingestDir)
+          let ok = 0, fail = 0
           for (const f of (dir?.files ?? [])) {
             try {
               await api.post(`/ingest/${collId}/file`, {
-                markdown_file:     f.mdName,
-                preprocessed_path: `${base}/${newForm.ingestDir}`,
+                markdown_file: f.mdName,
+                dir_name:      newForm.ingestDir,
+                chunk_size:    newForm.chunkSize,
+                chunk_overlap: newForm.chunkOverlap,
+                chunk_mode:    newForm.chunkMode,
               })
               ok++
-            } catch { /* continue with remaining files */ }
+            } catch { fail++ }
           }
-          createMsg.value = `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+          createMsg.value = fail === 0
+            ? `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+            : `Ingested ${ok}/${ok + fail} file(s) — ${fail} failed.`
         } else {
           createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
         }
 
-        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
+        Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '',
+                                 chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -916,6 +1295,13 @@ const CollectionsTab = defineComponent({
     function togglePicker(collId) {
       pickerCollId.value = pickerCollId.value === collId ? null : collId
     }
+
+    const CHUNK_DEFAULTS = { tokens: { size: 500, overlap: 100 }, characters: { size: 2000, overlap: 200 } }
+
+    watch(() => newForm.chunkMode, mode => {
+      const d = CHUNK_DEFAULTS[mode]
+      if (d) { newForm.chunkSize = d.size; newForm.chunkOverlap = d.overlap }
+    })
 
     onMounted(loadConvertedDirs)
 
@@ -940,13 +1326,19 @@ const CollectionsTab = defineComponent({
     <div class="card-title">Create collection</div>
 
     <div class="form-row">
-      <div class="form-group" style="margin:0">
-        <label>Collection ID *</label>
-        <input type="text" v-model="newForm.collection_id" placeholder="my-collection" />
+      <div class="form-group" style="margin:0;flex:1">
+        <label>Collection name *</label>
+        <input type="text" v-model="newForm.name" placeholder="Mini NLP" />
+        <div v-if="newForm.name.trim()" class="text-sm text-muted" style="margin-top:3px">
+          ID: <code>{{ newForm.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }}</code>
+        </div>
       </div>
       <div class="form-group" style="margin:0">
-        <label>Display name</label>
-        <input type="text" v-model="newForm.name" placeholder="My Papers" />
+        <label>Chunk mode</label>
+        <select v-model="newForm.chunkMode">
+          <option value="tokens">Tokens (approx)</option>
+          <option value="characters">Characters</option>
+        </select>
       </div>
     </div>
 
@@ -972,6 +1364,17 @@ const CollectionsTab = defineComponent({
         <div v-if="!loadingDirs && convertedDirs.length === 0" class="text-muted text-sm" style="margin-top:4px">
           No converted files found — convert PDFs first.
         </div>
+      </div>
+    </div>
+
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Chunk size</label>
+        <input type="number" v-model.number="newForm.chunkSize" min="50" max="4000" step="50" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Overlap</label>
+        <input type="number" v-model.number="newForm.chunkOverlap" min="0" max="500" step="10" />
       </div>
     </div>
 
@@ -1095,7 +1498,7 @@ const RagTab = defineComponent({
         '## Retrieved Passages', '',
       ]
       for (const [i, r] of (result.value.results || []).entries()) {
-        lines.push(`### ${i + 1}. ${r.unique_id} (score: ${r.score?.toFixed(3)})`)
+        lines.push(`### ${i + 1}. ${r.unique_id}`)
         lines.push(`> ${r.chunk_text}`)
         lines.push(`*Page ${r.page_number} · ${r.chunk_type}*`, '')
       }
@@ -1184,6 +1587,7 @@ const RagTab = defineComponent({
       <div class="card" v-if="result.answer">
         <div class="flex items-center gap-8" style="margin-bottom:12px">
           <div class="card-title" style="margin:0;flex:1">Answer</div>
+          <span v-if="result.llm_model" style="font-size:11px;color:var(--text-muted);margin-right:4px">{{ result.llm_model }}</span>
           <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
         </div>
         <div style="line-height:1.75;white-space:pre-wrap">{{ result.answer }}</div>
@@ -1198,8 +1602,7 @@ const RagTab = defineComponent({
         <div v-for="(r, i) in result.results" :key="i" class="collapsible">
           <div class="collapsible-header" @click="togglePassage(r)">
             <span>
-              <span class="passage-score">{{ r.score?.toFixed(3) }}</span>
-              &nbsp;·&nbsp;{{ r.unique_id }}
+              {{ r.unique_id }}
               &nbsp;·&nbsp;p.{{ r.page_number }}
               &nbsp;·&nbsp;<span class="badge badge-gray">{{ r.chunk_type }}</span>
             </span>
@@ -1556,13 +1959,27 @@ createApp({
     const settingsForm = reactive({
       backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
       preprocessedBase: localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed',
+      metaBackend:      localStorage.getItem('prag_meta_backend')      || 'openalex',
+      pdfBackend:       localStorage.getItem('prag_pdf_backend')        || 'pymupdf',
       embeddingModel: '',
       llmModel:       '',
+      // Cloud LLM
+      llmProvider:      'local',
+      anthropicModel:   'claude-opus-4-6',
+      googleModel:      'gemini-2.5-flash',
+      anthropicKey:     '',
+      googleKey:        '',
+      hasAnthropicKey:  false,
+      hasGoogleKey:     false,
+      clearAnthropicKey: false,
+      clearGoogleKey:    false,
     })
     const settingsStatus  = ref('unknown')
     const ollamaModels    = ref([])
     const loadingModels   = ref(false)
     const modelError      = ref(null)
+    const anthropicModels = ref(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
+    const googleModels    = ref(['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'])
 
     const tabs = [
       { id: 'pdf',         label: 'PDF Management' },
@@ -1617,14 +2034,28 @@ createApp({
       settingsStatus.value = 'unknown'
       modelError.value     = null
       loadingModels.value  = true
+      settingsForm.metaBackend = localStorage.getItem('prag_meta_backend') || 'openalex'
+      settingsForm.pdfBackend  = localStorage.getItem('prag_pdf_backend')  || 'pymupdf'
       try {
-        const [cfg, models] = await Promise.all([
+        const [cfg, models, cloudModels] = await Promise.all([
           api.get('/settings'),
           api.get('/ollama/models'),
+          api.get('/settings/cloud-models'),
         ])
-        settingsForm.embeddingModel = cfg.embedding_model
-        settingsForm.llmModel       = cfg.llm_model
-        ollamaModels.value          = models.map(m => m.name)
+        if (cloudModels.anthropic?.length) anthropicModels.value = cloudModels.anthropic
+        if (cloudModels.google?.length)    googleModels.value    = cloudModels.google
+        settingsForm.embeddingModel    = cfg.embedding_model
+        settingsForm.llmModel          = cfg.llm_model
+        settingsForm.llmProvider       = cfg.llm_provider || 'local'
+        settingsForm.anthropicModel    = cfg.anthropic_model || anthropicModels.value[0]
+        settingsForm.googleModel       = cfg.google_model   || googleModels.value[0]
+        settingsForm.hasAnthropicKey   = !!cfg.has_anthropic_key
+        settingsForm.hasGoogleKey      = !!cfg.has_google_key
+        settingsForm.anthropicKey      = ''
+        settingsForm.googleKey         = ''
+        settingsForm.clearAnthropicKey = false
+        settingsForm.clearGoogleKey    = false
+        ollamaModels.value             = models.map(m => m.name)
       } catch (e) {
         modelError.value = e.message
       } finally {
@@ -1636,14 +2067,27 @@ createApp({
       settingsStatus.value = 'checking'
       localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
       localStorage.setItem('prag_preprocessed_dir', settingsForm.preprocessedBase)
+      localStorage.setItem('prag_meta_backend', settingsForm.metaBackend)
+      localStorage.setItem('prag_pdf_backend',  settingsForm.pdfBackend)
       try {
         await api.get('/health')
         settingsStatus.value = 'ok'
-        // Persist model changes to config.yaml
+        // Persist settings to config.yaml / api_keys.json
         const body = {}
         if (settingsForm.embeddingModel) body.embedding_model = settingsForm.embeddingModel
         if (settingsForm.llmModel)       body.llm_model       = settingsForm.llmModel
-        if (Object.keys(body).length)    await api.post('/settings', body)
+        body.llm_provider = settingsForm.llmProvider
+        if (settingsForm.llmProvider === 'anthropic') {
+          body.anthropic_model = settingsForm.anthropicModel
+          if (settingsForm.clearAnthropicKey)        body.clear_anthropic_key = true
+          else if (settingsForm.anthropicKey.trim()) body.anthropic_key = settingsForm.anthropicKey.trim()
+        }
+        if (settingsForm.llmProvider === 'google') {
+          body.google_model = settingsForm.googleModel
+          if (settingsForm.clearGoogleKey)        body.clear_google_key = true
+          else if (settingsForm.googleKey.trim()) body.google_key = settingsForm.googleKey.trim()
+        }
+        await api.post('/settings', body)
         showSettings.value = false
         await checkHealth()
         await loadCollections()
@@ -1665,6 +2109,7 @@ createApp({
       selectedCollection, collections,
       globalError, showSettings, health,
       settingsForm, settingsStatus, ollamaModels, loadingModels, modelError,
+      anthropicModels, googleModels,
       setCollection, saveCollection, openSettings, saveSettings, loadCollections,
     }
   },

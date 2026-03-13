@@ -24,3 +24,4 @@ class CollectionResponse(BaseModel):
 class CreateCollectionRequest(BaseModel):
     name: str
     description: str | None = None
+    search_type: str = "hybrid"

@@ -7,10 +7,23 @@ from pydantic import BaseModel
 
 from app.core.config import settings, load_config
 from app.services.ollama_service import OllamaService
+from app.services.api_keys_service import ApiKeysService
 
 router = APIRouter()
 
 CONFIG_PATH = Path("config.yaml")
+_api_keys = ApiKeysService()
+
+ANTHROPIC_MODELS = [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+]
+
+GOOGLE_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite-preview",
+]
 
 
 @router.get("/ollama/models")
@@ -32,11 +45,20 @@ def list_ollama_models():
 
 @router.get("/settings")
 def get_settings():
-    """Get current application settings."""
+    """Get current application settings.
+
+    API keys are never returned — only a boolean 'has_key' indicator.
+    """
     config = load_config(str(CONFIG_PATH))
+    llm_cfg = config["models"]["llm"]
     return {
         "embedding_model": config["models"]["embedding"],
-        "llm_model": config["models"]["llm"]["model"],
+        "llm_model": llm_cfg["model"],
+        "llm_provider": llm_cfg.get("type", "local"),
+        "anthropic_model": llm_cfg.get("anthropic_model", ANTHROPIC_MODELS[0]),
+        "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
+        "has_anthropic_key": _api_keys.has_key("anthropic"),
+        "has_google_key": _api_keys.has_key("google"),
         "chunk_size": config["chunking"]["size"],
         "chunk_overlap": config["chunking"]["overlap"],
         "chunk_mode": config["chunking"].get("mode", "characters"),
@@ -46,12 +68,28 @@ def get_settings():
     }
 
 
+@router.get("/settings/cloud-models")
+def get_cloud_models():
+    """Return the list of supported cloud model IDs."""
+    return {
+        "anthropic": ANTHROPIC_MODELS,
+        "google": GOOGLE_MODELS,
+    }
+
+
 class UpdateSettingsRequest(BaseModel):
     embedding_model: Optional[str] = None
     llm_model: Optional[str] = None
+    llm_provider: Optional[str] = None   # "local", "anthropic", "google"
+    anthropic_model: Optional[str] = None
+    google_model: Optional[str] = None
+    anthropic_key: Optional[str] = None  # write-only — never returned
+    google_key: Optional[str] = None     # write-only — never returned
+    clear_anthropic_key: bool = False
+    clear_google_key: bool = False
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
-    chunk_mode: Optional[str] = None  # "characters" or "tokens"
+    chunk_mode: Optional[str] = None
     top_k: Optional[int] = None
     pdf_input_dir: Optional[str] = None
     preprocessed_dir: Optional[str] = None
@@ -59,13 +97,23 @@ class UpdateSettingsRequest(BaseModel):
 
 @router.post("/settings")
 def update_settings(request: UpdateSettingsRequest):
-    """Update application settings. Writes to config.yaml."""
+    """Update application settings. Writes to config.yaml.
+
+    API keys are stored in /data/api_keys.json (mounted volume) and are
+    never echoed back in any response.
+    """
     config = load_config(str(CONFIG_PATH))
 
     if request.embedding_model is not None:
         config["models"]["embedding"] = request.embedding_model
     if request.llm_model is not None:
         config["models"]["llm"]["model"] = request.llm_model
+    if request.llm_provider is not None:
+        config["models"]["llm"]["type"] = request.llm_provider
+    if request.anthropic_model is not None:
+        config["models"]["llm"]["anthropic_model"] = request.anthropic_model
+    if request.google_model is not None:
+        config["models"]["llm"]["google_model"] = request.google_model
     if request.chunk_size is not None:
         config["chunking"]["size"] = request.chunk_size
     if request.chunk_overlap is not None:
@@ -75,9 +123,19 @@ def update_settings(request: UpdateSettingsRequest):
     if request.top_k is not None:
         config["retrieval"]["top_k"] = request.top_k
 
-    # Write updated config
     with open(CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    # Handle API keys — write-only, stored in data volume
+    if request.clear_anthropic_key:
+        _api_keys.clear_key("anthropic")
+    elif request.anthropic_key:
+        _api_keys.set_key("anthropic", request.anthropic_key)
+
+    if request.clear_google_key:
+        _api_keys.clear_key("google")
+    elif request.google_key:
+        _api_keys.set_key("google", request.google_key)
 
     # Update env-based settings in memory
     if request.pdf_input_dir is not None:
