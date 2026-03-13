@@ -1587,6 +1587,7 @@ const RagTab = defineComponent({
       <div class="card" v-if="result.answer">
         <div class="flex items-center gap-8" style="margin-bottom:12px">
           <div class="card-title" style="margin:0;flex:1">Answer</div>
+          <span v-if="result.llm_model" style="font-size:11px;color:var(--text-muted);margin-right:4px">{{ result.llm_model }}</span>
           <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
         </div>
         <div style="line-height:1.75;white-space:pre-wrap">{{ result.answer }}</div>
@@ -1965,7 +1966,7 @@ createApp({
       // Cloud LLM
       llmProvider:      'local',
       anthropicModel:   'claude-opus-4-6',
-      googleModel:      'gemini-2.0-flash',
+      googleModel:      'gemini-2.5-flash',
       anthropicKey:     '',
       googleKey:        '',
       hasAnthropicKey:  false,
@@ -2036,15 +2037,18 @@ createApp({
       settingsForm.metaBackend = localStorage.getItem('prag_meta_backend') || 'openalex'
       settingsForm.pdfBackend  = localStorage.getItem('prag_pdf_backend')  || 'pymupdf'
       try {
-        const [cfg, models] = await Promise.all([
+        const [cfg, models, cloudModels] = await Promise.all([
           api.get('/settings'),
           api.get('/ollama/models'),
+          api.get('/settings/cloud-models'),
         ])
+        if (cloudModels.anthropic?.length) anthropicModels.value = cloudModels.anthropic
+        if (cloudModels.google?.length)    googleModels.value    = cloudModels.google
         settingsForm.embeddingModel    = cfg.embedding_model
         settingsForm.llmModel          = cfg.llm_model
         settingsForm.llmProvider       = cfg.llm_provider || 'local'
-        settingsForm.anthropicModel    = cfg.anthropic_model || 'claude-opus-4-6'
-        settingsForm.googleModel       = cfg.google_model   || 'gemini-2.0-flash'
+        settingsForm.anthropicModel    = cfg.anthropic_model || anthropicModels.value[0]
+        settingsForm.googleModel       = cfg.google_model   || googleModels.value[0]
         settingsForm.hasAnthropicKey   = !!cfg.has_anthropic_key
         settingsForm.hasGoogleKey      = !!cfg.has_google_key
         settingsForm.anthropicKey      = ''

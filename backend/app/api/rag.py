@@ -7,11 +7,59 @@ from app.services.ollama_service import OllamaService
 from app.services.citation_service import CitationService
 from app.services.metadata_service import MetadataService
 from app.services.sparse_embedding_service import SparseEmbeddingService
+from app.services.api_keys_service import ApiKeysService
 from app.core.config import settings, load_config
 
 router = APIRouter()
+_api_keys = ApiKeysService()
 
 CANNOT_ANSWER_PHRASE = "Sorry, I do not know the answer for this"
+
+
+def _get_llm_info(config: dict) -> dict:
+    """Return provider/model metadata for display."""
+    llm_cfg = config["models"]["llm"]
+    provider = llm_cfg.get("type", "local")
+    if provider == "anthropic":
+        return {"provider": "anthropic", "model": llm_cfg.get("anthropic_model", "claude-opus-4-6")}
+    if provider == "google":
+        return {"provider": "google", "model": llm_cfg.get("google_model", "gemini-2.5-flash")}
+    return {"provider": "local", "model": llm_cfg.get("model", "")}
+
+
+def _get_llm_service(config: dict):
+    """Return the appropriate LLM generation service based on config."""
+    llm_cfg = config["models"]["llm"]
+    provider = llm_cfg.get("type", "local")
+
+    if provider == "anthropic":
+        from app.services.anthropic_service import AnthropicService
+        api_key = _api_keys.get_key("anthropic")
+        if not api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="Anthropic API key not configured. Set it in Settings.",
+            )
+        model = llm_cfg.get("anthropic_model", "claude-opus-4-6")
+        return AnthropicService(api_key=api_key, model=model)
+
+    if provider == "google":
+        from app.services.google_service import GoogleService
+        api_key = _api_keys.get_key("google")
+        if not api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="Google API key not configured. Set it in Settings.",
+            )
+        model = llm_cfg.get("google_model", "gemini-2.5-flash")
+        return GoogleService(api_key=api_key, model=model)
+
+    # Default: local Ollama
+    return OllamaService(
+        url=settings.ollama_url,
+        model=llm_cfg["model"],
+        embedding_model=config["models"]["embedding"],
+    )
 
 
 def _clean_context(text: str) -> str:
@@ -39,16 +87,19 @@ def get_services():
 
     qdrant = QdrantService(url=settings.qdrant_url)
     collection_service = CollectionService(qdrant=qdrant)
+    # Embeddings always use Ollama (local)
     ollama_service = OllamaService(
         url=settings.ollama_url,
         model=config["models"]["llm"]["model"],
-        embedding_model=config["models"]["embedding"]
+        embedding_model=config["models"]["embedding"],
     )
     citation_service = CitationService()
     metadata_service = MetadataService(data_dir=settings.data_dir)
     sparse_embedding_service = SparseEmbeddingService()
+    llm_service = _get_llm_service(config)
+    llm_info = _get_llm_info(config)
 
-    return collection_service, qdrant, ollama_service, citation_service, metadata_service, sparse_embedding_service
+    return collection_service, qdrant, ollama_service, citation_service, metadata_service, sparse_embedding_service, llm_service, llm_info
 
 
 @router.post("/collections/{collection_id}/rag")
@@ -63,7 +114,7 @@ def rag_query(
     Supports hybrid search (dense + BM42 sparse) when the collection
     was created with search_type="hybrid" and use_hybrid=True is passed.
     """
-    collection_service, qdrant, ollama, citation_service, metadata_service, sparse_embedding_service = services
+    collection_service, qdrant, ollama, citation_service, metadata_service, sparse_embedding_service, llm_service, llm_info = services
 
     # Validate query text
     if not rag_request.query_text or not rag_request.query_text.strip():
@@ -139,22 +190,47 @@ def rag_query(
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_tokens
-        prompt = (
-            f"You are a research assistant. Answer the question using ONLY the excerpts below.\n\n"
-            f"CITATION RULES:\n"
+        # prompt = (
+        #     f"You are a research assistant. Answer the question using ONLY the excerpts below.\n\n"
+        #     f"CITATION RULES:\n"
+        #     f"- The ONLY valid citation keys are: {keys_list}\n"
+        #     f"- Cite by placing the key in square brackets, e.g. {f'[{valid_keys[0]}]' if valid_keys else '[AuthorTitle2024]'}\n"
+        #     f"- Do NOT invent citation keys. Do NOT cite numbered references from within the text (e.g. [1], [2]).\n"
+        #     f"- Only use the keys listed above.\n\n"
+        #     f"Answer based solely on the provided excerpts, not on prior knowledge.\n"
+        #     f"Aim for approximately {word_target} words.\n"
+        #     f"If the excerpts do not contain enough information, reply with: "
+        #     f'"{CANNOT_ANSWER_PHRASE}"\n\n'
+        #     f"Question: {rag_request.query_text}\n\n"
+        #     f"Excerpts:\n{context}\n\n"
+        #     f"Answer:"
+        # )
+        CITATION_KEY_CONSTRAINTS = (
             f"- The ONLY valid citation keys are: {keys_list}\n"
             f"- Cite by placing the key in square brackets, e.g. {f'[{valid_keys[0]}]' if valid_keys else '[AuthorTitle2024]'}\n"
             f"- Do NOT invent citation keys. Do NOT cite numbered references from within the text (e.g. [1], [2]).\n"
             f"- Only use the keys listed above.\n\n"
-            f"Answer based solely on the provided excerpts, not on prior knowledge.\n"
-            f"Aim for approximately {word_target} words.\n"
-            f"If the excerpts do not contain enough information, reply with: "
-            f'"{CANNOT_ANSWER_PHRASE}"\n\n'
+            )
+        prompt = (
+            "Answer the question below with the context.\n\n"
+            f"Context:\n\n{context}\n\n----\n\n"
             f"Question: {rag_request.query_text}\n\n"
-            f"Excerpts:\n{context}\n\n"
-            f"Answer:"
+            "Write an answer based on the context. "
+            "If the context provides insufficient information reply "
+            f'"{CANNOT_ANSWER_PHRASE}." '
+            "For each part of your answer, indicate which sources support the claims you make. "
+            "Each context has a citation key at the end of it, which looks like {example_citation}. "
+            "Only cite from the context above and only use the citation keys from the context. "
+            f"{CITATION_KEY_CONSTRAINTS}"
+            "Do not concatenate citation keys, just use them as is. "
+            "Write in the style of a Wikipedia article, with concise sentences and "
+            "coherent paragraphs. The context comes from a variety of sources and is "
+            "only a summary, so there may inaccuracies or ambiguities. If quotes are "
+            "present and relevant, use them in the answer. This answer will go directly "
+            "onto Wikipedia, so do not add any extraneous information.\n\n"
+            f"Aim for approximately {word_target} words.\n"
         )
-        answer = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=rag_request.max_tokens)
+        answer = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=rag_request.max_tokens)
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():
@@ -181,6 +257,8 @@ def rag_query(
         "answer": answer,
         "results": results,
         "citations": citations,
+        "llm_provider": llm_info["provider"],
+        "llm_model": llm_info["model"],
     }
 
     return response

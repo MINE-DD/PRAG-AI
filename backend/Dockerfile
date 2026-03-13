@@ -19,7 +19,7 @@ COPY pyproject.toml .
 
 # Install uv and dependencies
 RUN pip install uv && \
-    uv pip install --system -e .
+    uv pip install --system -e ".[api]"
 
 # Copy application code
 COPY backend/app/ ./app/
