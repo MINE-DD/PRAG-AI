@@ -1089,15 +1089,14 @@ const FilePickerPanel = defineComponent({
       if (!toIngest.length) return
       ingesting.value = true
       ingestMsg.value = null
-      const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
       let ok = 0, fail = 0
       for (const f of toIngest) {
         const key = f.dirName + '/' + f.mdName
         ingestStatuses[key] = 'pending'
         try {
           await api.post(`/ingest/${props.collectionId}/file`, {
-            markdown_file:     f.mdName,
-            preprocessed_path: `${base}/${f.dirName}`,
+            markdown_file: f.mdName,
+            dir_name:      f.dirName,
           })
           ingestStatuses[key] = 'ok'
           checked[key] = false
@@ -1212,7 +1211,7 @@ const CollectionsTab = defineComponent({
     const error          = ref(null)
     const creating       = ref(false)
     const deleting       = reactive({})
-    const newForm        = reactive({ collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
+    const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '' })
     const createMsg      = ref(null)
     const pickerCollId   = ref(null)
     const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
@@ -1239,37 +1238,37 @@ const CollectionsTab = defineComponent({
     }
 
     async function createCollection() {
-      if (!newForm.collection_id.trim()) { error.value = 'Collection ID is required.'; return }
+      if (!newForm.name.trim()) { error.value = 'Collection name is required.'; return }
       creating.value  = true
       error.value     = null
       createMsg.value = null
-      const collId    = newForm.collection_id.trim()
       try {
-        await api.post('/collections', {
-          collection_id: collId,
-          name:          newForm.name.trim() || collId,
-          search_type:   newForm.search_type,
+        const coll = await api.post('/collections', {
+          name:        newForm.name.trim(),
+          search_type: newForm.search_type,
         })
+        const collId = coll.collection_id
 
         if (newForm.ingestDir) {
-          const dir  = convertedDirs.value.find(d => d.name === newForm.ingestDir)
-          const base = localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed'
-          let ok = 0
+          const dir = convertedDirs.value.find(d => d.name === newForm.ingestDir)
+          let ok = 0, fail = 0
           for (const f of (dir?.files ?? [])) {
             try {
               await api.post(`/ingest/${collId}/file`, {
-                markdown_file:     f.mdName,
-                preprocessed_path: `${base}/${newForm.ingestDir}`,
+                markdown_file: f.mdName,
+                dir_name:      newForm.ingestDir,
               })
               ok++
-            } catch { /* continue with remaining files */ }
+            } catch { fail++ }
           }
-          createMsg.value = `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+          createMsg.value = fail === 0
+            ? `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+            : `Ingested ${ok}/${ok + fail} file(s) — ${fail} failed.`
         } else {
           createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
         }
 
-        Object.assign(newForm, { collection_id: '', name: '', search_type: 'dense', ingestDir: '' })
+        Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -1315,13 +1314,12 @@ const CollectionsTab = defineComponent({
     <div class="card-title">Create collection</div>
 
     <div class="form-row">
-      <div class="form-group" style="margin:0">
-        <label>Collection ID *</label>
-        <input type="text" v-model="newForm.collection_id" placeholder="my-collection" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Display name</label>
-        <input type="text" v-model="newForm.name" placeholder="My Papers" />
+      <div class="form-group" style="margin:0;flex:1">
+        <label>Collection name *</label>
+        <input type="text" v-model="newForm.name" placeholder="Mini NLP" />
+        <div v-if="newForm.name.trim()" class="text-sm text-muted" style="margin-top:3px">
+          ID: <code>{{ newForm.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }}</code>
+        </div>
       </div>
     </div>
 

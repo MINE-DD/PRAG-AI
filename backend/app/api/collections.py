@@ -22,7 +22,8 @@ def create_collection(request: CreateCollectionRequest):
     try:
         return service.create_collection(
             name=request.name,
-            description=request.description
+            description=request.description,
+            search_type=request.search_type,
         )
     except ValueError as e:
         raise HTTPException(
