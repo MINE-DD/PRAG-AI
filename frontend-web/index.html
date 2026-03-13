@@ -1211,7 +1211,8 @@ const CollectionsTab = defineComponent({
     const error          = ref(null)
     const creating       = ref(false)
     const deleting       = reactive({})
-    const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '' })
+    const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
+                                      chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
     const createMsg      = ref(null)
     const pickerCollId   = ref(null)
     const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
@@ -1257,6 +1258,9 @@ const CollectionsTab = defineComponent({
               await api.post(`/ingest/${collId}/file`, {
                 markdown_file: f.mdName,
                 dir_name:      newForm.ingestDir,
+                chunk_size:    newForm.chunkSize,
+                chunk_overlap: newForm.chunkOverlap,
+                chunk_mode:    newForm.chunkMode,
               })
               ok++
             } catch { fail++ }
@@ -1268,7 +1272,8 @@ const CollectionsTab = defineComponent({
           createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
         }
 
-        Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '' })
+        Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '',
+                                 chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -1345,6 +1350,24 @@ const CollectionsTab = defineComponent({
         <div v-if="!loadingDirs && convertedDirs.length === 0" class="text-muted text-sm" style="margin-top:4px">
           No converted files found — convert PDFs first.
         </div>
+      </div>
+    </div>
+
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Chunk mode</label>
+        <select v-model="newForm.chunkMode">
+          <option value="tokens">Tokens (approx)</option>
+          <option value="characters">Characters</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Chunk size</label>
+        <input type="number" v-model.number="newForm.chunkSize" min="50" max="4000" step="50" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Overlap</label>
+        <input type="number" v-model.number="newForm.chunkOverlap" min="0" max="500" step="10" />
       </div>
     </div>
 
@@ -1468,7 +1491,7 @@ const RagTab = defineComponent({
         '## Retrieved Passages', '',
       ]
       for (const [i, r] of (result.value.results || []).entries()) {
-        lines.push(`### ${i + 1}. ${r.unique_id} (score: ${r.score?.toFixed(3)})`)
+        lines.push(`### ${i + 1}. ${r.unique_id}`)
         lines.push(`> ${r.chunk_text}`)
         lines.push(`*Page ${r.page_number} · ${r.chunk_type}*`, '')
       }
@@ -1571,8 +1594,7 @@ const RagTab = defineComponent({
         <div v-for="(r, i) in result.results" :key="i" class="collapsible">
           <div class="collapsible-header" @click="togglePassage(r)">
             <span>
-              <span class="passage-score">{{ r.score?.toFixed(3) }}</span>
-              &nbsp;·&nbsp;{{ r.unique_id }}
+              {{ r.unique_id }}
               &nbsp;·&nbsp;p.{{ r.page_number }}
               &nbsp;·&nbsp;<span class="badge badge-gray">{{ r.chunk_type }}</span>
             </span>
