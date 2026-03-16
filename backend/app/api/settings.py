@@ -1,8 +1,10 @@
+import json
 import yaml
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import settings, load_config
@@ -23,6 +25,25 @@ ANTHROPIC_MODELS = [
 GOOGLE_MODELS = [
     "gemini-2.5-flash",
     "gemini-3.1-flash-lite-preview",
+]
+
+RECOMMENDED_EMBEDDING_MODELS = [
+    "all-minilm",
+    "nomic-embed-text",
+    "mxbai-embed-large",
+    "qwen3-embedding:0.6b",
+    "qwen3-embedding:4b",
+    "qwen3-embedding:8b"
+]
+
+RECOMMENDED_LLM_MODELS = [
+    "llama3.2:1b"
+    "gemma3:1b",
+    "llama3.2",
+    "phi3:mini",
+    "gemma3:4b",
+    "mistral:7b",
+    "qwen3:8b",
 ]
 
 
@@ -70,11 +91,36 @@ def get_settings():
 
 @router.get("/settings/cloud-models")
 def get_cloud_models():
-    """Return the list of supported cloud model IDs."""
+    """Return the list of supported cloud model IDs and recommended Ollama models."""
     return {
         "anthropic": ANTHROPIC_MODELS,
         "google": GOOGLE_MODELS,
+        "ollama_embedding": RECOMMENDED_EMBEDDING_MODELS,
+        "ollama_llm": RECOMMENDED_LLM_MODELS,
     }
+
+
+class PullModelRequest(BaseModel):
+    model: str
+
+
+@router.post("/ollama/pull")
+def pull_ollama_model(request: PullModelRequest):
+    """Pull an Ollama model, streaming download progress as SSE."""
+    def generate():
+        try:
+            client = OllamaService(url=settings.ollama_url)
+            for progress in client.client.pull(request.model, stream=True):
+                payload = {"status": progress.status}
+                if progress.completed and progress.total:
+                    payload["completed"] = progress.completed
+                    payload["total"] = progress.total
+                yield f"data: {json.dumps(payload)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 class UpdateSettingsRequest(BaseModel):

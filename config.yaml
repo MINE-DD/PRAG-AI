@@ -1,7 +1,7 @@
 models:
   embedding: nomic-embed-text:latest
   llm:
-    type: google
+    type: local
     model: llama3.2:latest
     google_model: gemini-2.5-flash
 chunking:
