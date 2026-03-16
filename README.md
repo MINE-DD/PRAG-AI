@@ -1,55 +1,31 @@
-# PRAG-v2 — Personal RAG for Academic Papers
+# PRAG-AI — Chat with your research papers
 
-PRAG-v2 is a local tool that lets you chat with your academic PDF papers using Large Language Models (LLMs). You can select hundreds of PDFs, organize them into collections, convert them into searchable vectors, and get answers to your questions based on your own library — all privately on your machine.
+PRAG-AI lets you ask questions to a collection of academic PDF papers and get answers grounded in the text, with citations. Everything runs on your own computer — your papers never leave your machine.
 
-**How it works at a glance:**
+**What's in this repository:**
+- A **backend** (Python) that converts PDFs, stores them as searchable data, and runs queries
+- A **database** (Qdrant) that holds the indexed content
+- A **web interface** already hosted at [https://mine-dd.github.io/PRAG-AI](https://mine-dd.github.io/PRAG-AI) — no installation needed for this part
 
-```
-Your browser (GitHub Pages) ← no installation needed
-        │  HTTP requests to localhost
-        ▼
-FastAPI backend ── Qdrant vector DB    (both run in Docker on your laptop)
-        │
-        ▼
-Ollama (also on your laptop, runs the AI models)
-```
-
-The web interface is hosted on GitHub Pages — **you don't download or install it**, you just open the URL in your browser. What you do need to run locally is the backend (Docker) and the AI models (Ollama).
+The backend and database run on your laptop inside Docker. The web interface connects to them over your local network.
 
 ---
 
-## What you need
+## What you need to install
 
-| Tool | Purpose | Install |
+| Tool | What it does | Download |
 |---|---|---|
-| **Git** | Clone the repo (needed to build the backend) | [git-scm.com](https://git-scm.com) |
-| **Docker Desktop** | Runs the backend and database | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
+| **Git** | Downloads this repository | [git-scm.com](https://git-scm.com) |
+| **Docker Desktop** | Runs the backend and database | [docker.com](https://www.docker.com/products/docker-desktop/) |
 | **Ollama** | Runs the AI models locally | [ollama.com](https://ollama.com) |
 
-No Python installation needed to use the app — only if you want to run the tests.
+> No programming knowledge required. You only need a terminal for the two setup commands below.
 
 ---
 
-## Step 1 — Install Ollama and download models
+## Step 1 — Download this repository
 
-1. Install Ollama from [ollama.com](https://ollama.com) and make sure it is running (you should see the Ollama icon in your menu bar on Mac, or run `ollama serve` on Linux/Windows).
-
-2. You can download the two models PRAG-v2 uses by default using the Ollama visual interface, or open a terminal:
-
-```bash
-# Embedding model — converts text into vectors for search
-ollama pull nomic-embed-text
-
-# Language model — generates answers to your questions
-ollama pull llama3.2
-```
-
-> You can use different models later. These are just the defaults. 
-
----
-
-## Step 2 — Download the repository
-In your terminal type:
+Open a terminal and run:
 
 ```bash
 git clone https://github.com/mine-dd/PRAG-AI.git
@@ -58,67 +34,37 @@ cd PRAG-AI
 
 ---
 
-## Step 3 — OPTIONAL: Configure environment variables
+## Step 2 — Start the backend
 
-It is possible to use remote powerful LLMs to obtain better results, however have in mind that **this will send your information to remote servers**. The full papers are not sent but your queries and the Top-N chunks of text used to answer those queries will be public if you decide to use this mode:
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` in any text editor. The defaults work for most setups — you only need to change anything if:
-- Ollama is running on a non-standard port
-- You want to use optional API keys (Anthropic, Google)
-
-```env
-# Optional API keys — leave blank if you don't have them
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
-```
-
-The API keys will be saved locally in your browswer and never be shared.
-
----
-
-## Step 4 — Start the backend with Docker
-
-Make sure Docker Desktop is running, then:
+Make sure Docker Desktop is open and running, then:
 
 ```bash
 docker compose up -d
 ```
 
-This starts two services:
-- **Backend** — the FastAPI server that handles all logic (port 8000)
-- **Qdrant** — the vector database that stores your paper embeddings (port 6333)
+This starts two things in the background:
+- **Backend** — handles PDF conversion, indexing, and answering queries
+- **Qdrant** — stores the indexed content of your papers
 
-Both ports are bound to `127.0.0.1` (your machine only) — they are **not accessible from other devices on your network**.
+That's it. You can verify everything is running at [http://localhost:8000/health](http://localhost:8000/health) — you should see a short status message in your browser.
 
-To check that everything started correctly:
-
-```bash
-docker compose ps
-```
-
-Both services should show `Up` or `healthy`. You can also visit [http://localhost:8000/health](http://localhost:8000/health) in your browser — you should see a JSON response confirming the backend, Qdrant, and Ollama are all reachable.
-
-To stop the services:
+To stop the services at any time:
 
 ```bash
 docker compose down
 ```
 
-Your data is stored in the `./data/` folder and is preserved between restarts.
+Your data is kept in the `./data/` folder and is never deleted when you stop or restart.
 
 ---
 
-## Step 5 — Open the web interface
+## Step 3 — Open the web interface
 
 Go to: **[https://mine-dd.github.io/PRAG-AI](https://mine-dd.github.io/PRAG-AI)**
 
-The first time you open it you need to connect it to your local backend (see Settings below).
+The first time, click **⚙ Settings** at the bottom of the left panel. The backend URL should already be set to `http://localhost:8000` — just click **Save & connect**. The dot next to the URL should turn green.
 
-> **Alternatively**, if you prefer to run the frontend locally instead of using GitHub Pages:
+> If you prefer to run the interface locally instead of using the hosted version:
 > ```bash
 > cd frontend-web
 > python3 -m http.server 3000
@@ -127,104 +73,65 @@ The first time you open it you need to connect it to your local backend (see Set
 
 ---
 
-## Step 6 — Configure Settings
+## Step 4 — Download AI models
 
-Click the **⚙ Settings** button at the bottom of the sidebar.
+Make sure Ollama is running (you should see the Ollama icon in your menu bar on Mac, or run `ollama serve` on Linux/Windows).
 
-| Setting | What it does | Default |
-|---|---|---|
-| **Backend URL** | Address of your local backend | `http://localhost:8000` |
-| **Preprocessed directory** | Server-side path where converted files are stored | `/data/preprocessed` |
-| **Embedding model** | Ollama model used to index papers | `nomic-embed-text:latest` |
-| **Generation model** | Ollama model used to answer questions | `llama3.2:latest` |
+In the Settings panel, scroll to **Ollama Models** and you will see a **Pull model** section. Select a model from the dropdown and click **Pull** to download it:
 
-The Settings panel automatically fetches your available Ollama models and preselects the ones currently configured — just confirm they look right and click **Save & connect**.
+- For **embedding** (indexing your papers): `nomic-embed-text` is a good default
+- For **generation** (answering your questions): `llama3.2` is a good starting point
 
-The sidebar shows three status dots that tell you if each service is reachable:
-- **Backend** — your FastAPI server
-- **Qdrant** — your vector database
-- **Ollama** — your local AI models
+Once downloaded, select the model in the **Embedding model** and **Generation model** dropdowns and click **Save & connect**.
 
-All three should be green before you start.
+> Smaller models download faster and use less memory. Larger models give better answers but require more RAM (8 GB+ recommended for 7B models).
 
 ---
 
-## Workflow — from PDFs to answers
+## How to use it
 
-### 1. Upload and convert PDFs
+### 1. Convert your PDFs
 
 Go to the **PDF Management** tab.
 
-1. Type a folder name (e.g. `climate-papers`) in the **Directory name** field.
-2. Click the file input and select one or more PDF files.
-3. Click **Convert** next to each file to convert it to markdown — this is the step that extracts text for the AI. A green **Converted** badge appears when done.
+1. Enter a folder name (e.g. `climate-papers`)
+2. Select one or more PDF files
+3. Click **Convert** next to each file — this extracts the text so the AI can read it
 
-> Conversion can take from a few seconds to a minute depending on the paper length and which model backend is used.
-
-To remove a file, click **Delete** next to it. To remove an entire folder and all its contents, click **Delete folder** on the folder header.
+Conversion takes a few seconds to a minute per paper depending on length.
 
 ---
 
-### 2. Create a collection and add papers
+### 2. Create a collection
 
 Go to the **Collections** tab.
 
-1. Fill in a **Collection ID** (e.g. `climate-2024`) — this is the internal name, no spaces.
-2. Optionally add a **Display name** (e.g. `Climate Papers 2024`).
-3. Choose a **Search type**:
-   - **Dense** — pure vector search, good general default
-   - **Hybrid** — vector + keyword search, better for technical terminology
-4. Optionally pick a directory from **Ingest from directory** — this will add all converted papers from that folder in one step.
-5. Click **Create** (or **Create & Ingest** if you selected a directory).
+1. Enter a **name** for your collection (e.g. `Climate Papers 2024`)
+2. Choose **Hybrid** search (recommended — combines keyword and semantic matching)
+3. Optionally select a folder under **Ingest from directory** to add all its papers at once
+4. Click **Create**
 
-To add more papers to an existing collection later, click **+ Add files** on the collection card. A file picker will expand with:
-- A **folder filter** and a **search box** to narrow down papers
-- **Check all / Uncheck all** buttons
-- A per-file **✓ / ✗** status as ingestion runs
+To add more papers to an existing collection later, click **+ Add files** on the collection card.
 
 ---
 
-### 3. Ask questions (RAG Query)
+### 3. Ask questions
 
 Go to the **RAG Query** tab.
 
-1. Select a collection from the sidebar picker or the in-tab dropdown.
-2. Type your question in the text box.
-3. Adjust options if needed (number of results, max tokens, hybrid search).
-4. Click **Ask**.
+1. Select a collection from the left panel
+2. Type your question
+3. Click **Ask**
 
-The answer appears with:
-- The **generated response** from the language model
-- **Retrieved passages** (collapsed by default) showing which chunks were used
-- **Citations** in APA or BibTeX format
+You get a written answer, the passages used to generate it, and citations in APA or BibTeX format.
 
 ---
 
-### 4. Explore a paper
+### 4. Other features
 
-Go to the **Explore Paper** tab to browse individual papers in a collection — view metadata, abstract, and chunk count, or download the converted markdown.
-
----
-
-### 5. Compare papers
-
-Go to the **Compare** tab to run a side-by-side comparison of multiple papers on a specific aspect (methodology, results, limitations, etc.).
-
----
-
-## Keeping data across updates
-
-All your data lives in the `./data/` folder:
-
-```
-data/
-├── pdf_input/       ← your original PDFs (organised by folder)
-├── preprocessed/    ← converted markdown files
-├── collections/     ← Qdrant vector data
-└── qdrant/          ← Qdrant internal storage
-```
-
-This folder is a Docker volume mount, so it persists across `docker compose down` / `up` cycles and Docker image rebuilds.
+- **Explore Paper** — browse individual papers, view metadata and extracted text
+- **Compare** — run a side-by-side comparison of multiple papers on a topic
+- **Cloud models** — in Settings you can switch to Anthropic (Claude) or Google (Gemini) for better answers; note that your queries and relevant text excerpts will be sent to their servers
 
 ---
 
@@ -235,16 +142,16 @@ git pull
 docker compose up -d --build
 ```
 
-The `--build` flag rebuilds the backend image with any new code. Your data in `./data/` is untouched.
+Your data in `./data/` is never affected by updates.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Likely cause | Fix |
-|---|---|---|
-| Backend dot is red | Docker containers not running | Run `docker compose up -d` |
-| Ollama dot is red | Ollama not running | Start Ollama (menu bar icon or `ollama serve`) |
-| "Cannot reach Ollama" in Settings | Model list can't load | Make sure Ollama is running before opening Settings |
-| Conversion fails | Model backend error | Check `docker compose logs backend` for details |
-| Frontend can't reach backend from GitHub Pages | Mixed content or wrong URL | Confirm backend URL is `http://localhost:8000` in Settings |
+| Problem | Fix |
+|---|---|
+| Backend dot is red | Make sure Docker Desktop is running, then `docker compose up -d` |
+| Ollama dot is red | Start Ollama (menu bar icon or `ollama serve` in terminal) |
+| Model list is empty in Settings | Ollama is running but has no models yet — use the Pull section to download one |
+| PDF conversion fails | Check logs with `docker compose logs backend` |
+| Can't connect from the hosted interface | Confirm the backend URL in Settings is exactly `http://localhost:8000` |
