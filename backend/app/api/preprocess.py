@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -153,6 +155,67 @@ def get_assets(request: AssetsRequest):
     """Get tables and images info for a processed PDF."""
     service = get_preprocessing_service()
     return service.get_assets(request.dir_name, request.filename)
+
+
+class UpdateMetadataRequest(BaseModel):
+    title: Optional[str] = None
+    authors: Optional[list[str]] = None
+    year: Optional[int] = None
+    journal: Optional[str] = None
+    doi: Optional[str] = None
+    abstract: Optional[str] = None
+
+
+@router.patch("/preprocess/{dir_name}/{filename}/metadata")
+def update_metadata_manually(dir_name: str, filename: str, request: UpdateMetadataRequest):
+    """Manually override metadata fields and mark source as 'manual'."""
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    meta_path = Path(settings.preprocessed_dir) / dir_name / f"{stem}_metadata.json"
+
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Metadata file not found")
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    if request.title is not None:    meta["title"] = request.title
+    if request.authors is not None:  meta["authors"] = request.authors
+    if request.year is not None:     meta["publication_date"] = str(request.year)
+    if request.journal is not None:  meta["journal"] = request.journal
+    if request.doi is not None:      meta["doi"] = request.doi
+    if request.abstract is not None: meta["abstract"] = request.abstract
+    meta["metadata_source"] = "manual"
+
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    # Mirror to any collection metadata copies that share the same paper_id
+    paper_id = meta.get("paper_id")
+    if paper_id:
+        for coll_dir in Path(settings.data_dir).iterdir():
+            if not coll_dir.is_dir():
+                continue
+            coll_meta_path = coll_dir / "metadata" / f"{paper_id}.json"
+            if not coll_meta_path.exists():
+                continue
+            coll_meta = json.loads(coll_meta_path.read_text(encoding="utf-8"))
+            if request.title is not None:    coll_meta["title"] = request.title
+            if request.authors is not None:  coll_meta["authors"] = request.authors
+            if request.year is not None:     coll_meta["publication_date"] = str(request.year)
+            if request.journal is not None:  coll_meta["journal"] = request.journal
+            if request.doi is not None:      coll_meta["doi"] = request.doi
+            if request.abstract is not None: coll_meta["abstract"] = request.abstract
+            coll_meta["metadata_source"] = "manual"
+            coll_meta_path.write_text(json.dumps(coll_meta, indent=2), encoding="utf-8")
+
+    return {"success": True, "metadata_source": "manual"}
+
+
+@router.get("/preprocess/pdf/{dir_name}/{filename}")
+def serve_pdf(dir_name: str, filename: str):
+    """Serve the original PDF inline so the browser can open it directly."""
+    pdf_path = Path(settings.pdf_input_dir) / dir_name / filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(str(pdf_path), media_type="application/pdf", content_disposition_type="inline")
 
 
 @router.get("/preprocess/download/{dir_name}/{filename}/{file_type}")
