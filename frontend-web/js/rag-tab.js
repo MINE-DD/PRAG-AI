@@ -17,15 +17,36 @@ const RagTab = defineComponent({
     const selectedIds  = ref([])
     const showFilters  = ref(false)
     const citationMode = ref('apa')
+    const filterSearch = ref('')
+    const filterDir    = ref('all')
 
     const collectionId = computed(() => props.selectedCollection)
     const collection   = computed(() => props.collections.find(c => c.collection_id === collectionId.value))
     const useHybrid    = computed(() => collection.value?.search_type === 'hybrid')
 
+    const allDirs = computed(() => [...new Set(papers.value.map(p => p.preprocessed_dir).filter(Boolean))])
+
+    const filteredPapers = computed(() => {
+      const q = filterSearch.value.toLowerCase()
+      return papers.value.filter(p => {
+        if (filterDir.value !== 'all' && p.preprocessed_dir !== filterDir.value) return false
+        if (q) {
+          const label = (p.title || p.filename || p.paper_id).toLowerCase()
+          if (!label.includes(q) && !(p.preprocessed_dir || '').toLowerCase().includes(q)) return false
+        }
+        return true
+      })
+    })
+
+    function checkAll()   { const extra = filteredPapers.value.map(p => p.paper_id).filter(id => !selectedIds.value.includes(id)); selectedIds.value = [...selectedIds.value, ...extra] }
+    function uncheckAll() { const rm = new Set(filteredPapers.value.map(p => p.paper_id)); selectedIds.value = selectedIds.value.filter(id => !rm.has(id)) }
+
     watch(collectionId, async (id) => {
       papers.value = []
       selectedIds.value = []
       result.value = null
+      filterSearch.value = ''
+      filterDir.value = 'all'
       if (id) {
         try { papers.value = await api.get(`/collections/${id}/papers`) }
         catch { papers.value = [] }
@@ -79,6 +100,8 @@ const RagTab = defineComponent({
       error, loading, query, topK, maxTokens,
       result, papers, selectedIds, showFilters, citationMode,
       collectionId, useHybrid,
+      filterSearch, filterDir, allDirs, filteredPapers,
+      checkAll, uncheckAll,
       runQuery, togglePassage, exportMd,
     }
   },
@@ -129,13 +152,38 @@ const RagTab = defineComponent({
           <span v-else class="text-muted" style="margin-left:4px;font-weight:400">(all papers)</span>
         </button>
 
-        <div v-if="showFilters" style="margin-top:8px;max-height:180px;overflow-y:auto;
-             border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-          <div v-if="papers.length === 0" class="text-muted text-sm">No papers in this collection.</div>
-          <label v-for="p in papers" :key="p.paper_id" class="checkbox-label">
-            <input type="checkbox" :value="p.paper_id" v-model="selectedIds" />
-            {{ p.title || p.filename || p.paper_id }}
-          </label>
+        <div v-if="showFilters" style="margin-top:8px">
+          <div v-if="papers.length === 0" class="text-muted text-sm" style="padding:8px 0">No papers in this collection.</div>
+          <template v-else>
+            <!-- Filters row -->
+            <div class="picker-filters">
+              <select v-if="allDirs.length > 1" v-model="filterDir">
+                <option value="all">All folders</option>
+                <option v-for="d in allDirs" :key="d" :value="d">{{ d }}</option>
+              </select>
+              <input type="text" v-model="filterSearch" placeholder="Search papers…" />
+            </div>
+            <!-- Bulk actions -->
+            <div class="flex items-center gap-8" style="margin-bottom:8px">
+              <button class="btn btn-secondary btn-sm" @click="checkAll">Check all</button>
+              <button class="btn btn-secondary btn-sm" @click="uncheckAll">Uncheck all</button>
+              <span class="text-muted text-sm" style="margin-left:auto">
+                {{ selectedIds.length }} selected · {{ filteredPapers.length }} shown
+              </span>
+            </div>
+            <!-- Scrollable list -->
+            <div class="picker-list">
+              <div v-if="filteredPapers.length === 0" class="text-muted text-sm" style="padding:12px 14px">
+                No papers match the filter.
+              </div>
+              <label v-for="p in filteredPapers" :key="p.paper_id" class="picker-row">
+                <input type="checkbox" :value="p.paper_id" v-model="selectedIds" />
+                <span class="picker-row-name">
+                  <span v-if="p.preprocessed_dir" class="picker-dir-tag">{{ p.preprocessed_dir }}/</span>{{ p.title || p.filename || p.paper_id }}
+                </span>
+              </label>
+            </div>
+          </template>
         </div>
       </div>
 
