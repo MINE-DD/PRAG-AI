@@ -8,19 +8,17 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import settings, load_config
+from app.core.config import settings
 from app.services.api_keys_service import ApiKeysService
 from app.services import zotero_service
 from app.services.zotero_service import normalize_metadata
 
 router = APIRouter()
 _api_keys = ApiKeysService()
-_CONFIG_PATH = Path("config.yaml")
 
 
 def _get_user_id() -> str:
-    config = load_config(str(_CONFIG_PATH))
-    return config.get("zotero", {}).get("user_id", "")
+    return _api_keys.get_key("zotero_user_id") or ""
 
 
 def _require_credentials():

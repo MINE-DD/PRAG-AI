@@ -1,8 +1,11 @@
 import { defineComponent, ref, reactive, onMounted } from 'vue'
 import { api, downloadBlob } from './api.js'
+import { PipelinePanel }    from './pipeline-panel.js'
+import { ZoteroImportPanel } from './zotero-import-panel.js'
 
 const PdfTab = defineComponent({
   name: 'PdfTab',
+  components: { PipelinePanel, ZoteroImportPanel },
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection', 'refresh-collections'],
 
@@ -10,26 +13,14 @@ const PdfTab = defineComponent({
     const error       = ref(null)
     const directories = ref([])
     const loading     = ref(false)
-    const uploadDir   = ref('')
+    const uploadDir   = ref('uploads')
     const showUpload  = ref(false)
     const converting  = reactive({})
     const expanded    = reactive({})
     const dirFiles    = reactive({})
 
-    // Zotero import panel state
-    const showZotero       = ref(false)
-    const ztCollections    = ref([])
-    const ztCollError      = ref(null)
-    const ztSelCollection  = ref(null)
-    const ztItems          = ref([])
-    const ztItemsLoading   = ref(false)
-    const ztItemsError     = ref(null)
-    const ztChecked        = reactive({})   // item_key → true/false
-    const ztDirName        = ref('')
-    const ztImporting      = ref(false)
-    const ztProgress       = reactive({})   // filename → { status, message }
-    const ztDone           = ref(false)
-    const ztImportError    = ref(null)
+    const showZotero        = ref(false)
+    const uploadPipelineDir = ref('')   // set after upload; triggers PipelinePanel in upload card
 
     async function loadDirs() {
       error.value = null
@@ -56,8 +47,9 @@ const PdfTab = defineComponent({
             if (fileMetadata[key] !== undefined) return
             const encDir  = encodeURIComponent(dirName)
             const encFile = encodeURIComponent(file.filename)
+            const bust    = force ? `?_=${Date.now()}` : ''
             try {
-              fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+              fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata${bust}`)
             } catch {
               fileMetadata[key] = 'error'
             }
@@ -80,7 +72,8 @@ const PdfTab = defineComponent({
         // Clear cached file lists so they reload on next expand
         for (const k of Object.keys(dirFiles)) delete dirFiles[k]
         await loadDirs()
-        uploadDir.value = ''
+        uploadPipelineDir.value = dir
+        uploadDir.value = 'uploads'
         evt.target.value = ''
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
@@ -360,6 +353,18 @@ const PdfTab = defineComponent({
       }
     }
 
+    async function downloadMarkdown(dirName, filename) {
+      const encDir  = encodeURIComponent(dirName)
+      const encFile = encodeURIComponent(filename)
+      const stem = filename.replace(/\.pdf$/i, '')
+      try {
+        const blob = await api.download(`/preprocess/download/${encDir}/${encFile}/markdown`)
+        downloadBlob(blob, `${stem}.md`)
+      } catch (e) {
+        error.value = `Download failed: ${e.message}`
+      }
+    }
+
     function extractYear(dateStr) {
       if (!dateStr) return null
       const m = String(dateStr).match(/\d{4}/)
@@ -372,104 +377,21 @@ const PdfTab = defineComponent({
     }
 
     function toggleZotero() {
-      if (showZotero.value) { showZotero.value = false; return }
-      showUpload.value = false
-      openZoteroPanel()
+      showZotero.value = !showZotero.value
+      if (showZotero.value) showUpload.value = false
     }
 
-    async function openZoteroPanel() {
-      showZotero.value      = true
-      ztCollections.value   = []
-      ztCollError.value     = null
-      ztSelCollection.value = null
-      ztItems.value         = []
-      ztDone.value          = false
-      ztImportError.value   = null
-      try {
-        ztCollections.value = await api.get('/zotero/collections')
-      } catch (e) {
-        ztCollError.value = e.message
-      }
+    async function reloadDirs() {
+      for (const k of Object.keys(dirFiles)) delete dirFiles[k]
+      await loadDirs()
     }
 
-    async function selectZoteroCollection(collKey, collName) {
-      ztSelCollection.value = { key: collKey, name: collName }
-      ztDirName.value       = collName.toLowerCase().replace(/\s+/g, '_')
-      ztItems.value         = []
-      ztItemsError.value    = null
-      ztItemsLoading.value  = true
-      Object.keys(ztChecked).forEach(k => delete ztChecked[k])
-      try {
-        const items = await api.get(`/zotero/collections/${collKey}/items`)
-        ztItems.value = items
-        for (const item of items) {
-          if (item.attachment?.type === 'cloud') ztChecked[item.item_key] = true
-        }
-      } catch (e) {
-        ztItemsError.value = e.message
-      } finally {
-        ztItemsLoading.value = false
-      }
+    async function onPipelineComplete() {
+      await reloadDirs()
+      emit('refresh-collections')
     }
 
-    async function runZoteroImport() {
-      const selectedKeys = Object.entries(ztChecked)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
-      if (!selectedKeys.length) return
-      ztImporting.value   = true
-      ztDone.value        = false
-      ztImportError.value = null
-      Object.keys(ztProgress).forEach(k => delete ztProgress[k])
-      try {
-        const resp = await fetch(`${api.url()}/zotero/import`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            collection_key: ztSelCollection.value.key,
-            dir_name:       ztDirName.value,
-            item_keys:      selectedKeys,
-          }),
-        })
-        const reader  = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop()
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            const data = JSON.parse(line.slice(6))
-            if (data.done) { ztDone.value = true; break }
-            if (data.filename) ztProgress[data.filename] = { status: data.status, message: data.message }
-          }
-        }
-      } catch (e) {
-        ztImportError.value = e.message
-      } finally {
-        ztImporting.value = false
-        if (ztDone.value) {
-          for (const k of Object.keys(dirFiles)) delete dirFiles[k]
-          await loadDirs()
-          setTimeout(() => {
-            showZotero.value      = false
-            ztCollections.value   = []
-            ztCollError.value     = null
-            ztSelCollection.value = null
-            ztItems.value         = []
-            ztItemsError.value    = null
-            ztDirName.value       = ''
-            ztDone.value          = false
-            ztImportError.value   = null
-            Object.keys(ztChecked).forEach(k => delete ztChecked[k])
-            Object.keys(ztProgress).forEach(k => delete ztProgress[k])
-          }, 2000)
-        }
-      }
-    }
+    function openCollection(id) { emit('update:collection', id) }
 
     onMounted(loadDirs)
 
@@ -483,12 +405,9 @@ const PdfTab = defineComponent({
       toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
       startEdit, cancelEdit, saveEdit,
       doiLookup, openDoiLookup, closeDoiLookup, fetchByDoi,
-      downloadMetadata, extractYear, pdfUrl,
-      showUpload,
-      showZotero, ztCollections, ztCollError, ztSelCollection,
-      ztItems, ztItemsLoading, ztItemsError,
-      ztChecked, ztDirName, ztImporting, ztProgress, ztDone, ztImportError,
-      toggleZotero, selectZoteroCollection, runZoteroImport,
+      downloadMetadata, downloadMarkdown, extractYear, pdfUrl,
+      showUpload, showZotero, uploadPipelineDir,
+      toggleZotero, reloadDirs, onPipelineComplete, openCollection,
     }
   },
 
@@ -519,7 +438,7 @@ const PdfTab = defineComponent({
     <div class="form-row">
       <div class="form-group" style="margin:0">
         <label>Directory name</label>
-        <input type="text" v-model="uploadDir" placeholder="my-papers" />
+        <input type="text" v-model="uploadDir" placeholder="uploads" />
       </div>
       <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
         <input type="file" accept=".pdf" multiple @change="uploadFiles"
@@ -530,96 +449,23 @@ const PdfTab = defineComponent({
       <span class="spinner"></span>
       <span class="text-muted">Uploading…</span>
     </div>
+
+    <pipeline-panel v-if="uploadPipelineDir"
+                    :dir-name="uploadPipelineDir"
+                    @refresh-collections="onPipelineComplete"
+                    @open-collection="openCollection"
+                    @dismiss="uploadPipelineDir = ''; showUpload = false" />
   </div>
 
-  <!-- Zotero import panel -->
-  <div v-if="showZotero" class="card" style="margin-bottom:8px">
-    <div v-if="ztCollError" class="alert alert-error">
-      {{ ztCollError }}
-      <span v-if="ztCollError.includes('not configured')"> — Go to Settings to add your Zotero credentials.</span>
-    </div>
-
-    <div v-else-if="ztCollections.length === 0" class="text-muted text-sm">Loading collections…</div>
-
-    <div v-else>
-      <h3 class="page-title">PDF Files</h3>
-      <!-- Collection picker -->
-      <div class="form-group">
-        <label>Collection</label>
-        <select class="form-control"
-                @change="e => selectZoteroCollection(e.target.value, ztCollections.find(c=>c.key===e.target.value)?.name || '')">
-          <option value="">— select a collection —</option>
-          <option v-for="c in ztCollections" :key="c.key" :value="c.key">{{ c.name }}</option>
-        </select>
-      </div>
-
-      <!-- Item list -->
-      <div v-if="ztItemsLoading" class="text-muted text-sm">Loading papers…</div>
-      <div v-else-if="ztItemsError" class="alert alert-error">{{ ztItemsError }}</div>
-      <div v-else-if="ztItems.length">
-        <div style="max-height:260px;overflow-y:auto;margin:8px 0;border:1px solid var(--border);border-radius:4px">
-          <label v-for="item in ztItems" :key="item.item_key"
-                 :style="item.attachment.type === 'linked'
-                   ? 'display:flex;align-items:flex-start;gap:8px;padding:8px 12px;opacity:.5;cursor:default'
-                   : 'display:flex;align-items:flex-start;gap:8px;padding:8px 12px;cursor:pointer'">
-            <input type="checkbox"
-                   :disabled="item.attachment.type === 'linked'"
-                   :checked="!!ztChecked[item.item_key]"
-                   @change="e => ztChecked[item.item_key] = e.target.checked"
-                   style="margin-top:2px" />
-            <div>
-              <div style="font-size:13px;font-weight:500">{{ item.title }}</div>
-              <div style="font-size:11px;color:var(--text-muted)">
-                {{ (item.authors || []).slice(0,2).join(', ') }}
-                <span v-if="(item.authors||[]).length > 2"> et al.</span>
-                <span v-if="item.year"> · {{ item.year }}</span>
-              </div>
-              <div v-if="item.attachment.type === 'linked'"
-                   style="font-size:11px;color:var(--warning);margin-top:2px">
-                ⚠ Linked file — upload manually from <code>{{ item.attachment.path }}</code>
-              </div>
-              <div v-if="ztProgress[item.attachment.filename]" style="font-size:11px;margin-top:2px">
-                <span v-if="ztProgress[item.attachment.filename].status === 'downloading'">
-                  <span class="spinner" style="width:10px;height:10px;border-width:2px"></span> Downloading…
-                </span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'done'"
-                      style="color:var(--success)">✓ Imported</span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'skipped'"
-                      style="color:var(--success)">✓ Skipped (already imported)</span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'error'"
-                      style="color:var(--danger)">✗ {{ ztProgress[item.attachment.filename].message }}</span>
-              </div>
-            </div>
-          </label>
-        </div>
-
-        <!-- Directory name + import button -->
-        <div class="form-group" style="margin-bottom:8px">
-          <label>Directory name
-            <span style="font-size:11px;color:var(--text-muted)"> (<code>_zt</code> will be appended)</span>
-          </label>
-          <input v-model="ztDirName" class="form-control" placeholder="collection_name" />
-        </div>
-
-        <div v-if="ztImportError" class="alert alert-error" style="margin-bottom:8px">{{ ztImportError }}</div>
-
-        <button class="btn btn-primary"
-                :disabled="ztImporting || !ztDirName.trim() || !Object.values(ztChecked).some(Boolean)"
-                @click="runZoteroImport">
-          <span v-if="ztImporting"><span class="spinner" style="width:12px;height:12px;border-width:2px"></span> Importing…</span>
-          <span v-else>Import selected</span>
-        </button>
-
-        <div v-if="ztDone" style="color:var(--success);font-size:13px;margin-top:8px">
-          ✓ Import complete. PDFs are ready to convert.
-        </div>
-      </div>
-    </div>
-  </div>
+  <zotero-import-panel v-if="showZotero"
+                       @refresh-dirs="reloadDirs"
+                       @refresh-collections="onPipelineComplete"
+                       @open-collection="openCollection"
+                       @close="showZotero = false" />
 
   <!-- Directory list -->
   <h2 v-if="directories.length > 0" style="font-size:15px;font-weight:600;margin-bottom:12px">
-    Existing PDFs ({{ directories.length }})
+    Existing Directories ({{ directories.length }})
   </h2>
   <div v-if="directories.length === 0 && !loading" class="empty-state">
     <div style="font-size:32px">📂</div>
@@ -676,9 +522,11 @@ const PdfTab = defineComponent({
               <span :style="expandedFiles[dir.name+'/'+file.filename] ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
             </button>
             <div>
-              <div class="file-name">{{ fileMetadata[dir.name+'/'+file.filename]?.title || file.filename }}</div>
+              <div class="file-name">{{ (fileMetadata[dir.name+'/'+file.filename]?.title || file.filename).split(' ').slice(0,5).join(' ') }}</div>
               <div class="file-meta">
-                <span v-if="file.processed" class="badge badge-green">Converted</span>
+                <span v-if="file.processed" class="badge badge-green">
+                  Converted{{ fileMetadata[dir.name+'/'+file.filename]?.backend ? ' with ' + fileMetadata[dir.name+'/'+file.filename].backend : '' }}
+                </span>
                 <span v-else class="badge badge-gray">Not converted</span>
               </div>
             </div>
@@ -688,7 +536,7 @@ const PdfTab = defineComponent({
                     :disabled="!!converting[dir.name+'/'+file.filename]"
                     @click="convertFile(dir.name, file.filename)">
               <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
-              <span v-else>{{ file.processed ? 'Re-convert' : 'Convert' }}</span>
+              <span v-else>Convert to MD</span>
             </button>
             <button class="btn btn-danger btn-sm"
                     :disabled="!!converting[dir.name+'/'+file.filename]"
@@ -797,65 +645,49 @@ const PdfTab = defineComponent({
               </span>
             </div>
 
-            <!-- Get Metadata / Download -->
-            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
-                <button class="btn btn-secondary btn-sm"
-                        @click="openReenrich(dir.name, file.filename)">
-                  Get Metadata
-                </button>
-                <button class="btn btn-secondary btn-sm"
-                        @click="openDoiLookup(dir.name, file.filename)">
-                  🔍 Lookup by DOI
-                </button>
-                <button class="btn btn-secondary btn-sm"
-                        @click="downloadMetadata(dir.name, file.filename)">
-                  ⬇ metadata.json
-                </button>
-                <a class="btn btn-secondary btn-sm"
-                   :href="pdfUrl(dir.name, file.filename)"
-                   target="_blank" rel="noopener">
-                  ↗ Open PDF
-                </a>
-                <button class="btn btn-secondary btn-sm"
-                        @click="startEdit(dir.name, file.filename)">
-                  ✏ Edit
-                </button>
-              </template>
-              <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
-                <span class="text-sm" style="margin-right:8px">
-                  Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
-                </span>
-                <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">
-                  Cancel
-                </button>
-                <button class="btn btn-primary btn-sm" style="margin-left:6px"
-                        :disabled="reenrichState[dir.name+'/'+file.filename].loading"
-                        @click="confirmReenrich(dir.name, file.filename)">
-                  <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
-                  <span v-else>Confirm</span>
-                </button>
-              </template>
-              <template v-else>
-                <div class="flex gap-8">
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">
-                    OpenAlex
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">
-                    CrossRef
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">
-                    Semantic Scholar
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="cancelReenrich(dir.name, file.filename)">
-                    ✕
-                  </button>
+            <!-- Action groups -->
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+
+              <!-- Group 1: Metadata -->
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Metadata</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
+                    <button class="btn btn-secondary btn-sm" @click="openReenrich(dir.name, file.filename)">Get Metadata</button>
+                    <button class="btn btn-secondary btn-sm" @click="openDoiLookup(dir.name, file.filename)">🔍 Lookup by DOI</button>
+                    <button class="btn btn-secondary btn-sm" @click="startEdit(dir.name, file.filename)">✏ Edit</button>
+                  </template>
+                  <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
+                    <span class="text-sm" style="margin-right:8px">
+                      Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
+                    </span>
+                    <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">Cancel</button>
+                    <button class="btn btn-primary btn-sm" style="margin-left:6px"
+                            :disabled="reenrichState[dir.name+'/'+file.filename].loading"
+                            @click="confirmReenrich(dir.name, file.filename)">
+                      <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
+                      <span v-else>Confirm</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">OpenAlex</button>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">CrossRef</button>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">Semantic Scholar</button>
+                    <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">✕</button>
+                  </template>
                 </div>
-              </template>
+              </div>
+
+              <!-- Group 2: Associated files -->
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Associated files</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <button class="btn btn-secondary btn-sm" @click="downloadMetadata(dir.name, file.filename)">⬇ metadata.json</button>
+                  <a class="btn btn-secondary btn-sm" :href="pdfUrl(dir.name, file.filename)" target="_blank" rel="noopener">↗ Open PDF</a>
+                  <button class="btn btn-secondary btn-sm" @click="downloadMarkdown(dir.name, file.filename)">⬇ markdown</button>
+                </div>
+              </div>
+
             </div>
             <div v-if="reenrichState[dir.name+'/'+file.filename] && reenrichState[dir.name+'/'+file.filename].message"
                  class="text-sm" style="margin-top:6px"
@@ -891,6 +723,7 @@ const PdfTab = defineComponent({
           </template><!-- end fileMetadata -->
         </div>
       </div>
+
     </div>
   </div>
 

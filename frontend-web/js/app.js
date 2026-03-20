@@ -58,7 +58,7 @@ createApp({
       { id: 'pdf',         label: 'PDF Management' },
       { id: 'collections', label: 'Collections' },
       { id: 'rag',         label: 'RAG Query' },
-      { id: 'explore',     label: 'Explore Paper' },
+      { id: 'explore',     label: 'Explore Document' },
       { id: 'compare',     label: 'Compare' },
     ]
 
@@ -96,6 +96,7 @@ createApp({
     function setCollection(id) {
       selectedCollection.value = id
       localStorage.setItem('prag_collection', id)
+      activeTab.value = 'rag'
     }
 
     function saveCollection() {
