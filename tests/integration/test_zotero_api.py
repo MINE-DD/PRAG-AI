@@ -101,12 +101,12 @@ def test_import_streams_done_event(client, tmp_path):
     assert meta["title"] == "Test"
 
 
-def test_import_skips_existing_pdf(client, tmp_path):
-    """Re-importing an existing PDF streams 'skipped' status."""
+def test_import_always_downloads(client, tmp_path):
+    """Re-importing an existing PDF always re-downloads and overwrites."""
     settings.pdf_input_dir = str(tmp_path / "pdf_input")
     settings.preprocessed_dir = str(tmp_path / "preprocessed")
 
-    # Pre-create the PDF
+    # Pre-create the PDF to simulate a previous import
     pdf_dir = tmp_path / "pdf_input" / "mycol_zt"
     pdf_dir.mkdir(parents=True)
     (pdf_dir / "test.pdf").write_bytes(b"existing")
@@ -114,7 +114,7 @@ def test_import_skips_existing_pdf(client, tmp_path):
     with patch("app.api.zotero._api_keys", _mock_keys()), \
          patch("app.api.zotero._get_user_id", return_value="12345"), \
          patch("app.services.zotero_service.list_items") as mock_items, \
-         patch("app.services.zotero_service.download_pdf") as mock_dl:
+         patch("app.services.zotero_service.download_pdf", return_value=b"%PDF new") as mock_dl:
         mock_items.return_value = [{
             "item_key": "I1", "title": "Test", "authors": [], "year": None,
             "doi": None, "journal": None, "abstract": None,
@@ -124,7 +124,7 @@ def test_import_skips_existing_pdf(client, tmp_path):
             "collection_key": "C1", "dir_name": "mycol", "item_keys": ["I1"],
         })
 
-    mock_dl.assert_not_called()
+    mock_dl.assert_called_once()
     events = [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
     statuses = {e.get("filename"): e.get("status") for e in events if "filename" in e}
-    assert statuses.get("test.pdf") == "skipped"
+    assert statuses.get("test.pdf") == "done"

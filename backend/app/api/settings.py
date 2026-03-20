@@ -142,8 +142,6 @@ class UpdateSettingsRequest(BaseModel):
     chunk_overlap: Optional[int] = None
     chunk_mode: Optional[str] = None
     top_k: Optional[int] = None
-    pdf_input_dir: Optional[str] = None
-    preprocessed_dir: Optional[str] = None
 
 
 @router.post("/settings")
@@ -197,11 +195,5 @@ def update_settings(request: UpdateSettingsRequest):
         _api_keys.clear_key("zotero")
     elif request.zotero_key:
         _api_keys.set_key("zotero", request.zotero_key)
-
-    # Update env-based settings in memory
-    if request.pdf_input_dir is not None:
-        settings.pdf_input_dir = request.pdf_input_dir
-    if request.preprocessed_dir is not None:
-        settings.preprocessed_dir = request.preprocessed_dir
 
     return {"status": "ok", "message": "Settings updated."}

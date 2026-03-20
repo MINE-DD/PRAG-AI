@@ -618,6 +618,9 @@ const PdfTab = defineComponent({
   </div>
 
   <!-- Directory list -->
+  <h2 v-if="directories.length > 0" style="font-size:15px;font-weight:600;margin-bottom:12px">
+    Existing PDFs ({{ directories.length }})
+  </h2>
   <div v-if="directories.length === 0 && !loading" class="empty-state">
     <div style="font-size:32px">📂</div>
     <p>No PDFs uploaded yet. Use the form above to get started.</p>
