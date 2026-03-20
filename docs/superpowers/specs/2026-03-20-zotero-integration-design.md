@@ -5,33 +5,40 @@
 
 ## Overview
 
-Allow users to import PDFs from their Zotero library directly into PRAG as an alternative to manual upload. Zotero is used as a PDF source only — once files are imported the standard preprocess → ingest pipeline is unchanged. Metadata from Zotero pre-fills the `_metadata.json` file, skipping the external enrichment step entirely.
+Allow users to import PDFs from their Zotero library directly into PRAG as an alternative to manual upload. Zotero is used as a PDF + metadata source. The import step downloads PDFs and pre-writes metadata; the user then converts and ingests using the normal flow.
 
 ---
 
 ## Architecture
 
 ```
-Frontend (pdf-tab.js)          Backend                      Zotero API
-  "Import from Zotero"   →   GET /zotero/collections   →   api.zotero.org
-  Pick folder            →   GET /zotero/collections/{key}/items
-  Click Import           →   POST /zotero/import       →   download PDFs
-                                    ↓
-                             /data/pdf_input/{dir}_zt/     (same as manual upload)
-                             /data/preprocessed/{dir}_zt/  (metadata pre-written)
-                                    ↓
-                         Normal convert → ingest flow (unchanged)
+Frontend (pdf-tab.js)          Backend                        Zotero API
+  "Import from Zotero"   →   GET /zotero/collections    →   api.zotero.org
+  Pick folder + items    →   GET /zotero/collections/{key}/items
+  Click Import           →   POST /zotero/import        →   download PDFs
+                                      ↓
+                               1. Save PDF → /data/pdf_input/{dir}_zt/{file}.pdf
+                               2. Write Zotero metadata →
+                                  /data/preprocessed/{dir}_zt/{file}_metadata.json
+                                      ↓
+                         User converts in PDF tab (normal flow)
+                         Convert step: if _metadata.json exists → skip enrichment,
+                                       only run PDF→markdown conversion
+                                      ↓
+                         Normal ingest flow (unchanged)
 ```
 
-No existing endpoints are modified. Zotero import is an additive feature.
+Only one existing behavior is modified: the convert step gains a one-line guard to skip metadata enrichment when a `_metadata.json` already exists for the file.
 
 ---
 
 ## Directory Naming
 
-All Zotero-imported directories are suffixed with `_zt` server-side. The frontend sends a plain name (e.g. `my_collection`); the backend always saves to `my_collection_zt`. This prevents clashes with manually uploaded directories and makes Zotero-sourced directories visually identifiable in the PDF tab.
+All Zotero-imported directories are suffixed with `_zt` **server-side**. The frontend sends a plain name (e.g. `my_collection`); the backend sanitizes with `Path(dir_name).name` (prevents path traversal) then appends `_zt`, producing e.g. `my_collection_zt`.
 
-The suffix propagates naturally — all downstream logic uses the `dir_name` string as-is, no special handling needed.
+The suffix is directory-scoped only. `paper_id` and `unique_id` are derived from the PDF filename stem and are unaffected.
+
+Re-importing a `_zt` directory is safe and idempotent — PDFs already present are skipped.
 
 ---
 
@@ -39,40 +46,132 @@ The suffix propagates naturally — all downstream logic uses the `dir_name` str
 
 ### New file: `backend/app/services/zotero_service.py`
 
-Three responsibilities:
+**`list_collections(user_id, api_key) -> list[dict]`**
+Fetches `GET api.zotero.org/users/{user_id}/collections`, returns `[{ key, name }]`.
 
-- `list_collections(user_id, api_key)` — fetches all Zotero collections from `api.zotero.org/users/{user_id}/collections`
-- `list_items(user_id, api_key, collection_key)` — fetches all items with PDF attachments; returns normalized list including `linkMode` per attachment (`cloud` or `linked`)
-- `download_pdf(user_id, api_key, item_key)` — downloads a single cloud PDF via `api.zotero.org/users/{user_id}/items/{key}/file`
+**`list_items(user_id, api_key, collection_key) -> list[dict]`**
+Fetches items in a collection with their PDF attachments. Returns:
+```json
+{
+  "item_key": "ABC123",
+  "title": "...",
+  "authors": ["..."],
+  "year": 2023,
+  "doi": "...",
+  "journal": "...",
+  "abstract": "...",
+  "attachment": {
+    "type": "cloud" | "linked",
+    "filename": "paper.pdf",
+    "attachment_key": "DEF456",
+    "path": "/local/path.pdf"
+  }
+}
+```
+**Multiple attachments:** first cloud attachment wins. If no cloud attachment, first linked attachment. Additional attachments are ignored.
 
-Metadata returned by `list_items` is normalized to the same format as `_metadata.json` produced by OpenAlex/CrossRef/Semantic Scholar (same fields, same structure).
+**`download_pdf(user_id, api_key, attachment_key) -> bytes`**
+Downloads `GET api.zotero.org/users/{user_id}/items/{attachment_key}/file`.
+Uses synchronous `httpx.Client` (matches existing SSE generator pattern in `settings.py`).
+Handles HTTP 429 with a single exponential-backoff retry before surfacing an error.
+
+**`normalize_metadata(zotero_item) -> dict`**
+Converts a Zotero item to the standard `_metadata.json` format (same fields and structure as OpenAlex/CrossRef/Semantic Scholar). Sets `metadata_source = "zotero"`.
+
+```json
+{
+  "title": "...",
+  "authors": ["..."],
+  "publication_date": "2023",
+  "abstract": "...",
+  "doi": "...",
+  "journal": "...",
+  "metadata_source": "zotero",
+  "source_pdf": "paper.pdf"
+}
+```
+`backend` and `preprocessed_at` are omitted at import time (PDF conversion has not run yet); the convert step merges them in when it processes the file.
+
+---
 
 ### New file: `backend/app/api/zotero.py`
 
-Three endpoints:
-
 **`GET /zotero/collections`**
-- Returns list of `{ name, key }` for all Zotero collections
-- Returns 400 if Zotero key/user_id not configured, with message pointing to Settings
+Returns `[{ key, name }]`.
+Returns HTTP 400 `"Zotero user ID or API key not configured. Go to Settings."` if not set.
 
 **`GET /zotero/collections/{key}/items`**
-- Returns list of items in the collection
-- Each item: `{ title, authors, year, doi, journal, abstract, attachment: { type: "cloud"|"linked", filename, path? } }`
+Returns list of items as described above.
 
 **`POST /zotero/import`**
-- Body: `{ collection_key: str, dir_name: str }`
-- Backend appends `_zt` to `dir_name`
-- For each cloud PDF:
-  - If `/data/pdf_input/{dir_name}_zt/{filename}` already exists → stream `skipped`
-  - Otherwise → download PDF, write to `/data/pdf_input/{dir_name}_zt/`
-  - Write pre-filled `_metadata.json` to `/data/preprocessed/{dir_name}_zt/`
-- Streams SSE progress per file (same pattern as Ollama model pull)
-- Never all-or-nothing: failures on individual files do not stop the import
+```json
+{
+  "collection_key": "ABCD1234",
+  "dir_name": "my_collection",
+  "item_keys": ["ABC123", "DEF456"]
+}
+```
+- `item_keys`: only the user-selected items are imported
+- Backend sanitizes `dir_name` with `Path(dir_name).name` then appends `_zt`
+- For each selected cloud item:
+  - If `/data/pdf_input/{dir}_zt/{filename}` already exists → stream `skipped` (skip both PDF download and metadata write)
+  - Otherwise → download PDF, save to `/data/pdf_input/{dir}_zt/`
+  - Write normalized Zotero metadata to `/data/preprocessed/{dir}_zt/{stem}_metadata.json`
+- Streams SSE per-file progress (synchronous generator, same pattern as `pull_ollama_model`)
 
-### Settings
+Per-file SSE events:
+```json
+{ "filename": "paper.pdf", "status": "downloading" }
+{ "filename": "paper.pdf", "status": "done" }
+{ "filename": "paper.pdf", "status": "skipped" }
+{ "filename": "paper.pdf", "status": "error", "message": "..." }
+{ "done": true }
+```
 
-- `zotero_user_id` stored in config (not a secret, treated like other settings)
-- `zotero_key` stored via `ApiKeysService` (`/data/api_keys.json`), never returned to frontend (only `has_zotero_key` boolean)
+Failures on individual files do not stop the import. `{ "done": true }` is always sent last.
+
+---
+
+### Modification to existing convert step
+
+**`backend/app/services/preprocessing_service.py`** — one guard added to `convert_single_pdf`:
+
+Before calling the metadata enrichment API, check if `{stem}_metadata.json` already exists in the preprocessed directory. If it does:
+- Skip the enrichment API call
+- Skip the metadata write (do not overwrite the existing file)
+- Merge `backend` and `preprocessed_at` into the existing file and write it back (so these fields are always present after conversion)
+- Continue with the PDF→markdown conversion normally
+
+This is the only change to existing code.
+
+---
+
+### Settings changes
+
+**`config.yaml`** — new top-level section:
+```yaml
+zotero:
+  user_id: ""
+```
+
+**`GET /settings`** — two new fields in response:
+```json
+{
+  "zotero_user_id": "",
+  "has_zotero_key": false
+}
+```
+
+**`UpdateSettingsRequest`** — three new fields:
+```python
+zotero_user_id: Optional[str] = None
+zotero_key: Optional[str] = None       # write-only, never returned
+clear_zotero_key: bool = False
+```
+
+`zotero_user_id` written to `config.yaml` under `zotero.user_id`. The `update_settings` handler must initialize `config["zotero"] = {}` if the key is absent before writing (guards against `KeyError` on fresh installs). `GET /settings` must read it as `config.get("zotero", {}).get("user_id", "")` since the key may not exist in older `config.yaml` files.
+
+`zotero_key` stored via `ApiKeysService` (key `"zotero"`), never returned to frontend.
 
 ---
 
@@ -80,32 +179,34 @@ Three endpoints:
 
 ### Settings tab (`app.js`)
 
-Two new fields in the settings form:
+Two new fields grouped together in the settings form:
 - **Zotero User ID** — plain text input, saved to config
-- **Zotero API Key** — password input, write-only, shows `has_key` boolean (same pattern as Anthropic/Google keys)
+- **Zotero API Key** — password input, write-only; shows `✓ Key saved` / `No key` and a clear button (same pattern as Anthropic/Google keys)
 
 ### PDF tab (`pdf-tab.js`)
 
-A second option alongside "Upload from PC": **"Import from Zotero"** button that toggles an inline collapsible panel.
+An **"Import from Zotero"** button alongside "Upload from PC" toggles an inline collapsible panel.
 
-Panel contents:
-1. Dropdown: list of Zotero collections (fetched on panel open)
-2. On collection select: item list renders below
-   - Cloud PDFs: checkbox + title + authors (importable)
-   - Linked PDFs: greyed out, warning icon, local path, note: *"To import, upload manually from `{path}`"*
-3. "Directory name" text input — pre-filled with Zotero collection name (editable); note shown that `_zt` will be appended
-4. "Import" button → calls `POST /zotero/import`, shows streaming progress per file
+**Panel flow:**
+1. On open: `GET /zotero/collections` — collection dropdown (or inline error if key not configured)
+2. On collection select: `GET /zotero/collections/{key}/items` — item list:
+   - **Cloud PDFs:** checkbox (checked by default) + title + authors
+   - **Linked PDFs:** greyed out, ⚠ icon, path shown, note: *"Upload manually from `{path}`"*, checkbox disabled
+3. **Directory name** input — pre-filled with Zotero collection name (editable); note: *"`_zt` will be appended automatically"*
+4. **Import** button — calls `POST /zotero/import` with `{ collection_key, dir_name, item_keys: [selected] }`
 
-Per-file streaming status states:
-| State | Display |
-|-------|---------|
-| Downloading | spinner |
-| Downloaded | ✓ |
-| Already exists | ✓ Skipped |
-| Linked file | ⚠ Linked — upload manually from `{path}` |
-| Failed | ✗ + error reason |
+**Streaming progress** — per-file status:
 
-On import completion → directory list refreshes so imported PDFs appear immediately in the normal flow.
+| Status | Display |
+|--------|---------|
+| `downloading` | spinner |
+| `done` | ✓ |
+| `skipped` | ✓ Skipped (already imported) |
+| `error` | ✗ + reason |
+
+Linked-file items remain greyed out in place — they are not sent to the import endpoint.
+
+On `{ "done": true }` → directory list refreshes; imported PDFs appear immediately in the PDF tab ready for the normal convert → ingest flow.
 
 ---
 
@@ -113,22 +214,14 @@ On import completion → directory list refreshes so imported PDFs appear immedi
 
 | Scenario | Behaviour |
 |----------|-----------|
-| Zotero key/user_id not configured | `GET /zotero/collections` returns 400; frontend shows inline alert pointing to Settings |
-| Invalid API key / network error | 401/502 returned; shown inline in Zotero panel |
-| Individual PDF download failure | Streamed as ✗ with reason; rest of import continues |
-| Linked file attachment | Shown as skipped before import starts; not treated as an error |
-| Duplicate directory (`_zt` already exists) | Files added to existing directory; already-present PDFs skipped (idempotent) |
-
----
-
-## Attachment Type Support
-
-Zotero supports two attachment storage modes per item (can be mixed within a library):
-
-- **Cloud (`imported_file` / `imported_url`)** — file synced to zotero.org; downloaded automatically via API
-- **Linked (`linked_file`)** — file at a local path; shown with path and "upload manually" note; not downloaded
-
-The import flow handles both in the same pass. Mixed collections (some cloud, some linked) work correctly.
+| Zotero key/user_id not configured | 400 returned; frontend shows inline alert pointing to Settings |
+| Invalid API key | Zotero returns 403; shown inline in panel |
+| Network / 5xx error | Shown inline in panel |
+| 429 rate limit | Single exponential-backoff retry; if still 429, streamed as `error` for that file |
+| Individual PDF download failure | Streamed as `error` with reason; rest of import continues |
+| Linked file | Shown disabled in item list; not sent to import endpoint |
+| Duplicate directory | Files added to existing dir; already-present PDFs streamed as `skipped` |
+| `dir_name` path traversal | `Path(dir_name).name` strips path components before `_zt` is appended |
 
 ---
 
@@ -139,7 +232,8 @@ The import flow handles both in the same pass. Mixed collections (some cloud, so
 | `backend/app/services/zotero_service.py` | New |
 | `backend/app/api/zotero.py` | New |
 | `backend/app/main.py` | Register zotero router |
-| `backend/app/core/config.py` | Add `zotero_user_id` field |
-| `backend/app/api/settings.py` | Add Zotero key management |
-| `frontend-web/js/app.js` | Add Zotero settings fields |
+| `backend/app/services/preprocessing_service.py` | Add skip-enrichment guard when `_metadata.json` already exists |
+| `backend/app/api/settings.py` | Add `zotero_user_id`, `zotero_key`, `clear_zotero_key` to request/response |
+| `config.yaml` | Add `zotero.user_id: ""` section |
+| `frontend-web/js/app.js` | Add Zotero User ID + API Key fields to settings form |
 | `frontend-web/js/pdf-tab.js` | Add Zotero import panel |
