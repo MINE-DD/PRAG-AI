@@ -96,6 +96,7 @@ createApp({
     function setCollection(id) {
       selectedCollection.value = id
       localStorage.setItem('prag_collection', id)
+      activeTab.value = 'rag'
     }
 
     function saveCollection() {

@@ -10,7 +10,7 @@ const PdfTab = defineComponent({
     const error       = ref(null)
     const directories = ref([])
     const loading     = ref(false)
-    const uploadDir   = ref('')
+    const uploadDir   = ref('uploads')
     const showUpload  = ref(false)
     const converting  = reactive({})
     const expanded    = reactive({})
@@ -30,6 +30,14 @@ const PdfTab = defineComponent({
     const ztProgress       = reactive({})   // filename → { status, message }
     const ztDone           = ref(false)
     const ztImportError    = ref(null)
+
+    const uploadPipelineDir = ref('')   // set after successful upload; drives pipeline section in upload panel
+
+    // Pipeline state (per directory)
+    const pipelineForm    = reactive({})   // dirName → { collectionName }
+    const pipelineRunning = reactive({})   // dirName → bool
+    const pipelineEvents  = reactive({})   // dirName → SSE event array
+    const pipelineDone    = reactive({})   // dirName → result | null
 
     async function loadDirs() {
       error.value = null
@@ -81,7 +89,13 @@ const PdfTab = defineComponent({
         // Clear cached file lists so they reload on next expand
         for (const k of Object.keys(dirFiles)) delete dirFiles[k]
         await loadDirs()
-        uploadDir.value = ''
+        uploadPipelineDir.value = dir
+        if (!pipelineForm[dir]) {
+          pipelineForm[dir] = { collectionName: dir.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+          pipelineEvents[dir] = []
+          pipelineDone[dir]   = null
+        }
+        uploadDir.value = 'uploads'
         evt.target.value = ''
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
@@ -467,22 +481,68 @@ const PdfTab = defineComponent({
         if (ztDone.value) {
           for (const k of Object.keys(dirFiles)) delete dirFiles[k]
           await loadDirs()
-          setTimeout(() => {
-            showZotero.value      = false
-            ztCollections.value   = []
-            ztCollError.value     = null
-            ztSelCollection.value = null
-            ztItems.value         = []
-            ztItemsError.value    = null
-            ztDirName.value       = ''
-            ztDone.value          = false
-            ztImportError.value   = null
-            Object.keys(ztChecked).forEach(k => delete ztChecked[k])
-            Object.keys(ztProgress).forEach(k => delete ztProgress[k])
-          }, 2000)
+          // Initialise pipeline form for the imported directory (backend appends _zt)
+          const ztDir = ztDirName.value + '_zt'
+          if (!pipelineForm[ztDir]) {
+            pipelineForm[ztDir] = { collectionName: ztDirName.value.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+            pipelineEvents[ztDir] = []
+            pipelineDone[ztDir]   = null
+          }
         }
       }
     }
+
+    async function runPipeline(dirName) {
+      if (!pipelineForm[dirName]?.collectionName?.trim()) return
+      const collName = pipelineForm[dirName].collectionName
+      if (!confirm(`Run pipeline on "${dirName}"?\n\nThis will:\n• Convert all unconverted PDFs\n• Create collection "${collName}"\n• Ingest all files\n\nAlready-converted files will be skipped.`)) return
+      pipelineRunning[dirName] = true
+      pipelineEvents[dirName]  = []
+      pipelineDone[dirName]    = null
+      try {
+        const resp = await fetch(`${api.url()}/pipeline/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dir_name:         dirName,
+            collection_name:  pipelineForm[dirName].collectionName,
+            pdf_backend:      localStorage.getItem('prag_pdf_backend')  || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+          }),
+        })
+        if (!resp.ok) throw new Error(await resp.text())
+        const reader  = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop()
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            let data
+            try { data = JSON.parse(line.slice(6)) } catch { continue }
+            pipelineEvents[dirName] = [...pipelineEvents[dirName], data]
+            if (data.done !== undefined) {
+              pipelineDone[dirName] = data
+              if (data.done && data.collection_id) {
+                for (const k of Object.keys(dirFiles)) delete dirFiles[k]
+                await loadDirs()
+                emit('refresh-collections')
+              }
+            }
+          }
+        }
+      } catch (e) {
+        pipelineDone[dirName] = { done: false, error: e.message }
+      } finally {
+        pipelineRunning[dirName] = false
+      }
+    }
+
+    function openCollection(id) { emit('update:collection', id) }
 
     onMounted(loadDirs)
 
@@ -502,6 +562,9 @@ const PdfTab = defineComponent({
       ztItems, ztItemsLoading, ztItemsError,
       ztChecked, ztDirName, ztImporting, ztProgress, ztDone, ztImportError,
       toggleZotero, selectZoteroCollection, runZoteroImport,
+      pipelineForm, pipelineRunning, pipelineEvents, pipelineDone,
+      runPipeline, openCollection,
+      uploadPipelineDir,
     }
   },
 
@@ -532,7 +595,7 @@ const PdfTab = defineComponent({
     <div class="form-row">
       <div class="form-group" style="margin:0">
         <label>Directory name</label>
-        <input type="text" v-model="uploadDir" placeholder="my-papers" />
+        <input type="text" v-model="uploadDir" placeholder="uploads" />
       </div>
       <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
         <input type="file" accept=".pdf" multiple @change="uploadFiles"
@@ -543,6 +606,58 @@ const PdfTab = defineComponent({
       <span class="spinner"></span>
       <span class="text-muted">Uploading…</span>
     </div>
+
+    <!-- Pipeline section — appears after a successful upload -->
+    <template v-if="uploadPipelineDir && pipelineForm[uploadPipelineDir]">
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ uploadPipelineDir }}</code></div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+          Converts PDFs, creates a collection, and ingests everything in one step.
+        </p>
+        <div v-if="!pipelineRunning[uploadPipelineDir] && !pipelineDone[uploadPipelineDir]" class="form-group" style="margin-bottom:8px">
+          <label style="font-size:12px">Collection name</label>
+          <input type="text" v-model="pipelineForm[uploadPipelineDir].collectionName" style="font-size:13px" placeholder="my-collection" />
+        </div>
+        <div v-if="!pipelineRunning[uploadPipelineDir] && !pipelineDone[uploadPipelineDir]" class="flex gap-8">
+          <button class="btn btn-primary btn-sm"
+                  :disabled="!pipelineForm[uploadPipelineDir]?.collectionName?.trim()"
+                  @click="runPipeline(uploadPipelineDir)">
+            Run Pipeline
+          </button>
+          <button class="btn btn-secondary btn-sm" @click="uploadPipelineDir = ''; showUpload = false">Done</button>
+        </div>
+        <div v-if="pipelineRunning[uploadPipelineDir]" style="margin-bottom:8px">
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div :style="{ width: (() => { const s=pipelineEvents[uploadPipelineDir]?.find(e=>e.step==='scan'); if(!s) return '2%'; const tc=s.to_convert||0,ad=s.already_done||0,tf=tc+ad; const cd=pipelineEvents[uploadPipelineDir].filter(e=>e.step==='convert'&&(e.status==='done'||e.status==='error'||e.status==='skipped')).length; const id=pipelineEvents[uploadPipelineDir].filter(e=>e.step==='ingest'&&(e.status==='done'||e.status==='error')).length; return Math.min(95,(cd+id)/Math.max(1,tc+tf)*100)+'%' })(), height:'4px', background:'var(--primary)', transition:'width .3s' }"></div>
+          </div>
+          <div class="text-sm text-muted" style="margin-top:4px">
+            <span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px"></span>
+            {{ (() => { const last=[...(pipelineEvents[uploadPipelineDir]||[])].reverse().find(e=>e.step&&e.status&&e.status!=='done'&&e.status!=='skipped'); if(!last) return 'Starting\u2026'; if(last.step==='convert') return 'Converting '+last.file+'\u2026'; if(last.step==='collection') return 'Creating collection\u2026'; if(last.step==='ingest') return 'Ingesting '+last.file+'\u2026'; return 'Running\u2026' })() }}
+          </div>
+        </div>
+        <div v-if="pipelineDone[uploadPipelineDir]?.done"
+             style="padding:10px;background:#f0fff4;border:1px solid var(--success);border-radius:4px;font-size:13px">
+          <div style="color:var(--success);font-weight:600;margin-bottom:4px">✓ Pipeline complete</div>
+          <div class="text-muted">
+            Collection <code>{{ pipelineDone[uploadPipelineDir].collection_id }}</code> —
+            {{ pipelineDone[uploadPipelineDir].ingested }} ingested,
+            {{ pipelineDone[uploadPipelineDir].converted }} converted,
+            {{ pipelineDone[uploadPipelineDir].skipped }} skipped
+            <span v-if="pipelineDone[uploadPipelineDir].errors > 0" style="color:var(--warning)">, {{ pipelineDone[uploadPipelineDir].errors }} errors</span>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm" @click="() => { pipelineDone[uploadPipelineDir]=null; pipelineEvents[uploadPipelineDir]=[] }">Run again</button>
+            <button class="btn btn-primary btn-sm" @click="openCollection(pipelineDone[uploadPipelineDir].collection_id)">Query Collection</button>
+          </div>
+        </div>
+        <div v-else-if="pipelineDone[uploadPipelineDir] && !pipelineDone[uploadPipelineDir].done"
+             class="alert alert-error" style="margin:0">
+          Pipeline failed: {{ pipelineDone[uploadPipelineDir].error }}
+          <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+                  @click="() => { pipelineDone[uploadPipelineDir]=null; pipelineEvents[uploadPipelineDir]=[] }">Retry</button>
+        </div>
+      </div>
+    </template>
   </div>
 
   <!-- Zotero import panel -->
@@ -623,8 +738,62 @@ const PdfTab = defineComponent({
           <span v-else>Import selected</span>
         </button>
 
-        <div v-if="ztDone" style="color:var(--success);font-size:13px;margin-top:8px">
-          ✓ Import complete. PDFs are ready to convert.
+        <div v-if="ztDone">
+          <div style="color:var(--success);font-size:13px;margin-top:8px;margin-bottom:12px">
+            ✓ Import complete.
+          </div>
+
+          <!-- Pipeline section — appears after Zotero import is done -->
+          <template v-if="pipelineForm[ztDirName + '_zt']">
+            <div style="border-top:1px solid var(--border);padding-top:12px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ ztDirName + '_zt' }}</code></div>
+              <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+                Convert PDFs, create a collection, and ingest everything in one step.
+              </p>
+              <div v-if="!pipelineRunning[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt']" class="form-group" style="margin-bottom:8px">
+                <label style="font-size:12px">Collection name</label>
+                <input type="text" v-model="pipelineForm[ztDirName + '_zt'].collectionName" style="font-size:13px" placeholder="my-collection" />
+              </div>
+              <div v-if="!pipelineRunning[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt']" class="flex gap-8">
+                <button class="btn btn-primary btn-sm"
+                        :disabled="!pipelineForm[ztDirName + '_zt']?.collectionName?.trim()"
+                        @click="runPipeline(ztDirName + '_zt')">
+                  Run Pipeline
+                </button>
+                <button class="btn btn-secondary btn-sm" @click="showZotero = false">Done</button>
+              </div>
+              <div v-if="pipelineRunning[ztDirName + '_zt']" style="margin-bottom:8px">
+                <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                  <div :style="{ width: (() => { const dn=ztDirName+'_zt'; const s=pipelineEvents[dn]?.find(e=>e.step==='scan'); if(!s) return '2%'; const tc=s.to_convert||0,ad=s.already_done||0,tf=tc+ad; const cd=pipelineEvents[dn].filter(e=>e.step==='convert'&&(e.status==='done'||e.status==='error'||e.status==='skipped')).length; const id=pipelineEvents[dn].filter(e=>e.step==='ingest'&&(e.status==='done'||e.status==='error')).length; return Math.min(95,(cd+id)/Math.max(1,tc+tf)*100)+'%' })(), height:'4px', background:'var(--primary)', transition:'width .3s' }"></div>
+                </div>
+                <div class="text-sm text-muted" style="margin-top:4px">
+                  <span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px"></span>
+                  {{ (() => { const dn=ztDirName+'_zt'; const last=[...(pipelineEvents[dn]||[])].reverse().find(e=>e.step&&e.status&&e.status!=='done'&&e.status!=='skipped'); if(!last) return 'Starting\u2026'; if(last.step==='convert') return 'Converting '+last.file+'\u2026'; if(last.step==='collection') return 'Creating collection\u2026'; if(last.step==='ingest') return 'Ingesting '+last.file+'\u2026'; return 'Running\u2026' })() }}
+                </div>
+              </div>
+              <div v-if="pipelineDone[ztDirName + '_zt']?.done"
+                   style="padding:10px;background:#f0fff4;border:1px solid var(--success);border-radius:4px;font-size:13px">
+                <div style="color:var(--success);font-weight:600;margin-bottom:4px">✓ Pipeline complete</div>
+                <div class="text-muted">
+                  Collection <code>{{ pipelineDone[ztDirName + '_zt'].collection_id }}</code> —
+                  {{ pipelineDone[ztDirName + '_zt'].ingested }} ingested,
+                  {{ pipelineDone[ztDirName + '_zt'].converted }} converted,
+                  {{ pipelineDone[ztDirName + '_zt'].skipped }} skipped
+                  <span v-if="pipelineDone[ztDirName + '_zt'].errors > 0" style="color:var(--warning)">, {{ pipelineDone[ztDirName + '_zt'].errors }} errors</span>
+                </div>
+                <div style="margin-top:8px;display:flex;gap:8px">
+                  <button class="btn btn-secondary btn-sm" @click="() => { const dn=ztDirName+'_zt'; pipelineDone[dn]=null; pipelineEvents[dn]=[] }">Run again</button>
+                  <button class="btn btn-primary btn-sm" @click="openCollection(pipelineDone[ztDirName + '_zt'].collection_id)">Query Collection</button>
+                </div>
+              </div>
+              <div v-else-if="pipelineDone[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt'].done"
+                   class="alert alert-error" style="margin:0">
+                Pipeline failed: {{ pipelineDone[ztDirName + '_zt'].error }}
+                <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+                        @click="() => { const dn=ztDirName+'_zt'; pipelineDone[dn]=null; pipelineEvents[dn]=[] }">Retry</button>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -890,6 +1059,7 @@ const PdfTab = defineComponent({
           </template><!-- end fileMetadata -->
         </div>
       </div>
+
     </div>
   </div>
 
