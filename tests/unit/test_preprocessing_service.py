@@ -178,3 +178,50 @@ def test_history_updated_after_conversion(service, temp_dirs):
     assert "my_papers" in history["directories"]
     assert "paper1.pdf" in history["directories"]["my_papers"]["files"]
     assert history["directories"]["my_papers"]["last_processed"] is not None
+
+
+def test_convert_skips_enrichment_when_metadata_exists(service, temp_dirs):
+    """If _metadata.json exists before convert, enrichment is skipped and file is preserved."""
+    pdf_input, preprocessed = temp_dirs
+    dir_name = "zotero_test_zt"
+    # Create input dir and fake PDF
+    input_dir = Path(pdf_input) / dir_name
+    input_dir.mkdir()
+    pdf_path = input_dir / "mypaper.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+
+    # Pre-write a metadata file (simulating Zotero import)
+    output_dir = Path(preprocessed) / dir_name
+    output_dir.mkdir(parents=True)
+    meta_path = output_dir / "mypaper_metadata.json"
+    zotero_meta = {
+        "title": "Zotero Title",
+        "authors": ["Alice"],
+        "publication_date": "2023",
+        "metadata_source": "zotero",
+        "source_pdf": "mypaper.pdf",
+    }
+    meta_path.write_text(json.dumps(zotero_meta), encoding="utf-8")
+
+    with patch("app.services.preprocessing_service._api_enrich") as mock_enrich, \
+         patch("app.services.preprocessing_service.get_converter") as mock_conv:
+        mock_converter = MagicMock()
+        mock_converter.convert_and_extract.return_value = ("# Markdown content", {"title": "Extracted"})
+        mock_conv.return_value = mock_converter
+
+        result = service.convert_single_pdf(dir_name, "mypaper.pdf", backend="pymupdf", metadata_backend="openalex")
+
+    # Enrichment API must NOT have been called
+    mock_enrich.assert_not_called()
+
+    # Metadata file must preserve Zotero data and gain backend + preprocessed_at
+    saved = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert saved["title"] == "Zotero Title"
+    assert saved["metadata_source"] == "zotero"
+    assert saved["backend"] == "pymupdf"
+    assert "preprocessed_at" in saved
+
+    # Markdown file must have been written
+    md_path = output_dir / "mypaper.md"
+    assert md_path.exists()
+    assert result["metadata_enriched"] is False

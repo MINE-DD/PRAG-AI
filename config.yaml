@@ -13,3 +13,5 @@ retrieval:
   top_k: 10
 citations:
   unique_id_format: '{author}{title_words}{year}'
+zotero:
+  user_id: '7890967'

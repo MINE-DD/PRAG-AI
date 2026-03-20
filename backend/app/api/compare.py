@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
-from app.services.ollama_service import OllamaService
 from app.services.metadata_service import MetadataService
 from app.core.config import settings, load_config
+from app.api.rag import _get_llm_service, _get_llm_info
 
 router = APIRouter()
 
@@ -25,6 +25,8 @@ class CompareResponse(BaseModel):
     comparison: str = Field(..., description="Generated comparison")
     paper_ids: list[str] = Field(..., description="Papers that were compared")
     papers: list[dict] = Field(default_factory=list, description="Paper metadata")
+    llm_provider: str = Field(default="local", description="LLM provider used")
+    llm_model: str = Field(default="", description="LLM model used")
 
 
 def get_services():
@@ -33,14 +35,11 @@ def get_services():
 
     qdrant = QdrantService(url=settings.qdrant_url)
     collection_service = CollectionService(qdrant=qdrant)
-    ollama_service = OllamaService(
-        url=settings.ollama_url,
-        model=config["models"]["llm"]["model"],
-        embedding_model=config["models"]["embedding"]
-    )
+    llm_service = _get_llm_service(config)
+    llm_info = _get_llm_info(config)
     metadata_service = MetadataService(data_dir=settings.data_dir)
 
-    return collection_service, qdrant, ollama_service, metadata_service
+    return collection_service, qdrant, llm_service, llm_info, metadata_service
 
 
 @router.post("/collections/{collection_id}/compare", response_model=CompareResponse)
@@ -59,7 +58,7 @@ def compare_papers(
     Returns:
         Detailed comparison with similarities and differences
     """
-    collection_service, qdrant, ollama, metadata_service = services
+    collection_service, qdrant, llm_service, llm_info, metadata_service = services
 
     # Validate request
     if len(request.paper_ids) < 2:
@@ -92,7 +91,7 @@ def compare_papers(
         chunks = qdrant.search(
             collection_name=collection_id,
             query_vector=dummy_embedding,
-            limit=SEARCH_CHUNKS_LIMIT,  # Get up to SEARCH_CHUNKS_LIMIT chunks per paper
+            limit=SEARCH_CHUNKS_LIMIT,
             paper_ids=[paper_id]
         )
 
@@ -131,10 +130,12 @@ def compare_papers(
             Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
 
     # Generate comparison using LLM
-    comparison = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
+    comparison = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
 
     return CompareResponse(
         comparison=comparison,
         paper_ids=request.paper_ids,
-        papers=papers_metadata
+        papers=papers_metadata,
+        llm_provider=llm_info["provider"],
+        llm_model=llm_info["model"],
     )

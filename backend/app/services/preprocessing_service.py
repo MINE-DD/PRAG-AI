@@ -98,22 +98,29 @@ class PreprocessingService:
             "preprocessed_at": datetime.now(UTC).isoformat(),
         }
 
-        # Auto-enrich with metadata API
-        enriched = False
-        if metadata_backend and metadata_backend != "none":
-            title = paper_meta.get("title", stem)
-            api_data = _api_enrich(title, metadata_backend)
-            if api_data:
-                for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
-                    if api_data.get(key):
-                        metadata[key] = api_data[key]
-                if api_data.get("openalex_id"):
-                    metadata["openalex_id"] = api_data["openalex_id"]
-                metadata["metadata_source"] = metadata_backend
-                enriched = True
-
+        # Check for pre-existing metadata (e.g. written by Zotero import)
         metadata_path = output_dir / f"{stem}_metadata.json"
-        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        enriched = False
+        if metadata_path.exists():
+            # Preserve existing metadata; only merge in backend + preprocessed_at
+            existing = json.loads(metadata_path.read_text(encoding="utf-8"))
+            existing["backend"] = backend
+            existing["preprocessed_at"] = metadata["preprocessed_at"]
+            metadata_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        else:
+            # Auto-enrich with metadata API
+            if metadata_backend and metadata_backend != "none":
+                title = paper_meta.get("title", stem)
+                api_data = _api_enrich(title, metadata_backend)
+                if api_data:
+                    for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+                        if api_data.get(key):
+                            metadata[key] = api_data[key]
+                    if api_data.get("openalex_id"):
+                        metadata["openalex_id"] = api_data["openalex_id"]
+                    metadata["metadata_source"] = metadata_backend
+                    enriched = True
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
         # Update history
         self._update_history(dir_name, filename)
@@ -156,6 +163,35 @@ class PreprocessingService:
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
         return {"filename": filename, "enriched": True, "backend": backend, "title": metadata.get("title")}
+
+    def enrich_with_doi(self, dir_name: str, filename: str, doi: str) -> dict:
+        """Save DOI to metadata then enrich by looking it up across providers."""
+        from app.services.paper_metadata_api_service import enrich_metadata_by_doi
+
+        stem = Path(filename).stem
+        output_dir = self.preprocessed_dir / dir_name
+        metadata_path = output_dir / f"{stem}_metadata.json"
+
+        if not metadata_path.exists():
+            raise FileNotFoundError(f"Metadata not found — preprocess {filename} first")
+
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["doi"] = doi
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+        api_data = enrich_metadata_by_doi(doi)
+        if not api_data:
+            return {"filename": filename, "enriched": False}
+
+        for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+            if api_data.get(key):
+                metadata[key] = api_data[key]
+        if api_data.get("openalex_id"):
+            metadata["openalex_id"] = api_data["openalex_id"]
+        metadata["metadata_source"] = "doi_lookup"
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+        return {"filename": filename, "enriched": True, "title": metadata.get("title")}
 
     def extract_assets(self, dir_name: str, filename: str) -> dict:
         """Extract tables and images from an already-preprocessed PDF.

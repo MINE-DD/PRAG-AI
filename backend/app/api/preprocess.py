@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -9,6 +11,14 @@ from app.services.ollama_service import OllamaService
 from app.core.config import settings, load_config
 
 router = APIRouter()
+
+
+def _safe(name: str) -> str:
+    """Reject path traversal — keep only the final component of any path."""
+    safe = Path(name).name
+    if not safe or safe in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid path component")
+    return safe
 
 
 class ScanRequest(BaseModel):
@@ -36,10 +46,11 @@ def list_directories():
 @router.post("/preprocess/scan")
 def scan_directory(request: ScanRequest):
     """Scan a directory for PDFs and their processing status."""
+    dir_name = _safe(request.dir_name)
     service = get_preprocessing_service()
     try:
-        files = service.scan_directory(request.dir_name)
-        return {"dir_name": request.dir_name, "files": files}
+        files = service.scan_directory(dir_name)
+        return {"dir_name": dir_name, "files": files}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -47,10 +58,11 @@ def scan_directory(request: ScanRequest):
 @router.post("/preprocess/convert")
 def convert_pdf(request: ConvertRequest):
     """Convert a single PDF to markdown + metadata."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
     try:
         result = service.convert_single_pdf(
-            request.dir_name, request.filename,
+            dir_name, filename,
             backend=request.backend, metadata_backend=request.metadata_backend,
         )
         return result
@@ -63,9 +75,10 @@ def convert_pdf(request: ConvertRequest):
 @router.post("/preprocess/extract-assets")
 def extract_assets(request: ConvertRequest):
     """Extract tables and images from an already-preprocessed PDF."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
     try:
-        result = service.extract_assets(request.dir_name, request.filename)
+        result = service.extract_assets(dir_name, filename)
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -82,14 +95,35 @@ class EnrichRequest(BaseModel):
 @router.post("/preprocess/enrich-metadata")
 def enrich_metadata(request: EnrichRequest):
     """Enrich metadata for a processed PDF using an external API."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
     try:
-        result = service.enrich_with_api(request.dir_name, request.filename, request.backend)
+        result = service.enrich_with_api(dir_name, filename, request.backend)
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
+
+
+class DoiLookupRequest(BaseModel):
+    dir_name: str
+    filename: str
+    doi: str
+
+
+@router.post("/preprocess/enrich-by-doi")
+def enrich_by_doi(request: DoiLookupRequest):
+    """Enrich metadata for a processed PDF by DOI lookup (tries CrossRef → OpenAlex → Semantic Scholar)."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
+    service = get_preprocessing_service()
+    try:
+        result = service.enrich_with_doi(dir_name, filename, request.doi)
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DOI lookup error: {str(e)}")
 
 
 class DeleteRequest(BaseModel):
@@ -100,8 +134,9 @@ class DeleteRequest(BaseModel):
 @router.post("/preprocess/delete")
 def delete_preprocessed(request: DeleteRequest):
     """Delete preprocessed output for a single PDF."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
-    result = service.delete_preprocessed(request.dir_name, request.filename)
+    result = service.delete_preprocessed(dir_name, filename)
     return result
 
 
@@ -112,28 +147,29 @@ class DeleteDirRequest(BaseModel):
 @router.post("/preprocess/delete-directory")
 def delete_directory(request: DeleteDirRequest):
     """Delete an entire PDF directory and all its preprocessed output."""
+    dir_name = _safe(request.dir_name)
     service = get_preprocessing_service()
-    pdf_dir  = Path(settings.pdf_input_dir)   / request.dir_name
-    prep_dir = service.preprocessed_dir       / request.dir_name
+    pdf_dir  = Path(settings.pdf_input_dir) / dir_name
+    prep_dir = service.preprocessed_dir     / dir_name
     if not pdf_dir.is_dir() and not prep_dir.is_dir():
-        raise HTTPException(status_code=404, detail=f"Directory '{request.dir_name}' not found")
-    return service.delete_directory(request.dir_name)
+        raise HTTPException(status_code=404, detail=f"Directory '{dir_name}' not found")
+    return service.delete_directory(dir_name)
 
 
 @router.post("/preprocess/delete-pdf")
 def delete_source_pdf(request: DeleteRequest):
     """Delete the source PDF (and its preprocessed output if any)."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
-    pdf_path = Path(settings.pdf_input_dir) / request.dir_name / request.filename
+    pdf_path = Path(settings.pdf_input_dir) / dir_name / filename
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="PDF not found")
-    # Also clean up preprocessed output if it exists
     try:
-        service.delete_preprocessed(request.dir_name, request.filename)
+        service.delete_preprocessed(dir_name, filename)
     except Exception:
         pass
     pdf_path.unlink()
-    return {"deleted": request.filename, "dir_name": request.dir_name}
+    return {"deleted": filename, "dir_name": dir_name}
 
 
 @router.get("/preprocess/history")
@@ -151,8 +187,72 @@ class AssetsRequest(BaseModel):
 @router.post("/preprocess/assets")
 def get_assets(request: AssetsRequest):
     """Get tables and images info for a processed PDF."""
+    dir_name, filename = _safe(request.dir_name), _safe(request.filename)
     service = get_preprocessing_service()
-    return service.get_assets(request.dir_name, request.filename)
+    return service.get_assets(dir_name, filename)
+
+
+class UpdateMetadataRequest(BaseModel):
+    title: Optional[str] = None
+    authors: Optional[list[str]] = None
+    year: Optional[int] = None
+    journal: Optional[str] = None
+    doi: Optional[str] = None
+    abstract: Optional[str] = None
+
+
+@router.patch("/preprocess/{dir_name}/{filename}/metadata")
+def update_metadata_manually(dir_name: str, filename: str, request: UpdateMetadataRequest):
+    """Manually override metadata fields and mark source as 'manual'."""
+    dir_name, filename = _safe(dir_name), _safe(filename)
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    meta_path = Path(settings.preprocessed_dir) / dir_name / f"{stem}_metadata.json"
+
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Metadata file not found")
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    if request.title is not None:    meta["title"] = request.title
+    if request.authors is not None:  meta["authors"] = request.authors
+    if request.year is not None:     meta["publication_date"] = str(request.year)
+    if request.journal is not None:  meta["journal"] = request.journal
+    if request.doi is not None:      meta["doi"] = request.doi
+    if request.abstract is not None: meta["abstract"] = request.abstract
+    meta["metadata_source"] = "manual"
+
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    # Mirror to any collection metadata copies that share the same paper_id
+    paper_id = meta.get("paper_id")
+    if paper_id:
+        for coll_dir in Path(settings.data_dir).iterdir():
+            if not coll_dir.is_dir():
+                continue
+            coll_meta_path = coll_dir / "metadata" / f"{paper_id}.json"
+            if not coll_meta_path.exists():
+                continue
+            coll_meta = json.loads(coll_meta_path.read_text(encoding="utf-8"))
+            if request.title is not None:    coll_meta["title"] = request.title
+            if request.authors is not None:  coll_meta["authors"] = request.authors
+            if request.year is not None:     coll_meta["publication_date"] = str(request.year)
+            if request.journal is not None:  coll_meta["journal"] = request.journal
+            if request.doi is not None:      coll_meta["doi"] = request.doi
+            if request.abstract is not None: coll_meta["abstract"] = request.abstract
+            coll_meta["metadata_source"] = "manual"
+            coll_meta_path.write_text(json.dumps(coll_meta, indent=2), encoding="utf-8")
+
+    return {"success": True, "metadata_source": "manual"}
+
+
+@router.get("/preprocess/pdf/{dir_name}/{filename}")
+def serve_pdf(dir_name: str, filename: str):
+    """Serve the original PDF inline so the browser can open it directly."""
+    dir_name, filename = _safe(dir_name), _safe(filename)
+    pdf_path = Path(settings.pdf_input_dir) / dir_name / filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(str(pdf_path), media_type="application/pdf", content_disposition_type="inline")
 
 
 @router.get("/preprocess/download/{dir_name}/{filename}/{file_type}")
@@ -161,6 +261,7 @@ def download_output(dir_name: str, filename: str, file_type: str):
     if file_type not in ("markdown", "metadata"):
         raise HTTPException(status_code=400, detail="file_type must be 'markdown' or 'metadata'")
 
+    dir_name, filename = _safe(dir_name), _safe(filename)
     service = get_preprocessing_service()
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
     output_dir = service.preprocessed_dir / dir_name
@@ -186,6 +287,7 @@ def download_asset(dir_name: str, filename: str, asset_type: str, asset_file: st
     if asset_type not in ("tables", "images"):
         raise HTTPException(status_code=400, detail="asset_type must be 'tables' or 'images'")
 
+    dir_name, filename, asset_file = _safe(dir_name), _safe(filename), _safe(asset_file)
     service = get_preprocessing_service()
     try:
         path = service.get_asset_path(dir_name, filename, asset_type, asset_file)
@@ -208,9 +310,10 @@ class AnalyzeTableRequest(BaseModel):
 @router.post("/preprocess/analyze-table")
 def analyze_table(request: AnalyzeTableRequest):
     """Send a CSV table to the LLM for analysis."""
+    dir_name, filename, table_file = _safe(request.dir_name), _safe(request.filename), _safe(request.table_file)
     service = get_preprocessing_service()
     try:
-        path = service.get_asset_path(request.dir_name, request.filename, "tables", request.table_file)
+        path = service.get_asset_path(dir_name, filename, "tables", table_file)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -244,11 +347,7 @@ def analyze_table(request: AnalyzeTableRequest):
 @router.post("/preprocess/upload")
 async def upload_pdfs(dir_name: str = Form(...), files: list[UploadFile] = File(...)):
     """Upload multiple PDF files into a pdf_input subdirectory."""
-    # Sanitise directory name
-    safe_name = Path(dir_name).name
-    if not safe_name or safe_name in (".", ".."):
-        raise HTTPException(status_code=400, detail="Invalid directory name")
-
+    safe_name = _safe(dir_name)
     target_dir = Path(settings.pdf_input_dir) / safe_name
     target_dir.mkdir(parents=True, exist_ok=True)
 

@@ -80,6 +80,8 @@ def get_settings():
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_anthropic_key": _api_keys.has_key("anthropic"),
         "has_google_key": _api_keys.has_key("google"),
+        "zotero_user_id": config.get("zotero", {}).get("user_id", ""),
+        "has_zotero_key": _api_keys.has_key("zotero"),
         "chunk_size": config["chunking"]["size"],
         "chunk_overlap": config["chunking"]["overlap"],
         "chunk_mode": config["chunking"].get("mode", "characters"),
@@ -133,12 +135,13 @@ class UpdateSettingsRequest(BaseModel):
     google_key: Optional[str] = None     # write-only — never returned
     clear_anthropic_key: bool = False
     clear_google_key: bool = False
+    zotero_user_id: Optional[str] = None
+    zotero_key: Optional[str] = None     # write-only — never returned
+    clear_zotero_key: bool = False
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
     chunk_mode: Optional[str] = None
     top_k: Optional[int] = None
-    pdf_input_dir: Optional[str] = None
-    preprocessed_dir: Optional[str] = None
 
 
 @router.post("/settings")
@@ -169,6 +172,11 @@ def update_settings(request: UpdateSettingsRequest):
     if request.top_k is not None:
         config["retrieval"]["top_k"] = request.top_k
 
+    if request.zotero_user_id is not None:
+        if "zotero" not in config:
+            config["zotero"] = {}
+        config["zotero"]["user_id"] = request.zotero_user_id
+
     with open(CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
@@ -183,10 +191,9 @@ def update_settings(request: UpdateSettingsRequest):
     elif request.google_key:
         _api_keys.set_key("google", request.google_key)
 
-    # Update env-based settings in memory
-    if request.pdf_input_dir is not None:
-        settings.pdf_input_dir = request.pdf_input_dir
-    if request.preprocessed_dir is not None:
-        settings.preprocessed_dir = request.preprocessed_dir
+    if request.clear_zotero_key:
+        _api_keys.clear_key("zotero")
+    elif request.zotero_key:
+        _api_keys.set_key("zotero", request.zotero_key)
 
     return {"status": "ok", "message": "Settings updated."}

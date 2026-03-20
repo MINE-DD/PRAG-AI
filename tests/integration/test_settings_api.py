@@ -1,0 +1,60 @@
+# tests/integration/test_settings_api.py
+import sys
+import json
+import tempfile
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
+
+import pytest
+import yaml
+from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+def test_get_settings_includes_zotero_fields(client):
+    with patch("app.api.settings._api_keys") as mock_keys:
+        mock_keys.has_key.side_effect = lambda p: p == "anthropic"
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "zotero_user_id" in data
+    assert "has_zotero_key" in data
+    assert isinstance(data["has_zotero_key"], bool)
+
+
+def test_post_settings_saves_zotero_user_id(client, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump({
+        "models": {"embedding": "nomic", "llm": {"type": "local", "model": "llama3.2"}},
+        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+        "retrieval": {"top_k": 10},
+        "zotero": {"user_id": ""},
+    }))
+    with patch("app.api.settings.CONFIG_PATH", config_path), \
+         patch("app.api.settings._api_keys") as mock_keys:
+        mock_keys.has_key.return_value = False
+        resp = client.post("/settings", json={"zotero_user_id": "99887766"})
+    assert resp.status_code == 200
+    saved = yaml.safe_load(config_path.read_text())
+    assert saved["zotero"]["user_id"] == "99887766"
+
+
+def test_post_settings_saves_zotero_key(client, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump({
+        "models": {"embedding": "nomic", "llm": {"type": "local", "model": "llama3.2"}},
+        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+        "retrieval": {"top_k": 10},
+    }))
+    with patch("app.api.settings.CONFIG_PATH", config_path), \
+         patch("app.api.settings._api_keys") as mock_keys:
+        resp = client.post("/settings", json={"zotero_key": "secret_key_123"})
+    assert resp.status_code == 200
+    mock_keys.set_key.assert_called_once_with("zotero", "secret_key_123")
