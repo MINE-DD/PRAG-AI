@@ -94,6 +94,25 @@ def enrich_metadata(request: EnrichRequest):
         raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
 
 
+class DoiLookupRequest(BaseModel):
+    dir_name: str
+    filename: str
+    doi: str
+
+
+@router.post("/preprocess/enrich-by-doi")
+def enrich_by_doi(request: DoiLookupRequest):
+    """Enrich metadata for a processed PDF by DOI lookup (tries CrossRef → OpenAlex → Semantic Scholar)."""
+    service = get_preprocessing_service()
+    try:
+        result = service.enrich_with_doi(request.dir_name, request.filename, request.doi)
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DOI lookup error: {str(e)}")
+
+
 class DeleteRequest(BaseModel):
     dir_name: str
     filename: str

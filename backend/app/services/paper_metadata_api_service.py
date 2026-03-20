@@ -127,3 +127,102 @@ def enrich_metadata(title: str, backend: str) -> dict:
         return fn(title)
     except Exception:
         return {}
+
+
+def fetch_crossref_by_doi(doi: str) -> dict:
+    """Fetch metadata from CrossRef by exact DOI."""
+    resp = httpx.get(
+        f"https://api.crossref.org/works/{doi}",
+        headers={"User-Agent": "PRAG-v2 (mailto:prag@example.com)"},
+        timeout=15.0,
+    )
+    if resp.status_code == 404:
+        return {}
+    resp.raise_for_status()
+    item = resp.json().get("message", {})
+
+    authors = []
+    for a in item.get("author", []):
+        name_parts = []
+        if a.get("given"):
+            name_parts.append(a["given"])
+        if a.get("family"):
+            name_parts.append(a["family"])
+        if name_parts:
+            authors.append(" ".join(name_parts))
+
+    pub_date = None
+    date_parts = (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[]])
+    if date_parts and date_parts[0]:
+        parts = date_parts[0]
+        pub_date = "-".join(str(p).zfill(2) for p in parts)
+
+    return {
+        "title": item.get("title", [""])[0] if item.get("title") else None,
+        "authors": authors,
+        "publication_date": pub_date,
+        "abstract": item.get("abstract"),
+        "doi": item.get("DOI"),
+        "journal": item.get("container-title", [""])[0] if item.get("container-title") else None,
+    }
+
+
+def fetch_openalex_by_doi(doi: str) -> dict:
+    """Fetch metadata from OpenAlex by exact DOI."""
+    resp = httpx.get(
+        f"https://api.openalex.org/works/doi:{doi}",
+        headers={"User-Agent": "PRAG-v2 (mailto:prag@example.com)"},
+        timeout=15.0,
+    )
+    if resp.status_code == 404:
+        return {}
+    resp.raise_for_status()
+    work = resp.json()
+    location = work.get("primary_location") or {}
+    source = location.get("source") or {}
+    return {
+        "title": work.get("title"),
+        "authors": [
+            a["author"]["display_name"]
+            for a in work.get("authorships", [])
+            if a.get("author", {}).get("display_name")
+        ],
+        "publication_date": work.get("publication_date"),
+        "abstract": _reconstruct_abstract(work.get("abstract_inverted_index")),
+        "doi": work.get("doi"),
+        "journal": source.get("display_name"),
+        "openalex_id": work.get("id"),
+    }
+
+
+def fetch_semantic_scholar_by_doi(doi: str) -> dict:
+    """Fetch metadata from Semantic Scholar by exact DOI."""
+    resp = httpx.get(
+        f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
+        params={"fields": "title,authors,year,abstract,externalIds,publicationDate,journal"},
+        timeout=15.0,
+    )
+    if resp.status_code == 404:
+        return {}
+    resp.raise_for_status()
+    paper = resp.json()
+    return {
+        "title": paper.get("title"),
+        "authors": [a["name"] for a in paper.get("authors", []) if a.get("name")],
+        "publication_date": paper.get("publicationDate"),
+        "abstract": paper.get("abstract"),
+        "doi": (paper.get("externalIds") or {}).get("DOI"),
+        "journal": (paper.get("journal") or {}).get("name"),
+    }
+
+
+def enrich_metadata_by_doi(doi: str) -> dict:
+    """Try CrossRef → OpenAlex → Semantic Scholar by DOI. Returns {} if all fail."""
+    for fn in (fetch_crossref_by_doi, fetch_openalex_by_doi, fetch_semantic_scholar_by_doi):
+        try:
+            result = fn(doi)
+            if result.get("title"):
+                return result
+        except Exception:
+            continue
+    return {}

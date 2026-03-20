@@ -34,6 +34,10 @@ createApp({
       hasGoogleKey:     false,
       clearAnthropicKey: false,
       clearGoogleKey:    false,
+      zoteroUserId:    '',
+      zoteroKey:       '',
+      hasZoteroKey:    false,
+      clearZoteroKey:  false,
     })
     const settingsStatus  = ref('unknown')
     const ollamaModels    = ref([])
@@ -129,6 +133,10 @@ createApp({
         settingsForm.googleKey         = ''
         settingsForm.clearAnthropicKey = false
         settingsForm.clearGoogleKey    = false
+        settingsForm.zoteroUserId   = cfg.zotero_user_id || ''
+        settingsForm.hasZoteroKey   = !!cfg.has_zotero_key
+        settingsForm.zoteroKey      = ''
+        settingsForm.clearZoteroKey = false
         ollamaModels.value             = models.map(m => m.name)
       } catch (e) {
         modelError.value     = e.message
@@ -201,6 +209,12 @@ createApp({
           if (settingsForm.clearGoogleKey)        body.clear_google_key = true
           else if (settingsForm.googleKey.trim()) body.google_key = settingsForm.googleKey.trim()
         }
+        if (settingsForm.zoteroUserId.trim())
+          body.zotero_user_id = settingsForm.zoteroUserId.trim()
+        if (settingsForm.clearZoteroKey)
+          body.clear_zotero_key = true
+        else if (settingsForm.zoteroKey.trim())
+          body.zotero_key = settingsForm.zoteroKey.trim()
         await api.post('/settings', body)
         showSettings.value = false
         await checkHealth()

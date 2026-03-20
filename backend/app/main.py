@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import health, collections, papers, rag, summarize, compare, preprocess, ingest, settings as settings_api
+from app.api import health, collections, papers, rag, summarize, compare, preprocess, ingest, settings as settings_api, zotero
 from app.core.config import settings
 
 app = FastAPI(
@@ -33,6 +33,7 @@ app.include_router(compare.router, tags=["compare"])
 app.include_router(preprocess.router, tags=["preprocess"])
 app.include_router(ingest.router, tags=["ingest"])
 app.include_router(settings_api.router, tags=["settings"])
+app.include_router(zotero.router, tags=["zotero"])
 
 
 @app.get("/")

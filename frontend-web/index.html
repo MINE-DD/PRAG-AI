@@ -238,6 +238,26 @@
         </div>
       </template>
 
+      <!-- Zotero -->
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Zotero</div>
+        <div class="form-group">
+          <label>Zotero User ID</label>
+          <input v-model="settingsForm.zoteroUserId" class="form-control" placeholder="e.g. 1234567" />
+        </div>
+        <div class="form-group">
+          <label>Zotero API Key</label>
+          <div v-if="settingsForm.hasZoteroKey && !settingsForm.clearZoteroKey"
+               class="flex items-center gap-8" style="margin-bottom:8px">
+            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
+            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearZoteroKey = true">Clear key</button>
+          </div>
+          <input v-else type="password" v-model="settingsForm.zoteroKey"
+                 :placeholder="settingsForm.clearZoteroKey ? 'Enter new key…' : 'Paste API key'"
+                 autocomplete="off" />
+        </div>
+      </div>
+
       <hr class="divider" />
 
       <!-- PDF Processing -->

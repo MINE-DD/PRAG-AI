@@ -21,8 +21,19 @@ const ExploreTab = defineComponent({
       detail.value = null
       error.value = null
       if (id) {
-        try { papers.value = await api.get(`/collections/${id}/papers`) }
-        catch (e) { error.value = e.message }
+        try {
+          papers.value = await api.get(`/collections/${id}/papers`)
+          // Overlay fresh metadata for each paper in parallel
+          await Promise.all(papers.value.map(async (paper, i) => {
+            if (!paper.preprocessed_dir || !paper.source_pdf) return
+            try {
+              const encDir  = encodeURIComponent(paper.preprocessed_dir)
+              const encFile = encodeURIComponent(paper.source_pdf)
+              const raw = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+              papers.value[i] = { ...paper, ...raw }
+            } catch { /* keep stale data on error */ }
+          }))
+        } catch (e) { error.value = e.message }
       }
     }, { immediate: true })
 
@@ -32,7 +43,20 @@ const ExploreTab = defineComponent({
       detail.value = null
       error.value = null
       try {
-        detail.value = await api.get(`/collections/${collectionId.value}/papers/${paper.paper_id}`)
+        const collectionDetail = await api.get(`/collections/${collectionId.value}/papers/${paper.paper_id}`)
+        // Overlay with fresh raw metadata if available (stays in sync with PDF Management edits)
+        if (paper.preprocessed_dir && paper.source_pdf) {
+          try {
+            const encDir  = encodeURIComponent(paper.preprocessed_dir)
+            const encFile = encodeURIComponent(paper.source_pdf)
+            const rawMeta = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+            detail.value = { ...collectionDetail, ...rawMeta }
+          } catch {
+            detail.value = collectionDetail
+          }
+        } else {
+          detail.value = collectionDetail
+        }
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
     }
