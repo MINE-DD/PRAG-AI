@@ -1,8 +1,11 @@
 import { defineComponent, ref, reactive, onMounted } from 'vue'
 import { api, downloadBlob } from './api.js'
+import { PipelinePanel }    from './pipeline-panel.js'
+import { ZoteroImportPanel } from './zotero-import-panel.js'
 
 const PdfTab = defineComponent({
   name: 'PdfTab',
+  components: { PipelinePanel, ZoteroImportPanel },
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection', 'refresh-collections'],
 
@@ -16,28 +19,8 @@ const PdfTab = defineComponent({
     const expanded    = reactive({})
     const dirFiles    = reactive({})
 
-    // Zotero import panel state
-    const showZotero       = ref(false)
-    const ztCollections    = ref([])
-    const ztCollError      = ref(null)
-    const ztSelCollection  = ref(null)
-    const ztItems          = ref([])
-    const ztItemsLoading   = ref(false)
-    const ztItemsError     = ref(null)
-    const ztChecked        = reactive({})   // item_key → true/false
-    const ztDirName        = ref('')
-    const ztImporting      = ref(false)
-    const ztProgress       = reactive({})   // filename → { status, message }
-    const ztDone           = ref(false)
-    const ztImportError    = ref(null)
-
-    const uploadPipelineDir = ref('')   // set after successful upload; drives pipeline section in upload panel
-
-    // Pipeline state (per directory)
-    const pipelineForm    = reactive({})   // dirName → { collectionName }
-    const pipelineRunning = reactive({})   // dirName → bool
-    const pipelineEvents  = reactive({})   // dirName → SSE event array
-    const pipelineDone    = reactive({})   // dirName → result | null
+    const showZotero        = ref(false)
+    const uploadPipelineDir = ref('')   // set after upload; triggers PipelinePanel in upload card
 
     async function loadDirs() {
       error.value = null
@@ -90,11 +73,6 @@ const PdfTab = defineComponent({
         for (const k of Object.keys(dirFiles)) delete dirFiles[k]
         await loadDirs()
         uploadPipelineDir.value = dir
-        if (!pipelineForm[dir]) {
-          pipelineForm[dir] = { collectionName: dir.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
-          pipelineEvents[dir] = []
-          pipelineDone[dir]   = null
-        }
         uploadDir.value = 'uploads'
         evt.target.value = ''
       } catch (e) { error.value = e.message }
@@ -399,147 +377,18 @@ const PdfTab = defineComponent({
     }
 
     function toggleZotero() {
-      if (showZotero.value) { showZotero.value = false; return }
-      showUpload.value = false
-      openZoteroPanel()
+      showZotero.value = !showZotero.value
+      if (showZotero.value) showUpload.value = false
     }
 
-    async function openZoteroPanel() {
-      showZotero.value      = true
-      ztCollections.value   = []
-      ztCollError.value     = null
-      ztSelCollection.value = null
-      ztItems.value         = []
-      ztDone.value          = false
-      ztImportError.value   = null
-      try {
-        ztCollections.value = await api.get('/zotero/collections')
-      } catch (e) {
-        ztCollError.value = e.message
-      }
+    async function reloadDirs() {
+      for (const k of Object.keys(dirFiles)) delete dirFiles[k]
+      await loadDirs()
     }
 
-    async function selectZoteroCollection(collKey, collName) {
-      ztSelCollection.value = { key: collKey, name: collName }
-      ztDirName.value       = collName.toLowerCase().replace(/\s+/g, '_')
-      ztItems.value         = []
-      ztItemsError.value    = null
-      ztItemsLoading.value  = true
-      Object.keys(ztChecked).forEach(k => delete ztChecked[k])
-      try {
-        const items = await api.get(`/zotero/collections/${collKey}/items`)
-        ztItems.value = items
-        for (const item of items) {
-          if (item.attachment?.type === 'cloud') ztChecked[item.item_key] = true
-        }
-      } catch (e) {
-        ztItemsError.value = e.message
-      } finally {
-        ztItemsLoading.value = false
-      }
-    }
-
-    async function runZoteroImport() {
-      const selectedKeys = Object.entries(ztChecked)
-        .filter(([, v]) => v)
-        .map(([k]) => k)
-      if (!selectedKeys.length) return
-      ztImporting.value   = true
-      ztDone.value        = false
-      ztImportError.value = null
-      Object.keys(ztProgress).forEach(k => delete ztProgress[k])
-      try {
-        const resp = await fetch(`${api.url()}/zotero/import`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            collection_key: ztSelCollection.value.key,
-            dir_name:       ztDirName.value,
-            item_keys:      selectedKeys,
-          }),
-        })
-        const reader  = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop()
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            const data = JSON.parse(line.slice(6))
-            if (data.done) { ztDone.value = true; break }
-            if (data.filename) ztProgress[data.filename] = { status: data.status, message: data.message }
-          }
-        }
-      } catch (e) {
-        ztImportError.value = e.message
-      } finally {
-        ztImporting.value = false
-        if (ztDone.value) {
-          for (const k of Object.keys(dirFiles)) delete dirFiles[k]
-          await loadDirs()
-          // Initialise pipeline form for the imported directory (backend appends _zt)
-          const ztDir = ztDirName.value + '_zt'
-          if (!pipelineForm[ztDir]) {
-            pipelineForm[ztDir] = { collectionName: ztDirName.value.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
-            pipelineEvents[ztDir] = []
-            pipelineDone[ztDir]   = null
-          }
-        }
-      }
-    }
-
-    async function runPipeline(dirName) {
-      if (!pipelineForm[dirName]?.collectionName?.trim()) return
-      const collName = pipelineForm[dirName].collectionName
-      if (!confirm(`Run pipeline on "${dirName}"?\n\nThis will:\n• Convert all unconverted PDFs\n• Create collection "${collName}"\n• Ingest all files\n\nAlready-converted files will be skipped.`)) return
-      pipelineRunning[dirName] = true
-      pipelineEvents[dirName]  = []
-      pipelineDone[dirName]    = null
-      try {
-        const resp = await fetch(`${api.url()}/pipeline/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            dir_name:         dirName,
-            collection_name:  pipelineForm[dirName].collectionName,
-            pdf_backend:      localStorage.getItem('prag_pdf_backend')  || 'pymupdf',
-            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
-          }),
-        })
-        if (!resp.ok) throw new Error(await resp.text())
-        const reader  = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop()
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            let data
-            try { data = JSON.parse(line.slice(6)) } catch { continue }
-            pipelineEvents[dirName] = [...pipelineEvents[dirName], data]
-            if (data.done !== undefined) {
-              pipelineDone[dirName] = data
-              if (data.done && data.collection_id) {
-                for (const k of Object.keys(dirFiles)) delete dirFiles[k]
-                await loadDirs()
-                emit('refresh-collections')
-              }
-            }
-          }
-        }
-      } catch (e) {
-        pipelineDone[dirName] = { done: false, error: e.message }
-      } finally {
-        pipelineRunning[dirName] = false
-      }
+    async function onPipelineComplete() {
+      await reloadDirs()
+      emit('refresh-collections')
     }
 
     function openCollection(id) { emit('update:collection', id) }
@@ -557,14 +406,8 @@ const PdfTab = defineComponent({
       startEdit, cancelEdit, saveEdit,
       doiLookup, openDoiLookup, closeDoiLookup, fetchByDoi,
       downloadMetadata, downloadMarkdown, extractYear, pdfUrl,
-      showUpload,
-      showZotero, ztCollections, ztCollError, ztSelCollection,
-      ztItems, ztItemsLoading, ztItemsError,
-      ztChecked, ztDirName, ztImporting, ztProgress, ztDone, ztImportError,
-      toggleZotero, selectZoteroCollection, runZoteroImport,
-      pipelineForm, pipelineRunning, pipelineEvents, pipelineDone,
-      runPipeline, openCollection,
-      uploadPipelineDir,
+      showUpload, showZotero, uploadPipelineDir,
+      toggleZotero, reloadDirs, onPipelineComplete, openCollection,
     }
   },
 
@@ -607,197 +450,18 @@ const PdfTab = defineComponent({
       <span class="text-muted">Uploading…</span>
     </div>
 
-    <!-- Pipeline section — appears after a successful upload -->
-    <template v-if="uploadPipelineDir && pipelineForm[uploadPipelineDir]">
-      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ uploadPipelineDir }}</code></div>
-        <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
-          Converts PDFs, creates a collection, and ingests everything in one step.
-        </p>
-        <div v-if="!pipelineRunning[uploadPipelineDir] && !pipelineDone[uploadPipelineDir]" class="form-group" style="margin-bottom:8px">
-          <label style="font-size:12px">Collection name</label>
-          <input type="text" v-model="pipelineForm[uploadPipelineDir].collectionName" style="font-size:13px" placeholder="my-collection" />
-        </div>
-        <div v-if="!pipelineRunning[uploadPipelineDir] && !pipelineDone[uploadPipelineDir]" class="flex gap-8">
-          <button class="btn btn-primary btn-sm"
-                  :disabled="!pipelineForm[uploadPipelineDir]?.collectionName?.trim()"
-                  @click="runPipeline(uploadPipelineDir)">
-            Run Pipeline
-          </button>
-          <button class="btn btn-secondary btn-sm" @click="uploadPipelineDir = ''; showUpload = false">Done</button>
-        </div>
-        <div v-if="pipelineRunning[uploadPipelineDir]" style="margin-bottom:8px">
-          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-            <div :style="{ width: (() => { const s=pipelineEvents[uploadPipelineDir]?.find(e=>e.step==='scan'); if(!s) return '2%'; const tc=s.to_convert||0,ad=s.already_done||0,tf=tc+ad; const cd=pipelineEvents[uploadPipelineDir].filter(e=>e.step==='convert'&&(e.status==='done'||e.status==='error'||e.status==='skipped')).length; const id=pipelineEvents[uploadPipelineDir].filter(e=>e.step==='ingest'&&(e.status==='done'||e.status==='error')).length; return Math.min(95,(cd+id)/Math.max(1,tc+tf)*100)+'%' })(), height:'4px', background:'var(--primary)', transition:'width .3s' }"></div>
-          </div>
-          <div class="text-sm text-muted" style="margin-top:4px">
-            <span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px"></span>
-            {{ (() => { const last=[...(pipelineEvents[uploadPipelineDir]||[])].reverse().find(e=>e.step&&e.status&&e.status!=='done'&&e.status!=='skipped'); if(!last) return 'Starting\u2026'; if(last.step==='convert') return 'Converting '+last.file+'\u2026'; if(last.step==='collection') return 'Creating collection\u2026'; if(last.step==='ingest') return 'Ingesting '+last.file+'\u2026'; return 'Running\u2026' })() }}
-          </div>
-        </div>
-        <div v-if="pipelineDone[uploadPipelineDir]?.done"
-             style="padding:10px;background:#f0fff4;border:1px solid var(--success);border-radius:4px;font-size:13px">
-          <div style="color:var(--success);font-weight:600;margin-bottom:4px">✓ Pipeline complete</div>
-          <div class="text-muted">
-            Collection <code>{{ pipelineDone[uploadPipelineDir].collection_id }}</code> —
-            {{ pipelineDone[uploadPipelineDir].ingested }} ingested,
-            {{ pipelineDone[uploadPipelineDir].converted }} converted,
-            {{ pipelineDone[uploadPipelineDir].skipped }} skipped
-            <span v-if="pipelineDone[uploadPipelineDir].errors > 0" style="color:var(--warning)">, {{ pipelineDone[uploadPipelineDir].errors }} errors</span>
-          </div>
-          <div style="margin-top:8px;display:flex;gap:8px">
-            <button class="btn btn-secondary btn-sm" @click="() => { pipelineDone[uploadPipelineDir]=null; pipelineEvents[uploadPipelineDir]=[] }">Run again</button>
-            <button class="btn btn-primary btn-sm" @click="openCollection(pipelineDone[uploadPipelineDir].collection_id)">Query Collection</button>
-          </div>
-        </div>
-        <div v-else-if="pipelineDone[uploadPipelineDir] && !pipelineDone[uploadPipelineDir].done"
-             class="alert alert-error" style="margin:0">
-          Pipeline failed: {{ pipelineDone[uploadPipelineDir].error }}
-          <button class="btn btn-secondary btn-sm" style="margin-left:8px"
-                  @click="() => { pipelineDone[uploadPipelineDir]=null; pipelineEvents[uploadPipelineDir]=[] }">Retry</button>
-        </div>
-      </div>
-    </template>
+    <pipeline-panel v-if="uploadPipelineDir"
+                    :dir-name="uploadPipelineDir"
+                    @refresh-collections="onPipelineComplete"
+                    @open-collection="openCollection"
+                    @dismiss="uploadPipelineDir = ''; showUpload = false" />
   </div>
 
-  <!-- Zotero import panel -->
-  <div v-if="showZotero" class="card" style="margin-bottom:8px">
-    <div v-if="ztCollError" class="alert alert-error">
-      {{ ztCollError }}
-      <span v-if="ztCollError.includes('not configured')"> — Go to Settings to add your Zotero credentials.</span>
-    </div>
-
-    <div v-else-if="ztCollections.length === 0" class="text-muted text-sm">Loading collections…</div>
-
-    <div v-else>
-      <h3 class="page-title">PDF Files</h3>
-      <!-- Collection picker -->
-      <div class="form-group">
-        <label>Collection</label>
-        <select class="form-control"
-                @change="e => selectZoteroCollection(e.target.value, ztCollections.find(c=>c.key===e.target.value)?.name || '')">
-          <option value="">— select a collection —</option>
-          <option v-for="c in ztCollections" :key="c.key" :value="c.key">{{ c.name }}</option>
-        </select>
-      </div>
-
-      <!-- Item list -->
-      <div v-if="ztItemsLoading" class="text-muted text-sm">Loading papers…</div>
-      <div v-else-if="ztItemsError" class="alert alert-error">{{ ztItemsError }}</div>
-      <div v-else-if="ztItems.length">
-        <div style="max-height:260px;overflow-y:auto;margin:8px 0;border:1px solid var(--border);border-radius:4px">
-          <label v-for="item in ztItems" :key="item.item_key"
-                 :style="item.attachment.type === 'linked'
-                   ? 'display:flex;align-items:flex-start;gap:8px;padding:8px 12px;opacity:.5;cursor:default'
-                   : 'display:flex;align-items:flex-start;gap:8px;padding:8px 12px;cursor:pointer'">
-            <input type="checkbox"
-                   :disabled="item.attachment.type === 'linked'"
-                   :checked="!!ztChecked[item.item_key]"
-                   @change="e => ztChecked[item.item_key] = e.target.checked"
-                   style="margin-top:2px" />
-            <div>
-              <div style="font-size:13px;font-weight:500">{{ item.title }}</div>
-              <div style="font-size:11px;color:var(--text-muted)">
-                {{ (item.authors || []).slice(0,2).join(', ') }}
-                <span v-if="(item.authors||[]).length > 2"> et al.</span>
-                <span v-if="item.year"> · {{ item.year }}</span>
-              </div>
-              <div v-if="item.attachment.type === 'linked'"
-                   style="font-size:11px;color:var(--warning);margin-top:2px">
-                ⚠ Linked file — upload manually from <code>{{ item.attachment.path }}</code>
-              </div>
-              <div v-if="ztProgress[item.attachment.filename]" style="font-size:11px;margin-top:2px">
-                <span v-if="ztProgress[item.attachment.filename].status === 'downloading'">
-                  <span class="spinner" style="width:10px;height:10px;border-width:2px"></span> Downloading…
-                </span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'done'"
-                      style="color:var(--success)">✓ Imported</span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'skipped'"
-                      style="color:var(--success)">✓ Skipped (already imported)</span>
-                <span v-else-if="ztProgress[item.attachment.filename].status === 'error'"
-                      style="color:var(--danger)">✗ {{ ztProgress[item.attachment.filename].message }}</span>
-              </div>
-            </div>
-          </label>
-        </div>
-
-        <!-- Directory name + import button -->
-        <div class="form-group" style="margin-bottom:8px">
-          <label>Directory name
-            <span style="font-size:11px;color:var(--text-muted)"> (<code>_zt</code> will be appended)</span>
-          </label>
-          <input v-model="ztDirName" class="form-control" placeholder="collection_name" />
-        </div>
-
-        <div v-if="ztImportError" class="alert alert-error" style="margin-bottom:8px">{{ ztImportError }}</div>
-
-        <button class="btn btn-primary"
-                :disabled="ztImporting || !ztDirName.trim() || !Object.values(ztChecked).some(Boolean)"
-                @click="runZoteroImport">
-          <span v-if="ztImporting"><span class="spinner" style="width:12px;height:12px;border-width:2px"></span> Importing…</span>
-          <span v-else>Import selected</span>
-        </button>
-
-        <div v-if="ztDone">
-          <div style="color:var(--success);font-size:13px;margin-top:8px;margin-bottom:12px">
-            ✓ Import complete.
-          </div>
-
-          <!-- Pipeline section — appears after Zotero import is done -->
-          <template v-if="pipelineForm[ztDirName + '_zt']">
-            <div style="border-top:1px solid var(--border);padding-top:12px">
-              <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ ztDirName + '_zt' }}</code></div>
-              <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
-                Convert PDFs, create a collection, and ingest everything in one step.
-              </p>
-              <div v-if="!pipelineRunning[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt']" class="form-group" style="margin-bottom:8px">
-                <label style="font-size:12px">Collection name</label>
-                <input type="text" v-model="pipelineForm[ztDirName + '_zt'].collectionName" style="font-size:13px" placeholder="my-collection" />
-              </div>
-              <div v-if="!pipelineRunning[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt']" class="flex gap-8">
-                <button class="btn btn-primary btn-sm"
-                        :disabled="!pipelineForm[ztDirName + '_zt']?.collectionName?.trim()"
-                        @click="runPipeline(ztDirName + '_zt')">
-                  Run Pipeline
-                </button>
-                <button class="btn btn-secondary btn-sm" @click="showZotero = false">Done</button>
-              </div>
-              <div v-if="pipelineRunning[ztDirName + '_zt']" style="margin-bottom:8px">
-                <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-                  <div :style="{ width: (() => { const dn=ztDirName+'_zt'; const s=pipelineEvents[dn]?.find(e=>e.step==='scan'); if(!s) return '2%'; const tc=s.to_convert||0,ad=s.already_done||0,tf=tc+ad; const cd=pipelineEvents[dn].filter(e=>e.step==='convert'&&(e.status==='done'||e.status==='error'||e.status==='skipped')).length; const id=pipelineEvents[dn].filter(e=>e.step==='ingest'&&(e.status==='done'||e.status==='error')).length; return Math.min(95,(cd+id)/Math.max(1,tc+tf)*100)+'%' })(), height:'4px', background:'var(--primary)', transition:'width .3s' }"></div>
-                </div>
-                <div class="text-sm text-muted" style="margin-top:4px">
-                  <span class="spinner" style="width:10px;height:10px;border-width:2px;margin-right:4px"></span>
-                  {{ (() => { const dn=ztDirName+'_zt'; const last=[...(pipelineEvents[dn]||[])].reverse().find(e=>e.step&&e.status&&e.status!=='done'&&e.status!=='skipped'); if(!last) return 'Starting\u2026'; if(last.step==='convert') return 'Converting '+last.file+'\u2026'; if(last.step==='collection') return 'Creating collection\u2026'; if(last.step==='ingest') return 'Ingesting '+last.file+'\u2026'; return 'Running\u2026' })() }}
-                </div>
-              </div>
-              <div v-if="pipelineDone[ztDirName + '_zt']?.done"
-                   style="padding:10px;background:#f0fff4;border:1px solid var(--success);border-radius:4px;font-size:13px">
-                <div style="color:var(--success);font-weight:600;margin-bottom:4px">✓ Pipeline complete</div>
-                <div class="text-muted">
-                  Collection <code>{{ pipelineDone[ztDirName + '_zt'].collection_id }}</code> —
-                  {{ pipelineDone[ztDirName + '_zt'].ingested }} ingested,
-                  {{ pipelineDone[ztDirName + '_zt'].converted }} converted,
-                  {{ pipelineDone[ztDirName + '_zt'].skipped }} skipped
-                  <span v-if="pipelineDone[ztDirName + '_zt'].errors > 0" style="color:var(--warning)">, {{ pipelineDone[ztDirName + '_zt'].errors }} errors</span>
-                </div>
-                <div style="margin-top:8px;display:flex;gap:8px">
-                  <button class="btn btn-secondary btn-sm" @click="() => { const dn=ztDirName+'_zt'; pipelineDone[dn]=null; pipelineEvents[dn]=[] }">Run again</button>
-                  <button class="btn btn-primary btn-sm" @click="openCollection(pipelineDone[ztDirName + '_zt'].collection_id)">Query Collection</button>
-                </div>
-              </div>
-              <div v-else-if="pipelineDone[ztDirName + '_zt'] && !pipelineDone[ztDirName + '_zt'].done"
-                   class="alert alert-error" style="margin:0">
-                Pipeline failed: {{ pipelineDone[ztDirName + '_zt'].error }}
-                <button class="btn btn-secondary btn-sm" style="margin-left:8px"
-                        @click="() => { const dn=ztDirName+'_zt'; pipelineDone[dn]=null; pipelineEvents[dn]=[] }">Retry</button>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
-  </div>
+  <zotero-import-panel v-if="showZotero"
+                       @refresh-dirs="reloadDirs"
+                       @refresh-collections="onPipelineComplete"
+                       @open-collection="openCollection"
+                       @close="showZotero = false" />
 
   <!-- Directory list -->
   <h2 v-if="directories.length > 0" style="font-size:15px;font-weight:600;margin-bottom:12px">
