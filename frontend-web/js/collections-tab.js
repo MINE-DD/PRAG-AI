@@ -15,6 +15,7 @@ const CollectionsTab = defineComponent({
     const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
                                       chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
     const createMsg      = ref(null)
+    const showAdvanced   = ref(false)
     const pickerCollId   = ref(null)
     const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
     const loadingDirs    = ref(false)
@@ -107,7 +108,7 @@ const CollectionsTab = defineComponent({
     onMounted(loadConvertedDirs)
 
     return {
-      error, creating, deleting, newForm, createMsg, pickerCollId,
+      error, creating, deleting, newForm, createMsg, showAdvanced, pickerCollId,
       convertedDirs, loadingDirs,
       createCollection, deleteCollection, togglePicker,
     }
@@ -134,24 +135,7 @@ const CollectionsTab = defineComponent({
           ID: <code>{{ newForm.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }}</code>
         </div>
       </div>
-      <div class="form-group" style="margin:0">
-        <label>Chunk mode</label>
-        <select v-model="newForm.chunkMode">
-          <option value="tokens">Tokens (approx)</option>
-          <option value="characters">Characters</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="form-row" style="margin-top:8px">
-      <div class="form-group" style="margin:0">
-        <label>Search type</label>
-        <select v-model="newForm.search_type">
-          <option value="dense">Dense (vector only)</option>
-          <option value="hybrid">Hybrid (vector + BM42)</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
+      <div class="form-group" style="margin:0;flex:1">
         <label>
           Ingest from directory
           <span v-if="loadingDirs" class="spinner" style="width:10px;height:10px;border-width:2px;margin-left:4px"></span>
@@ -168,14 +152,37 @@ const CollectionsTab = defineComponent({
       </div>
     </div>
 
-    <div class="form-row" style="margin-top:8px">
+    <!-- Advanced settings -->
+    <div style="margin-top:10px">
+      <button type="button" class="btn btn-secondary btn-sm"
+              @click="showAdvanced = !showAdvanced"
+              style="font-size:12px;color:var(--text-muted)">
+        <span :style="showAdvanced ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
+        Advanced settings
+      </button>
+    </div>
+    <div v-if="showAdvanced" class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0">
+        <label>Chunk mode</label>
+        <select v-model="newForm.chunkMode">
+          <option value="tokens">Tokens (approx)</option>
+          <option value="characters">Characters</option>
+        </select>
+      </div>
       <div class="form-group" style="margin:0">
         <label>Chunk size</label>
         <input type="number" v-model.number="newForm.chunkSize" min="50" max="4000" step="50" />
       </div>
       <div class="form-group" style="margin:0">
-        <label>Overlap</label>
+        <label>Chunk overlap</label>
         <input type="number" v-model.number="newForm.chunkOverlap" min="0" max="500" step="10" />
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Search type</label>
+        <select v-model="newForm.search_type">
+          <option value="dense">Dense (vector only)</option>
+          <option value="hybrid">Hybrid (vector + BM42)</option>
+        </select>
       </div>
     </div>
 

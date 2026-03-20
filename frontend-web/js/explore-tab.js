@@ -66,8 +66,8 @@ const ExploreTab = defineComponent({
 
   template: `
 <div>
-  <h2 class="page-title">Explore Paper</h2>
-  <p class="page-sub">Browse and inspect papers in the active collection.</p>
+  <h2 class="page-title">Explore Document</h2>
+  <p class="page-sub">Browse and inspect documents in the active collection.</p>
 
   <div v-if="error" class="alert alert-error">
     {{ error }}<button class="alert-close" @click="error=null">×</button>

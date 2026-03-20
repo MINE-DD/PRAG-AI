@@ -80,7 +80,7 @@ def get_settings():
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_anthropic_key": _api_keys.has_key("anthropic"),
         "has_google_key": _api_keys.has_key("google"),
-        "zotero_user_id": config.get("zotero", {}).get("user_id", ""),
+        "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
         "has_zotero_key": _api_keys.has_key("zotero"),
         "chunk_size": config["chunking"]["size"],
         "chunk_overlap": config["chunking"]["overlap"],
@@ -172,11 +172,6 @@ def update_settings(request: UpdateSettingsRequest):
     if request.top_k is not None:
         config["retrieval"]["top_k"] = request.top_k
 
-    if request.zotero_user_id is not None:
-        if "zotero" not in config:
-            config["zotero"] = {}
-        config["zotero"]["user_id"] = request.zotero_user_id
-
     with open(CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
@@ -190,6 +185,12 @@ def update_settings(request: UpdateSettingsRequest):
         _api_keys.clear_key("google")
     elif request.google_key:
         _api_keys.set_key("google", request.google_key)
+
+    if request.zotero_user_id is not None:
+        if request.zotero_user_id.strip():
+            _api_keys.set_key("zotero_user_id", request.zotero_user_id.strip())
+        else:
+            _api_keys.clear_key("zotero_user_id")
 
     if request.clear_zotero_key:
         _api_keys.clear_key("zotero")

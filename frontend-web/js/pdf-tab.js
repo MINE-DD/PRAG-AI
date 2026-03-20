@@ -56,8 +56,9 @@ const PdfTab = defineComponent({
             if (fileMetadata[key] !== undefined) return
             const encDir  = encodeURIComponent(dirName)
             const encFile = encodeURIComponent(file.filename)
+            const bust    = force ? `?_=${Date.now()}` : ''
             try {
-              fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata`)
+              fileMetadata[key] = await api.get(`/preprocess/download/${encDir}/${encFile}/metadata${bust}`)
             } catch {
               fileMetadata[key] = 'error'
             }
@@ -360,6 +361,18 @@ const PdfTab = defineComponent({
       }
     }
 
+    async function downloadMarkdown(dirName, filename) {
+      const encDir  = encodeURIComponent(dirName)
+      const encFile = encodeURIComponent(filename)
+      const stem = filename.replace(/\.pdf$/i, '')
+      try {
+        const blob = await api.download(`/preprocess/download/${encDir}/${encFile}/markdown`)
+        downloadBlob(blob, `${stem}.md`)
+      } catch (e) {
+        error.value = `Download failed: ${e.message}`
+      }
+    }
+
     function extractYear(dateStr) {
       if (!dateStr) return null
       const m = String(dateStr).match(/\d{4}/)
@@ -483,7 +496,7 @@ const PdfTab = defineComponent({
       toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
       startEdit, cancelEdit, saveEdit,
       doiLookup, openDoiLookup, closeDoiLookup, fetchByDoi,
-      downloadMetadata, extractYear, pdfUrl,
+      downloadMetadata, downloadMarkdown, extractYear, pdfUrl,
       showUpload,
       showZotero, ztCollections, ztCollError, ztSelCollection,
       ztItems, ztItemsLoading, ztItemsError,
@@ -619,7 +632,7 @@ const PdfTab = defineComponent({
 
   <!-- Directory list -->
   <h2 v-if="directories.length > 0" style="font-size:15px;font-weight:600;margin-bottom:12px">
-    Existing PDFs ({{ directories.length }})
+    Existing Directories ({{ directories.length }})
   </h2>
   <div v-if="directories.length === 0 && !loading" class="empty-state">
     <div style="font-size:32px">📂</div>
@@ -676,9 +689,11 @@ const PdfTab = defineComponent({
               <span :style="expandedFiles[dir.name+'/'+file.filename] ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
             </button>
             <div>
-              <div class="file-name">{{ fileMetadata[dir.name+'/'+file.filename]?.title || file.filename }}</div>
+              <div class="file-name">{{ (fileMetadata[dir.name+'/'+file.filename]?.title || file.filename).split(' ').slice(0,5).join(' ') }}</div>
               <div class="file-meta">
-                <span v-if="file.processed" class="badge badge-green">Converted</span>
+                <span v-if="file.processed" class="badge badge-green">
+                  Converted{{ fileMetadata[dir.name+'/'+file.filename]?.backend ? ' with ' + fileMetadata[dir.name+'/'+file.filename].backend : '' }}
+                </span>
                 <span v-else class="badge badge-gray">Not converted</span>
               </div>
             </div>
@@ -688,7 +703,7 @@ const PdfTab = defineComponent({
                     :disabled="!!converting[dir.name+'/'+file.filename]"
                     @click="convertFile(dir.name, file.filename)">
               <span v-if="converting[dir.name+'/'+file.filename]" class="spinner"></span>
-              <span v-else>{{ file.processed ? 'Re-convert' : 'Convert' }}</span>
+              <span v-else>Convert to MD</span>
             </button>
             <button class="btn btn-danger btn-sm"
                     :disabled="!!converting[dir.name+'/'+file.filename]"
@@ -797,65 +812,49 @@ const PdfTab = defineComponent({
               </span>
             </div>
 
-            <!-- Get Metadata / Download -->
-            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
-                <button class="btn btn-secondary btn-sm"
-                        @click="openReenrich(dir.name, file.filename)">
-                  Get Metadata
-                </button>
-                <button class="btn btn-secondary btn-sm"
-                        @click="openDoiLookup(dir.name, file.filename)">
-                  🔍 Lookup by DOI
-                </button>
-                <button class="btn btn-secondary btn-sm"
-                        @click="downloadMetadata(dir.name, file.filename)">
-                  ⬇ metadata.json
-                </button>
-                <a class="btn btn-secondary btn-sm"
-                   :href="pdfUrl(dir.name, file.filename)"
-                   target="_blank" rel="noopener">
-                  ↗ Open PDF
-                </a>
-                <button class="btn btn-secondary btn-sm"
-                        @click="startEdit(dir.name, file.filename)">
-                  ✏ Edit
-                </button>
-              </template>
-              <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
-                <span class="text-sm" style="margin-right:8px">
-                  Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
-                </span>
-                <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">
-                  Cancel
-                </button>
-                <button class="btn btn-primary btn-sm" style="margin-left:6px"
-                        :disabled="reenrichState[dir.name+'/'+file.filename].loading"
-                        @click="confirmReenrich(dir.name, file.filename)">
-                  <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
-                  <span v-else>Confirm</span>
-                </button>
-              </template>
-              <template v-else>
-                <div class="flex gap-8">
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">
-                    OpenAlex
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">
-                    CrossRef
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">
-                    Semantic Scholar
-                  </button>
-                  <button class="btn btn-secondary btn-sm"
-                          @click="cancelReenrich(dir.name, file.filename)">
-                    ✕
-                  </button>
+            <!-- Action groups -->
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+
+              <!-- Group 1: Metadata -->
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Metadata</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <template v-if="!reenrichState[dir.name+'/'+file.filename] || !reenrichState[dir.name+'/'+file.filename].open">
+                    <button class="btn btn-secondary btn-sm" @click="openReenrich(dir.name, file.filename)">Get Metadata</button>
+                    <button class="btn btn-secondary btn-sm" @click="openDoiLookup(dir.name, file.filename)">🔍 Lookup by DOI</button>
+                    <button class="btn btn-secondary btn-sm" @click="startEdit(dir.name, file.filename)">✏ Edit</button>
+                  </template>
+                  <template v-else-if="reenrichState[dir.name+'/'+file.filename].confirming">
+                    <span class="text-sm" style="margin-right:8px">
+                      Get metadata with <strong>{{ reenrichState[dir.name+'/'+file.filename].selected }}</strong>?
+                    </span>
+                    <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">Cancel</button>
+                    <button class="btn btn-primary btn-sm" style="margin-left:6px"
+                            :disabled="reenrichState[dir.name+'/'+file.filename].loading"
+                            @click="confirmReenrich(dir.name, file.filename)">
+                      <span v-if="reenrichState[dir.name+'/'+file.filename].loading" class="spinner"></span>
+                      <span v-else>Confirm</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'openalex')">OpenAlex</button>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'crossref')">CrossRef</button>
+                    <button class="btn btn-secondary btn-sm" @click="selectReenrichProvider(dir.name, file.filename, 'semantic_scholar')">Semantic Scholar</button>
+                    <button class="btn btn-secondary btn-sm" @click="cancelReenrich(dir.name, file.filename)">✕</button>
+                  </template>
                 </div>
-              </template>
+              </div>
+
+              <!-- Group 2: Associated files -->
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Associated files</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <button class="btn btn-secondary btn-sm" @click="downloadMetadata(dir.name, file.filename)">⬇ metadata.json</button>
+                  <a class="btn btn-secondary btn-sm" :href="pdfUrl(dir.name, file.filename)" target="_blank" rel="noopener">↗ Open PDF</a>
+                  <button class="btn btn-secondary btn-sm" @click="downloadMarkdown(dir.name, file.filename)">⬇ markdown</button>
+                </div>
+              </div>
+
             </div>
             <div v-if="reenrichState[dir.name+'/'+file.filename] && reenrichState[dir.name+'/'+file.filename].message"
                  class="text-sm" style="margin-top:6px"
