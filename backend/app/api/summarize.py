@@ -4,6 +4,7 @@ from typing import Optional
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
 from app.services.metadata_service import MetadataService
+from app.services.prompt_service import PromptService, get_prompt_service
 from app.core.config import settings, load_config
 from app.api.rag import _get_llm_service, _get_llm_info
 
@@ -14,6 +15,7 @@ class SummarizeRequest(BaseModel):
     """Request to summarize papers"""
     paper_ids: list[str] = Field(..., min_length=1, description="Paper IDs to summarize")
     max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
+    prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class SummarizeResponse(BaseModel):
@@ -40,7 +42,8 @@ def get_services():
 def summarize_papers(
     collection_id: str,
     request: SummarizeRequest,
-    services: tuple = Depends(get_services)
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
 ):
     """
     Generate a summary of one or more papers.
@@ -95,32 +98,18 @@ def summarize_papers(
     # Combine all chunks into context
     context = "\n\n".join(all_chunks[:20])  # Limit to first 20 chunks to avoid token limits
 
-    # Build prompt for summarization
-    if len(request.paper_ids) == 1:
-        prompt = f"""Based on the following excerpts from a research paper, provide a comprehensive summary that covers:
-1. The main research question or problem addressed
-2. The methodology or approach used
-3. Key findings or results
-4. Significance and implications
-
-Paper excerpts:
-{context}
-
-Please provide a clear, concise summary in 2-3 paragraphs."""
-    else:
-        prompt = f"""Based on the following excerpts from multiple research papers, provide a comprehensive summary that covers:
-1. The common themes across papers
-2. Key methodologies used
-3. Main findings and results
-4. Overall significance
-
-Paper excerpts:
-{context}
-
-Please provide a clear, concise summary in 2-3 paragraphs."""
+    # Render prompt via PromptService
+    try:
+        rendered = prompt_service.render(
+            "summarize", request.prompt_name,
+            context=context,
+            paper_count=len(request.paper_ids),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     # Generate summary using LLM
-    summary = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
+    summary = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=request.max_tokens)
 
     return SummarizeResponse(
         summary=summary,
