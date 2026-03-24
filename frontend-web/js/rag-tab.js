@@ -1,10 +1,12 @@
 import { defineComponent, ref, computed, watch } from 'vue'
 import { api, downloadBlob } from './api.js'
+import { PromptSelector } from './prompt-selector.js'
 
 const RagTab = defineComponent({
   name: 'RagTab',
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection'],
+  components: { PromptSelector },
 
   setup(props) {
     const error        = ref(null)
@@ -16,6 +18,8 @@ const RagTab = defineComponent({
     const papers       = ref([])
     const selectedIds  = ref([])
     const showFilters  = ref(false)
+    const showAdvanced = ref(false)
+    const selectedPrompt = ref('default')
     const citationMode = ref('apa')
     const filterSearch = ref('')
     const filterDir    = ref('all')
@@ -66,6 +70,7 @@ const RagTab = defineComponent({
           max_tokens: maxTokens.value,
           include_citations: true,
           use_hybrid: useHybrid.value,
+          prompt_name: selectedPrompt.value,
         }
         if (selectedIds.value.length) body.paper_ids = selectedIds.value
         result.value = await api.post(`/collections/${collectionId.value}/rag`, body)
@@ -103,6 +108,7 @@ const RagTab = defineComponent({
       filterSearch, filterDir, allDirs, filteredPapers,
       checkAll, uncheckAll,
       runQuery, togglePassage, exportMd,
+      showAdvanced, selectedPrompt,
     }
   },
 
@@ -126,17 +132,6 @@ const RagTab = defineComponent({
         <label>Question</label>
         <textarea v-model="query" rows="3"
           placeholder="e.g., What are the main findings about attention mechanisms?"></textarea>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group" style="margin:0">
-          <label>Top-K chunks: {{ topK }}</label>
-          <input type="range" v-model.number="topK" min="1" max="50" style="width:100%;margin-top:6px" />
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Max response tokens: {{ maxTokens }}</label>
-          <input type="range" v-model.number="maxTokens" min="50" max="2000" step="50" style="width:100%;margin-top:6px" />
-        </div>
       </div>
 
       <div v-if="useHybrid" class="text-sm text-muted mt-8">
@@ -184,6 +179,27 @@ const RagTab = defineComponent({
               </label>
             </div>
           </template>
+        </div>
+      </div>
+
+      <!-- Advanced options -->
+      <div style="margin-top:12px">
+        <button class="btn btn-secondary btn-sm" @click="showAdvanced = !showAdvanced">
+          {{ showAdvanced ? '▲' : '▼' }} Advanced options
+        </button>
+        <div v-show="showAdvanced" style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:6px">
+          <div class="form-row">
+            <div class="form-group" style="margin:0">
+              <label>Top-K chunks: {{ topK }}</label>
+              <input type="range" v-model.number="topK" min="1" max="50" style="width:100%;margin-top:6px" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Max response tokens: {{ maxTokens }}</label>
+              <input type="range" v-model.number="maxTokens" min="50" max="2000" step="50" style="width:100%;margin-top:6px" />
+            </div>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />
+          <prompt-selector :task-type="'rag'" v-model="selectedPrompt" />
         </div>
       </div>
 
