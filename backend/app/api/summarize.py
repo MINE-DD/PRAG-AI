@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
-from app.services.ollama_service import OllamaService
 from app.services.metadata_service import MetadataService
 from app.core.config import settings, load_config
+from app.api.rag import _get_llm_service, _get_llm_info
 
 router = APIRouter()
 
@@ -29,14 +29,11 @@ def get_services():
 
     qdrant = QdrantService(url=settings.qdrant_url)
     collection_service = CollectionService(qdrant=qdrant)
-    ollama_service = OllamaService(
-        url=settings.ollama_url,
-        model=config["models"]["llm"]["model"],
-        embedding_model=config["models"]["embedding"]
-    )
     metadata_service = MetadataService(data_dir=settings.data_dir)
+    llm_service = _get_llm_service(config)
+    llm_info = _get_llm_info(config)
 
-    return collection_service, qdrant, ollama_service, metadata_service
+    return collection_service, qdrant, metadata_service, llm_service, llm_info
 
 
 @router.post("/collections/{collection_id}/summarize", response_model=SummarizeResponse)
@@ -55,7 +52,7 @@ def summarize_papers(
     Returns:
         Generated summary with paper metadata
     """
-    collection_service, qdrant, ollama, metadata_service = services
+    collection_service, qdrant, metadata_service, llm_service, llm_info = services
 
     # Validate request
     if not request.paper_ids:
@@ -123,7 +120,7 @@ Paper excerpts:
 Please provide a clear, concise summary in 2-3 paragraphs."""
 
     # Generate summary using LLM
-    summary = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
+    summary = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
 
     return SummarizeResponse(
         summary=summary,

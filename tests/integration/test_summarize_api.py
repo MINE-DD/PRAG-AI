@@ -54,10 +54,9 @@ def mock_qdrant():
 
 @pytest.fixture
 def mock_ollama():
-    """Mock Ollama service"""
-    with patch('app.api.summarize.OllamaService') as mock:
+    """Mock LLM service (was OllamaService, now provider-agnostic via _get_llm_service)"""
+    with patch('app.api.summarize._get_llm_service') as mock:
         mock_instance = Mock()
-        # Return fake summary
         mock_instance.generate = Mock(return_value="This paper presents a comprehensive study on transformers in NLP. Key findings include improved performance and efficiency.")
         mock.return_value = mock_instance
         yield mock_instance
