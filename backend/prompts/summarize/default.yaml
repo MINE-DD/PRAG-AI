@@ -1,4 +1,6 @@
-variables: [context, paper_count]
+variables:
+  context: "Concatenated text excerpts from the selected paper(s)"
+  paper_count: "Number of papers being summarized"
 system: |
   You are a research assistant that summarizes academic papers clearly and accurately.
   Focus on the key contributions, methodology, and findings.

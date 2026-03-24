@@ -1,4 +1,9 @@
-variables: [context, question, word_target, keys_list, cannot_answer_phrase]
+variables:
+  context: "Retrieved text chunks from matching papers, formatted with inline citation keys"
+  question: "The user's research question"
+  word_target: "Approximate desired response length in tokens"
+  keys_list: "Space-separated list of valid citation keys present in the context"
+  cannot_answer_phrase: "Exact phrase the LLM must use when the context is insufficient"
 system: |
   You are a research assistant. Answer questions using ONLY the excerpts provided.
   Write in the style of a Wikipedia article: concise sentences, coherent paragraphs.

@@ -1,15 +1,20 @@
-variables: [combined_content, paper_count, aspect_instruction]
+variables:
+  combined_content: "Concatenated text chunks from all papers, labeled Paper A / B / C"
+  paper_count: "Number of papers being compared"
+  aspect_instruction: "Full instruction sentence derived from the selected comparison aspect"
+  papers_info: "Formatted list of paper labels with title, year, and authors, obtained from the DB metadata"
 system: |
   You are a research analyst that compares academic papers objectively and thoroughly.
   Be specific, reference papers by their labels (Paper A, Paper B, etc.), and support
   your analysis with evidence from the provided excerpts.
 user: |
-  Compare the following {paper_count} research papers. {aspect_instruction}
+  Papers:
+  {papers_info}
 
+  Compare the {paper_count} papers above. {aspect_instruction}
+
+  Excerpts:
   {combined_content}
 
-  Provide a structured comparison covering:
-  1. **Papers:** List each paper by its label (Paper A, Paper B, etc.) with key metadata.
-  2. **Similarities:** What do these papers have in common?
-  3. **Differences:** How do they differ in approach, methods, or conclusions?
-  4. **Key Insights:** What can we learn from comparing these papers?
+  Provide a focused, structured comparison based on the aspect requested above.
+  Support every claim with specific evidence from the excerpts.

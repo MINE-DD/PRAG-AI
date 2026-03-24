@@ -14,13 +14,17 @@ const PromptSelector = defineComponent({
     const prompts = ref([])
     const internalName = ref('default')
     const preview = ref({ system: '', user: '' })
+    const variables = ref(null)  // dict of name→description, or null
 
     async function fetchPreview(name) {
       try {
         const raw = await api.get(`/prompts/${props.taskType}/${name}`)
         preview.value = { system: raw.system, user: raw.user }
+        variables.value = raw.variables && typeof raw.variables === 'object' && !Array.isArray(raw.variables)
+          ? raw.variables : null
       } catch {
         preview.value = { system: 'Could not load preview', user: 'Could not load preview' }
+        variables.value = null
       }
     }
 
@@ -45,7 +49,7 @@ const PromptSelector = defineComponent({
       }
     })
 
-    return { prompts, internalName, preview, onSelect }
+    return { prompts, internalName, preview, variables, onSelect }
   },
 
   template: `
@@ -68,6 +72,16 @@ const PromptSelector = defineComponent({
     >
       <option v-for="name in prompts" :key="name" :value="name">{{ name }}</option>
     </select>
+  </div>
+  <div v-if="variables" style="margin-bottom:10px">
+    <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">Variables</label>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr v-for="(desc, name) in variables" :key="name"
+          style="border-top:1px solid var(--border)">
+        <td style="padding:4px 8px 4px 0;font-family:monospace;white-space:nowrap;color:var(--primary);vertical-align:top">{{"{"}}{{name}}{{"}"}}</td>
+        <td style="padding:4px 0;color:var(--muted);line-height:1.4">{{ desc }}</td>
+      </tr>
+    </table>
   </div>
   <div class="form-group" style="margin-bottom:10px">
     <label style="font-size:12px;font-weight:500;color:var(--muted);display:block;margin-bottom:4px">System prompt</label>

@@ -104,18 +104,34 @@ def compare_papers(
 
     # Build aspect instruction and labeled content
     aspect_prompts = {
-        "methodology": "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
-        "findings": "Focus specifically on comparing the key findings, results, and conclusions.",
-        "all": "Compare all aspects including methodologies, findings, and implications."
+        "methodology":    "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
+        "findings":       "Focus specifically on comparing the key findings, results, and conclusions.",
+        "results":        "Focus specifically on comparing the key results, findings, and conclusions reported.",
+        "limitations":    "Focus specifically on comparing the limitations, weaknesses, and constraints acknowledged by each study.",
+        "contributions":  "Focus specifically on comparing the novel contributions, innovations, and impact claimed by each paper.",
+        "all":            "Compare all aspects including methodologies, findings, contributions, limitations, and implications.",
     }
     aspect_instruction = aspect_prompts.get(request.aspect, aspect_prompts["all"])
 
     paper_sections = []
+    papers_info_parts = []
+    meta_by_id = {m["paper_id"]: m for m in papers_metadata}
+
     for i, paper_id in enumerate(request.paper_ids):
         paper_label = f"Paper {chr(65 + i)}"  # A, B, C, etc.
         if paper_id in papers_content:
-            paper_sections.append(f"{paper_label} ({paper_id}):\n{papers_content[paper_id]}")
+            paper_sections.append(f"{paper_label}:\n{papers_content[paper_id]}")
+        meta = meta_by_id.get(paper_id)
+        if meta:
+            authors = meta["authors"][:3]
+            authors_str = ", ".join(authors) + (" et al." if len(meta["authors"]) > 3 else "")
+            year_str = f" ({meta['year']})" if meta.get("year") else ""
+            papers_info_parts.append(f"{paper_label}: \"{meta['title']}\"{year_str} — {authors_str}")
+        else:
+            papers_info_parts.append(f"{paper_label}: {paper_id}")
+
     combined_content = "\n\n---\n\n".join(paper_sections)
+    papers_info = "\n".join(papers_info_parts)
 
     # Render prompt via PromptService
     try:
@@ -124,6 +140,7 @@ def compare_papers(
             combined_content=combined_content,
             paper_count=len(request.paper_ids),
             aspect_instruction=aspect_instruction,
+            papers_info=papers_info,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
