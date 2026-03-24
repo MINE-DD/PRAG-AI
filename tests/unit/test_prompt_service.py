@@ -105,3 +105,55 @@ def test_validate_defaults_warns_on_missing_default(tmp_path, caplog):
         PromptService(str(tmp_path))
 
     assert "No default.yaml" in caplog.text
+
+
+def test_render_with_declared_variables_validates_correctly(tmp_path):
+    """variables: list matching template variables renders successfully."""
+    from app.services.prompt_service import PromptService
+    task_dir = tmp_path / "rag"
+    task_dir.mkdir()
+    (task_dir / "default.yaml").write_text(
+        "variables: [question, context]\n"
+        "system: You are a helper\n"
+        "user: Answer {question} using {context}\n"
+    )
+
+    service = PromptService(str(tmp_path))
+    result = service.render("rag", "default", question="What is AI?", context="AI is...")
+
+    assert "What is AI?" in result.user
+
+
+def test_render_declared_variables_mismatch_raises(tmp_path):
+    """variables: list that doesn't match actual template variables raises ValueError."""
+    from app.services.prompt_service import PromptService
+    task_dir = tmp_path / "rag"
+    task_dir.mkdir()
+    # declares [question] but template also uses {context} — mismatch
+    (task_dir / "default.yaml").write_text(
+        "variables: [question]\n"
+        "system: You are a helper\n"
+        "user: Answer {question} using {context}\n"
+    )
+
+    service = PromptService(str(tmp_path))
+
+    with pytest.raises(ValueError, match="variable mismatch"):
+        service.render("rag", "default", question="What?", context="ctx")
+
+
+def test_get_raw_returns_variables_list(tmp_path):
+    """get_raw includes the variables list when declared in YAML."""
+    from app.services.prompt_service import PromptService
+    task_dir = tmp_path / "rag"
+    task_dir.mkdir()
+    (task_dir / "default.yaml").write_text(
+        "variables: [question, context]\n"
+        "system: You are a helper\n"
+        "user: Answer {question} using {context}\n"
+    )
+
+    service = PromptService(str(tmp_path))
+    result = service.get_raw("rag", "default")
+
+    assert result["variables"] == ["question", "context"]

@@ -1,3 +1,4 @@
+variables: [combined_content, paper_count, aspect_instruction]
 system: |
   You are a research analyst that compares academic papers objectively and thoroughly.
   Be specific, reference papers by their labels (Paper A, Paper B, etc.), and support

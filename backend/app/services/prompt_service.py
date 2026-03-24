@@ -50,16 +50,36 @@ class PromptService:
             raise ValueError(
                 f"Prompt '{name}' for task '{task_type}' must have 'system' and 'user' keys"
             )
-        try:
-            template = ChatPromptTemplate.from_messages([
-                ("system", raw["system"]),
-                ("human", raw["user"]),
-            ])
-            messages = template.invoke(variables).to_messages()
-        except KeyError as e:
+        template = ChatPromptTemplate.from_messages([
+            ("system", raw["system"]),
+            ("human", raw["user"]),
+        ])
+
+        # If the YAML declares `variables:`, validate it matches the template exactly.
+        declared = raw.get("variables")
+        if declared is not None:
+            declared_set = set(declared)
+            actual_set = set(template.input_variables)
+            if declared_set != actual_set:
+                undeclared = sorted(actual_set - declared_set)
+                stale = sorted(declared_set - actual_set)
+                parts = []
+                if undeclared:
+                    parts.append(f"used in template but not declared: {undeclared}")
+                if stale:
+                    parts.append(f"declared but not used in template: {stale}")
+                raise ValueError(
+                    f"Prompt '{name}' for task '{task_type}': variable mismatch — {'; '.join(parts)}"
+                )
+
+        # Validate all template variables are provided by the caller.
+        missing = sorted(set(template.input_variables) - set(variables))
+        if missing:
             raise ValueError(
-                f"Missing template variable {e} for prompt '{name}' in task '{task_type}'"
-            ) from e
+                f"Missing template variable(s) {missing} for prompt '{name}' in task '{task_type}'"
+            )
+
+        messages = template.invoke(variables).to_messages()
         return RenderedPrompt(
             system=messages[0].content,
             user=messages[1].content,

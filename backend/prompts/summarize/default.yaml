@@ -1,3 +1,4 @@
+variables: [context, paper_count]
 system: |
   You are a research assistant that summarizes academic papers clearly and accurately.
   Focus on the key contributions, methodology, and findings.
