@@ -12,6 +12,7 @@ sys.path.insert(0, str(backend_path))
 
 from app.main import app
 from app.core.config import settings
+from app.services.prompt_service import get_prompt_service, RenderedPrompt
 
 
 @pytest.fixture
@@ -54,8 +55,8 @@ def mock_qdrant():
 
 @pytest.fixture
 def mock_ollama():
-    """Mock Ollama service"""
-    with patch('app.api.compare.OllamaService') as mock:
+    """Mock LLM service (provider-agnostic via _get_llm_service)"""
+    with patch('app.api.compare._get_llm_service') as mock:
         mock_instance = Mock()
         comparison_text = """## Similarities
 Both papers focus on transformer architectures and attention mechanisms.
@@ -100,6 +101,18 @@ def test_collection(client, temp_data_dir, mock_qdrant):
         json={"name": "Test Collection"}
     )
     return response.json()["collection_id"]
+
+
+@pytest.fixture(autouse=True)
+def mock_prompt_service():
+    mock = Mock()
+    mock.render.return_value = RenderedPrompt(
+        system="You are a research analyst.",
+        user="Compare the following papers.",
+    )
+    app.dependency_overrides[get_prompt_service] = lambda: mock
+    yield
+    app.dependency_overrides.pop(get_prompt_service, None)
 
 
 @pytest.fixture
@@ -194,3 +207,12 @@ def test_compare_includes_metadata(client, test_collection):
         assert "paper_id" in paper
         assert "title" in paper
         assert "authors" in paper
+
+
+def test_compare_accepts_prompt_name_field(client, test_collection):
+    """prompt_name field is accepted and uses the named prompt."""
+    response = client.post(
+        f"/collections/{test_collection}/compare",
+        json={"paper_ids": ["paper-123", "paper-456"], "prompt_name": "default"},
+    )
+    assert response.status_code == 200

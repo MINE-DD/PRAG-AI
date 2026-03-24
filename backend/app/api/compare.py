@@ -4,6 +4,7 @@ from typing import Optional
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
 from app.services.metadata_service import MetadataService
+from app.services.prompt_service import PromptService, get_prompt_service
 from app.core.config import settings, load_config
 from app.api.rag import _get_llm_service, _get_llm_info
 
@@ -18,6 +19,7 @@ class CompareRequest(BaseModel):
     paper_ids: list[str] = Field(..., min_length=2, description="Paper IDs to compare (min 2)")
     aspect: str = Field(default="all", description="Aspect to compare: methodology, findings, or all")
     max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
+    prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class CompareResponse(BaseModel):
@@ -46,7 +48,8 @@ def get_services():
 def compare_papers(
     collection_id: str,
     request: CompareRequest,
-    services: tuple = Depends(get_services)
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
 ):
     """
     Compare multiple papers to identify similarities and differences.
@@ -99,38 +102,34 @@ def compare_papers(
         paper_chunks = [chunk.payload["chunk_text"] for chunk in chunks]
         papers_content[paper_id] = "\n\n".join(paper_chunks[:USE_CHUNKS_LIMIT])  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
 
-    # Build comparison prompt based on aspect
+    # Build aspect instruction and labeled content
     aspect_prompts = {
         "methodology": "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
         "findings": "Focus specifically on comparing the key findings, results, and conclusions.",
         "all": "Compare all aspects including methodologies, findings, and implications."
     }
-
     aspect_instruction = aspect_prompts.get(request.aspect, aspect_prompts["all"])
 
-    # Create labeled content for each paper
     paper_sections = []
     for i, paper_id in enumerate(request.paper_ids):
         paper_label = f"Paper {chr(65 + i)}"  # A, B, C, etc.
         if paper_id in papers_content:
             paper_sections.append(f"{paper_label} ({paper_id}):\n{papers_content[paper_id]}")
-
     combined_content = "\n\n---\n\n".join(paper_sections)
 
-    prompt = f"""Compare the following {len(request.paper_ids)} research papers. {aspect_instruction}
-
-            {combined_content}
-
-            Provide a structured comparison covering:
-            1. **Papers:** Explicitly list each paper by its local label (Paper A, Paper B, etc.) and include key metadata from the collection (title, authors, year).
-            2. **Similarities**: What do these papers have in common?
-            3. **Differences**: How do they differ in approach, methods, or conclusions?
-            4. **Key Insights**: What can we learn from comparing these papers?
-
-            Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
+    # Render prompt via PromptService
+    try:
+        rendered = prompt_service.render(
+            "compare", request.prompt_name,
+            combined_content=combined_content,
+            paper_count=len(request.paper_ids),
+            aspect_instruction=aspect_instruction,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     # Generate comparison using LLM
-    comparison = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
+    comparison = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=request.max_tokens)
 
     return CompareResponse(
         comparison=comparison,
