@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "PRAG-AI: Chat with your research papers"
+type: software
+license: Apache-2.0
+repository-code: https://github.com/MINE-DD/PRAG-AI
+abstract: >
+  PRAG-AI is a local Retrieval-Augmented Generation (RAG) system that lets
+  researchers ask questions across a collection of academic PDF papers and
+  receive grounded, cited answers. Processing runs locally via Ollama,
+  Qdrant, and Docling — papers never leave the user's machine.
+# doi: ""  # TODO: add after first Zenodo release (see README.dev.md)
+authors:
+  - given-names: Angel
+    family-names: Daza
+    affiliation: Netherlands eScience Center
+keywords:
+  - RAG
+  - retrieval-augmented generation
+  - research papers
+  - local LLM
+  - PDF
+  - Qdrant
+  - Ollama
+  - Docling
+  - academic research

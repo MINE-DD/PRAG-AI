@@ -2,6 +2,8 @@
 name = "prag-v2"
 version = "0.1.0"
 description = "RAG system for academic research papers"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.109.0",

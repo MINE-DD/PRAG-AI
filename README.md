@@ -1,3 +1,9 @@
+[![CI](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml)
+
+[![codecov](https://codecov.io/gh/MINE-DD/PRAG-AI/branch/main/graph/badge.svg)](https://codecov.io/gh/MINE-DD/PRAG-AI)
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 # PRAG-AI — Chat with your research papers
 
 PRAG-AI lets you ask questions to a collection of academic PDF papers and get answers grounded in the text, with citations. Everything runs on your own computer — your papers never leave your machine.
@@ -155,3 +161,20 @@ Your data in `./data/` is never affected by updates.
 | Model list is empty in Settings | Ollama is running but has no models yet — use the Pull section to download one |
 | PDF conversion fails | Check logs with `docker compose logs backend` |
 | Can't connect from the hosted interface | Confirm the backend URL in Settings is exactly `http://localhost:8000` |
+
+---
+
+## Cite this software
+
+If you use PRAG-AI in your research, please cite it:
+
+```bibtex
+@software{pragai,
+  title   = {{PRAG-AI}: Chat with your research papers},
+  author  = {Daza, Angel},
+  license = {Apache-2.0},
+  url     = {https://github.com/MINE-DD/PRAG-AI}
+}
+```
+
+A `CITATION.cff` file is included in the repository. GitHub surfaces a "Cite this repository" button automatically.
