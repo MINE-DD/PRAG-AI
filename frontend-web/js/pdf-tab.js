@@ -15,6 +15,8 @@ const PdfTab = defineComponent({
     const loading     = ref(false)
     const uploadDir   = ref('uploads')
     const showUpload  = ref(false)
+    const pendingFiles  = ref(null)   // FileList staged before confirming upload
+    const fileInputKey  = ref(0)      // increment to reset the file input element
     const converting  = reactive({})
     const expanded    = reactive({})
     const dirFiles    = reactive({})
@@ -58,13 +60,18 @@ const PdfTab = defineComponent({
       } catch (e) { dirFiles[dirName] = []; error.value = e.message }
     }
 
-    async function uploadFiles(evt) {
+    function onFileSelect(evt) {
       const files = evt.target.files
-      if (!files.length) return
+      if (!files.length) { pendingFiles.value = null; return }
+      pendingFiles.value = files
+    }
+
+    async function uploadFiles() {
+      if (!pendingFiles.value || !pendingFiles.value.length) return
       const dir = uploadDir.value.trim() || 'uploads'
       const fd = new FormData()
       fd.append('dir_name', dir)
-      for (const f of files) fd.append('files', f)
+      for (const f of pendingFiles.value) fd.append('files', f)
       loading.value = true
       error.value = null
       try {
@@ -74,7 +81,8 @@ const PdfTab = defineComponent({
         await loadDirs()
         uploadPipelineDir.value = dir
         uploadDir.value = 'uploads'
-        evt.target.value = ''
+        pendingFiles.value = null
+        fileInputKey.value++
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
     }
@@ -396,11 +404,11 @@ const PdfTab = defineComponent({
     onMounted(loadDirs)
 
     return {
-      error, directories, loading, uploadDir,
+      error, directories, loading, uploadDir, pendingFiles, fileInputKey,
       converting, expanded, dirFiles, deletingDir,
       convertingAllMap,
       expandedFiles, fileMetadata, reenrichState, editState,
-      loadDirs, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
+      loadDirs, onFileSelect, uploadFiles, convertFile, deleteFile, deleteDir, toggleDir,
       convertAll, hasUnconverted,
       toggleFileMeta, openReenrich, selectReenrichProvider, cancelReenrich, confirmReenrich,
       startEdit, cancelEdit, saveEdit,
@@ -424,7 +432,7 @@ const PdfTab = defineComponent({
   <!-- Source selector -->
   <div class="flex gap-8" style="margin-bottom:8px">
     <button class="btn" :class="showUpload ? 'btn-primary' : 'btn-secondary'"
-            @click="showUpload=!showUpload; showZotero=false">
+            @click="showUpload=!showUpload; showZotero=false; pendingFiles=null">
       ↑ Upload from PC
     </button>
     <button class="btn" :class="showZotero ? 'btn-primary' : 'btn-secondary'"
@@ -435,20 +443,32 @@ const PdfTab = defineComponent({
 
   <!-- Upload panel -->
   <div v-if="showUpload" class="card" style="margin-bottom:8px">
-    <div class="form-row">
-      <div class="form-group" style="margin:0">
+
+    <!-- Step 1: choose files -->
+    <template v-if="!pendingFiles">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Choose PDF files</label>
+        <input :key="fileInputKey" type="file" accept=".pdf" multiple @change="onFileSelect"
+               :disabled="loading" style="font-size:13px;width:100%;padding:6px 0;" />
+      </div>
+    </template>
+
+    <!-- Step 2: name the directory and confirm -->
+    <template v-else>
+      <div style="margin-bottom:12px;font-size:13px">
+        <strong>{{ pendingFiles.length }}</strong> file{{ pendingFiles.length !== 1 ? 's' : '' }} selected
+        <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+                @click="pendingFiles = null; fileInputKey++">Change</button>
+      </div>
+      <div class="form-group">
         <label>Directory name</label>
         <input type="text" v-model="uploadDir" placeholder="uploads" />
       </div>
-      <div class="form-group" style="margin:0; display:flex; align-items:flex-end;">
-        <input type="file" accept=".pdf" multiple @change="uploadFiles"
-               :disabled="loading" style="font-size:13px;width:100%;padding:6px 0;" />
-      </div>
-    </div>
-    <div v-if="loading" class="flex items-center gap-8 mt-8">
-      <span class="spinner"></span>
-      <span class="text-muted">Uploading…</span>
-    </div>
+      <button class="btn btn-primary" :disabled="loading" @click="uploadFiles">
+        <span v-if="loading"><span class="spinner" style="width:12px;height:12px;border-width:2px"></span> Uploading…</span>
+        <span v-else>Upload {{ pendingFiles.length }} file{{ pendingFiles.length !== 1 ? 's' : '' }}</span>
+      </button>
+    </template>
 
     <pipeline-panel v-if="uploadPipelineDir"
                     :dir-name="uploadPipelineDir"
