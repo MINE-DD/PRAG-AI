@@ -11,6 +11,7 @@ htmlcov/
 dist/
 build/
 data/
+docs/_build/
 .DS_Store
 *.swp
 *.swo
