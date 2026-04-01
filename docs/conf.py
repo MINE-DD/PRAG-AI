@@ -22,6 +22,16 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
 
+autodoc_mock_imports = [
+    "qdrant_client",
+    "ollama",
+    "docling",
+    "fastembed",
+    "langchain_core",
+    "pymupdf4llm",
+    "pydantic_settings",
+]
+
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
