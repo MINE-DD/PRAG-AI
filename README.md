@@ -1,5 +1,7 @@
 # PRAG-AI — Chat with your research papers
 
+[![fair-software.eu](https://img.shields.io/badge/fair--software.eu-%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8B-yellow)](https://fair-software.eu)
+
 PRAG-AI lets you ask questions to a collection of academic PDF papers and get answers grounded in the text, with citations. Everything runs on your own computer — your papers never leave your machine.
 
 **What's in this repository:**
