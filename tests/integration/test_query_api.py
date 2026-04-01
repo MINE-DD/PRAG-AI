@@ -12,6 +12,7 @@ sys.path.insert(0, str(backend_path))
 
 from app.main import app
 from app.core.config import settings
+from app.services.prompt_service import get_prompt_service, RenderedPrompt
 
 
 @pytest.fixture
@@ -96,6 +97,18 @@ def test_collection(client, temp_data_dir, mock_qdrant):
     return response.json()["collection_id"]
 
 
+@pytest.fixture(autouse=True)
+def mock_prompt_service():
+    mock = Mock()
+    mock.render.return_value = RenderedPrompt(
+        system="You are a research assistant.",
+        user="Answer the question using the context.",
+    )
+    app.dependency_overrides[get_prompt_service] = lambda: mock
+    yield
+    app.dependency_overrides.pop(get_prompt_service, None)
+
+
 @pytest.fixture
 def client(temp_data_dir, mock_qdrant, mock_ollama, mock_metadata_service):
     return TestClient(app)
@@ -166,6 +179,18 @@ def test_rag_query_empty_text(client, test_collection):
     )
 
     assert response.status_code == 400
+
+
+def test_rag_accepts_prompt_name_field(client, test_collection):
+    """prompt_name field is accepted and uses the named prompt."""
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={
+            "query_text": "What is attention?",
+            "prompt_name": "default",
+        }
+    )
+    assert response.status_code == 200
 
 
 def test_rag_query_returns_metadata(client, test_collection):

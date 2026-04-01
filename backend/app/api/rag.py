@@ -8,6 +8,7 @@ from app.services.citation_service import CitationService
 from app.services.metadata_service import MetadataService
 from app.services.sparse_embedding_service import SparseEmbeddingService
 from app.services.api_keys_service import ApiKeysService
+from app.services.prompt_service import PromptService, get_prompt_service
 from app.core.config import settings, load_config
 
 router = APIRouter()
@@ -106,7 +107,8 @@ def get_services():
 def rag_query(
     collection_id: str,
     rag_request: RAGRequest,
-    services: tuple = Depends(get_services)
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
 ):
     """
     RAG query: retrieve relevant chunks and generate an answer.
@@ -190,47 +192,18 @@ def rag_query(
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_tokens
-        # prompt = (
-        #     f"You are a research assistant. Answer the question using ONLY the excerpts below.\n\n"
-        #     f"CITATION RULES:\n"
-        #     f"- The ONLY valid citation keys are: {keys_list}\n"
-        #     f"- Cite by placing the key in square brackets, e.g. {f'[{valid_keys[0]}]' if valid_keys else '[AuthorTitle2024]'}\n"
-        #     f"- Do NOT invent citation keys. Do NOT cite numbered references from within the text (e.g. [1], [2]).\n"
-        #     f"- Only use the keys listed above.\n\n"
-        #     f"Answer based solely on the provided excerpts, not on prior knowledge.\n"
-        #     f"Aim for approximately {word_target} words.\n"
-        #     f"If the excerpts do not contain enough information, reply with: "
-        #     f'"{CANNOT_ANSWER_PHRASE}"\n\n'
-        #     f"Question: {rag_request.query_text}\n\n"
-        #     f"Excerpts:\n{context}\n\n"
-        #     f"Answer:"
-        # )
-        CITATION_KEY_CONSTRAINTS = (
-            f"- The ONLY valid citation keys are: {keys_list}\n"
-            f"- Cite by placing the key in square brackets, e.g. {f'[{valid_keys[0]}]' if valid_keys else '[AuthorTitle2024]'}\n"
-            f"- Do NOT invent citation keys. Do NOT cite numbered references from within the text (e.g. [1], [2]).\n"
-            f"- Only use the keys listed above.\n\n"
+        try:
+            rendered = prompt_service.render(
+                "rag", rag_request.prompt_name,
+                context=context,
+                question=rag_request.query_text,
+                word_target=word_target,
+                keys_list=keys_list,
+                cannot_answer_phrase=CANNOT_ANSWER_PHRASE,
             )
-        prompt = (
-            "Answer the question below with the context.\n\n"
-            f"Context:\n\n{context}\n\n----\n\n"
-            f"Question: {rag_request.query_text}\n\n"
-            "Write an answer based on the context. "
-            "If the context provides insufficient information reply "
-            f'"{CANNOT_ANSWER_PHRASE}." '
-            "For each part of your answer, indicate which sources support the claims you make. "
-            "Each context has a citation key at the end of it, which looks like {example_citation}. "
-            "Only cite from the context above and only use the citation keys from the context. "
-            f"{CITATION_KEY_CONSTRAINTS}"
-            "Do not concatenate citation keys, just use them as is. "
-            "Write in the style of a Wikipedia article, with concise sentences and "
-            "coherent paragraphs. The context comes from a variety of sources and is "
-            "only a summary, so there may inaccuracies or ambiguities. If quotes are "
-            "present and relevant, use them in the answer. This answer will go directly "
-            "onto Wikipedia, so do not add any extraneous information.\n\n"
-            f"Aim for approximately {word_target} words.\n"
-        )
-        answer = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=rag_request.max_tokens)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        answer = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=rag_request.max_tokens)
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():

@@ -1,19 +1,24 @@
 import { defineComponent, ref, computed, watch } from 'vue'
 import { api, downloadBlob } from './api.js'
+import { PromptSelector } from './prompt-selector.js'
 
 const CompareTab = defineComponent({
   name: 'CompareTab',
   props: ['selectedCollection', 'collections'],
   emits: ['update:collection'],
+  components: { PromptSelector },
 
   setup(props) {
-    const error       = ref(null)
-    const loading     = ref(false)
-    const papers      = ref([])
-    const selectedIds = ref([])
-    const aspect      = ref('all')
-    const maxTokens   = ref(800)
-    const result      = ref(null)
+    const error          = ref(null)
+    const loading        = ref(false)
+    const papers         = ref([])
+    const selectedIds    = ref([])
+    const aspect         = ref('all')
+    const maxTokens      = ref(800)
+    const result         = ref(null)
+    const filterSearch   = ref('')
+    const showAdvanced   = ref(false)
+    const selectedPrompt = ref('default')
 
     const aspects = [
       { value: 'all',           label: 'All aspects' },
@@ -24,6 +29,14 @@ const CompareTab = defineComponent({
     ]
 
     const collectionId = computed(() => props.selectedCollection)
+
+    const filteredPapers = computed(() => {
+      const q = filterSearch.value.toLowerCase()
+      if (!q) return papers.value
+      return papers.value.filter(p =>
+        (p.title || p.filename || p.paper_id).toLowerCase().includes(q)
+      )
+    })
 
     watch(collectionId, async (id) => {
       papers.value = []
@@ -49,6 +62,7 @@ const CompareTab = defineComponent({
           paper_ids: selectedIds.value,
           aspect: aspect.value,
           max_tokens: maxTokens.value,
+          prompt_name: selectedPrompt.value,
         })
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
@@ -72,6 +86,7 @@ const CompareTab = defineComponent({
     return {
       error, loading, papers, selectedIds, aspect, maxTokens, result, aspects,
       collectionId, compare, exportMd,
+      filterSearch, filteredPapers, showAdvanced, selectedPrompt,
     }
   },
 
@@ -92,30 +107,43 @@ const CompareTab = defineComponent({
     <div class="card">
       <div class="card-title">Select papers</div>
 
+      <input type="text" v-model="filterSearch" placeholder="Search papers…"
+             style="width:100%;margin-bottom:8px" />
+
       <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);
                   border-radius:6px;padding:8px 12px;margin-bottom:12px">
         <div v-if="papers.length === 0" class="text-muted text-sm">No papers in this collection.</div>
-        <label v-for="p in papers" :key="p.paper_id" class="checkbox-label">
+        <div v-else-if="filteredPapers.length === 0" class="text-muted text-sm">No papers match the search.</div>
+        <label v-for="p in filteredPapers" :key="p.paper_id" class="checkbox-label">
           <input type="checkbox" :value="p.paper_id" v-model="selectedIds" />
           {{ p.title || p.filename || p.paper_id }}
         </label>
       </div>
 
-      <div v-if="selectedIds.length" class="text-sm text-muted mb-16">
+      <div class="text-sm text-muted mb-16">
         {{ selectedIds.length }} paper{{ selectedIds.length !== 1 ? 's' : '' }} selected
       </div>
 
-      <div class="form-row">
-        <div class="form-group" style="margin:0">
-          <label>Comparison aspect</label>
-          <select v-model="aspect">
-            <option v-for="a in aspects" :key="a.value" :value="a.value">{{ a.label }}</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin:0">
-          <label>Max tokens: {{ maxTokens }}</label>
-          <input type="range" v-model.number="maxTokens" min="100" max="2000" step="50"
-                 style="width:100%;margin-top:6px" />
+      <div class="form-group">
+        <label>Comparison aspect</label>
+        <select v-model="aspect">
+          <option v-for="a in aspects" :key="a.value" :value="a.value">{{ a.label }}</option>
+        </select>
+      </div>
+
+      <!-- Advanced options -->
+      <div style="margin-top:4px">
+        <button class="btn btn-secondary btn-sm" @click="showAdvanced = !showAdvanced">
+          {{ showAdvanced ? '▲' : '▼' }} Advanced options
+        </button>
+        <div v-show="showAdvanced" style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:6px">
+          <div class="form-group" style="margin:0">
+            <label>Max tokens: {{ maxTokens }}</label>
+            <input type="range" v-model.number="maxTokens" min="100" max="2000" step="50"
+                   style="width:100%;margin-top:6px" />
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />
+          <prompt-selector :task-type="'compare'" v-model="selectedPrompt" />
         </div>
       </div>
 

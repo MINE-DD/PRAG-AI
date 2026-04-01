@@ -16,6 +16,7 @@ dependencies = [
     "ollama>=0.1.0",
     "fastembed>=0.4.0",
     "pymupdf4llm>=0.0.17",
+    "langchain-core>=1.2,<2.0",
 ]
 
 [project.optional-dependencies]

@@ -11,6 +11,7 @@ class RAGRequest(BaseModel):
     max_tokens: int = Field(default=500, ge=50, le=4000, description="Desired response length in tokens")
     chat_history: list[dict] = Field(default_factory=list, description="Previous messages")
     use_hybrid: bool = Field(default=False, description="Use hybrid search (dense + sparse)")
+    prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class Source(BaseModel):

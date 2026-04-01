@@ -23,6 +23,7 @@ RUN pip install uv && \
 
 # Copy application code
 COPY backend/app/ ./app/
+COPY backend/prompts/ ./prompts/
 
 # Expose port
 EXPOSE 8000
