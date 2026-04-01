@@ -9,12 +9,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import settings
-from app.services.preprocessing_service import PreprocessingService
-from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
 from app.api.ingest import get_ingestion_service
 from app.api.preprocess import _safe
+from app.core.config import settings
+from app.services.collection_service import CollectionService
+from app.services.preprocessing_service import PreprocessingService
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
@@ -42,7 +42,7 @@ def run_pipeline(req: PipelineRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     already_done = [f for f in files if f["processed"]]
-    to_convert   = [f for f in files if not f["processed"]]
+    to_convert = [f for f in files if not f["processed"]]
 
     def generate():
         # ── Step 1: scan ──────────────────────────────────────────────────────
@@ -63,7 +63,8 @@ def run_pipeline(req: PipelineRequest):
             yield f"data: {json.dumps({'step': 'convert', 'file': fn, 'index': i, 'total': len(to_convert), 'status': 'converting'})}\n\n"
             try:
                 prep_svc.convert_single_pdf(
-                    dir_name, fn,
+                    dir_name,
+                    fn,
                     backend=req.pdf_backend,
                     metadata_backend=req.metadata_backend,
                 )
@@ -75,9 +76,13 @@ def run_pipeline(req: PipelineRequest):
                 yield f"data: {json.dumps({'step': 'convert', 'file': fn, 'index': i, 'total': len(to_convert), 'status': 'error', 'message': str(e)})}\n\n"
 
         # ── Step 3: create collection ─────────────────────────────────────────
-        collection_svc = CollectionService(qdrant=QdrantService(url=settings.qdrant_url))
+        collection_svc = CollectionService(
+            qdrant=QdrantService(url=settings.qdrant_url)
+        )
         # Derive collection_id (same slug as CollectionService uses) — used as fallback if ValueError
-        collection_id = re.sub(r'[^a-z0-9]+', '-', req.collection_name.lower()).strip('-')
+        collection_id = re.sub(r"[^a-z0-9]+", "-", req.collection_name.lower()).strip(
+            "-"
+        )
 
         try:
             result = collection_svc.create_collection(
@@ -111,10 +116,12 @@ def run_pipeline(req: PipelineRequest):
 
         # Build ingest list — only files with an .md that actually exists
         def _ingest_candidates():
-            for filename in [f["filename"] for f in already_done] + list(successfully_converted):
+            for filename in [f["filename"] for f in already_done] + list(
+                successfully_converted
+            ):
                 stem = Path(filename).stem
                 preprocessed = Path(settings.preprocessed_dir) / dir_name
-                md_path       = preprocessed / f"{stem}.md"
+                md_path = preprocessed / f"{stem}.md"
                 metadata_path = preprocessed / f"{stem}_metadata.json"
                 if md_path.exists():
                     yield filename, stem, md_path, metadata_path
@@ -122,13 +129,17 @@ def run_pipeline(req: PipelineRequest):
         all_to_ingest = list(_ingest_candidates())
         total_ingest = len(all_to_ingest)
 
-        for i, (filename, stem, md_path, metadata_path) in enumerate(all_to_ingest, start=1):
+        for i, (_filename, stem, md_path, metadata_path) in enumerate(
+            all_to_ingest, start=1
+        ):
             yield f"data: {json.dumps({'step': 'ingest', 'file': f'{stem}.md', 'index': i, 'total': total_ingest, 'status': 'ingesting'})}\n\n"
             try:
                 ingest_svc.ingest_file(
                     collection_id=collection_id,
                     md_path=str(md_path),
-                    metadata_path=str(metadata_path) if metadata_path.exists() else None,
+                    metadata_path=str(metadata_path)
+                    if metadata_path.exists()
+                    else None,
                 )
                 ingested += 1
                 yield f"data: {json.dumps({'step': 'ingest', 'file': f'{stem}.md', 'index': i, 'total': total_ingest, 'status': 'done'})}\n\n"

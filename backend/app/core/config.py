@@ -1,11 +1,12 @@
-from typing import Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
-import yaml
 from pathlib import Path
+
+import yaml
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings from environment"""
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
     qdrant_url: str = "http://qdrant:6333"
@@ -13,8 +14,8 @@ class Settings(BaseSettings):
     data_dir: str = "/data/collections"
     pdf_input_dir: str = "/data/pdf_input"
     preprocessed_dir: str = "/data/preprocessed"
-    anthropic_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    anthropic_api_key: str | None = None
+    google_api_key: str | None = None
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
@@ -23,7 +24,7 @@ def load_config(config_path: str = "config.yaml") -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
-    with open(path, "r") as f:
+    with open(path) as f:
         return yaml.safe_load(f)
 
 

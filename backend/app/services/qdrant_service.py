@@ -1,17 +1,17 @@
+import uuid
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
-    VectorParams,
-    SparseVectorParams,
-    SparseVector,
-    PointStruct,
-    Modifier,
-    Prefetch,
-    FusionQuery,
     Fusion,
+    FusionQuery,
+    Modifier,
+    PointStruct,
+    Prefetch,
+    SparseVector,
+    SparseVectorParams,
+    VectorParams,
 )
-from typing import Optional
-import uuid
 
 
 class QdrantService:
@@ -33,7 +33,9 @@ class QdrantService:
             vector_size: Dimension of dense embeddings.
             search_type: "dense" for dense-only, "hybrid" for dense + BM42 sparse.
         """
-        vectors_config = {"dense": VectorParams(size=vector_size, distance=Distance.COSINE)}
+        vectors_config = {
+            "dense": VectorParams(size=vector_size, distance=Distance.COSINE)
+        }
 
         sparse_vectors_config = None
         if search_type == "hybrid":
@@ -82,7 +84,7 @@ class QdrantService:
         collection_name: str,
         chunks: list,
         vectors: list,
-        sparse_vectors: Optional[list[dict]] = None,
+        sparse_vectors: list[dict] | None = None,
     ):
         """Upsert chunks with embeddings to Qdrant.
 
@@ -95,7 +97,7 @@ class QdrantService:
         named = self._collection_uses_named_vectors(collection_name)
 
         points = []
-        for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        for i, (chunk, vector) in enumerate(zip(chunks, vectors, strict=False)):
             if named:
                 vec_data = {"dense": vector}
                 if sparse_vectors and i < len(sparse_vectors):
@@ -127,8 +129,8 @@ class QdrantService:
         collection_name: str,
         query_vector: list[float],
         limit: int = 10,
-        paper_ids: Optional[list[str]] = None,
-        sparse_vector: Optional[dict] = None,
+        paper_ids: list[str] | None = None,
+        sparse_vector: dict | None = None,
         use_hybrid: bool = False,
     ) -> list:
         """Search for similar chunks.
@@ -141,7 +143,7 @@ class QdrantService:
             sparse_vector: Optional {"indices": [...], "values": [...]} for hybrid.
             use_hybrid: If True and collection supports it, use RRF fusion.
         """
-        from qdrant_client.models import Filter, FieldCondition, MatchAny
+        from qdrant_client.models import FieldCondition, Filter, MatchAny
 
         query_filter = None
         if paper_ids:
@@ -190,10 +192,6 @@ class QdrantService:
         self.client.delete(
             collection_name=collection_name,
             points_selector={
-                "filter": {
-                    "must": [
-                        {"key": "paper_id", "match": {"value": paper_id}}
-                    ]
-                }
+                "filter": {"must": [{"key": "paper_id", "match": {"value": paper_id}}]}
             },
         )

@@ -16,3 +16,5 @@ data/
 *.swo
 .worktrees/
 uv.lock
+docs/_build/
+site/

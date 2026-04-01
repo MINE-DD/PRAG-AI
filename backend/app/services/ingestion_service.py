@@ -1,16 +1,14 @@
 import json
 import re
-import shutil
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
-from typing import Optional
 
-from app.models.paper import Chunk, ChunkType, PaperMetadata
+from app.core.config import settings
+from app.models.paper import Chunk, ChunkType
 from app.services.chunking_service import ChunkingService
 from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
-from app.core.config import settings
 
 
 class IngestionService:
@@ -21,7 +19,7 @@ class IngestionService:
         chunking_service: ChunkingService,
         ollama_service: OllamaService,
         qdrant_service: QdrantService,
-        sparse_embedding_service: Optional[SparseEmbeddingService] = None,
+        sparse_embedding_service: SparseEmbeddingService | None = None,
     ):
         self.chunking_service = chunking_service
         self.ollama_service = ollama_service
@@ -42,16 +40,20 @@ class IngestionService:
         for md_file in sorted(preprocessed_path.glob("*.md")):
             stem = md_file.stem
             metadata_path = preprocessed_path / f"{stem}_metadata.json"
-            files.append({
-                "markdown_file": md_file.name,
-                "has_metadata": metadata_path.exists(),
-                "stem": stem,
-            })
+            files.append(
+                {
+                    "markdown_file": md_file.name,
+                    "has_metadata": metadata_path.exists(),
+                    "stem": stem,
+                }
+            )
 
         # Count total PDFs in the corresponding pdf_input directory
         dir_name = preprocessed_path.name
         pdf_input_dir = Path(settings.pdf_input_dir) / dir_name
-        total_pdfs = len(list(pdf_input_dir.glob("*.pdf"))) if pdf_input_dir.is_dir() else 0
+        total_pdfs = (
+            len(list(pdf_input_dir.glob("*.pdf"))) if pdf_input_dir.is_dir() else 0
+        )
 
         return {"files": files, "total_pdfs": total_pdfs}
 
@@ -59,7 +61,7 @@ class IngestionService:
         self,
         collection_id: str,
         name: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         search_type: str = "dense",
     ) -> dict:
         """Create a Qdrant collection and directory structure."""
@@ -76,7 +78,9 @@ class IngestionService:
         sample_embedding = self.ollama_service.generate_embedding("test")
         vector_size = len(sample_embedding)
         self.qdrant_service.create_collection(
-            collection_id, vector_size=vector_size, search_type=search_type,
+            collection_id,
+            vector_size=vector_size,
+            search_type=search_type,
         )
 
         # Write collection_info.json
@@ -104,7 +108,7 @@ class IngestionService:
         self,
         collection_id: str,
         md_path: str,
-        metadata_path: Optional[str] = None,
+        metadata_path: str | None = None,
     ) -> dict:
         """Ingest a single markdown file into a collection.
 
@@ -165,7 +169,11 @@ class IngestionService:
         # Generate sparse embeddings for hybrid collections
         sparse_vectors = None
         if self._is_hybrid_collection(collection_id) and self.sparse_embedding_service:
-            sparse_vectors = self.sparse_embedding_service.generate_sparse_embeddings_batch(chunk_texts)
+            sparse_vectors = (
+                self.sparse_embedding_service.generate_sparse_embeddings_batch(
+                    chunk_texts
+                )
+            )
 
         # Store in Qdrant
         self.qdrant_service.upsert_chunks(
@@ -202,7 +210,7 @@ class IngestionService:
         self,
         title: str,
         authors: list[str],
-        year: Optional[int],
+        year: int | None,
     ) -> str:
         """Generate a human-readable unique ID from metadata."""
         parts = []
@@ -219,7 +227,7 @@ class IngestionService:
             parts.append(str(year))
         return "".join(parts) or "UnknownPaper"
 
-    def _extract_year(self, publication_date: Optional[str]) -> Optional[int]:
+    def _extract_year(self, publication_date: str | None) -> int | None:
         """Extract year from a publication date string."""
         if not publication_date:
             return None
@@ -242,7 +250,7 @@ class IngestionService:
         )
         match = pattern.search(text)
         if match:
-            body = text[:match.start()].rstrip()
-            references = text[match.start():]
+            body = text[: match.start()].rstrip()
+            references = text[match.start() :]
             return body, references
         return text, ""

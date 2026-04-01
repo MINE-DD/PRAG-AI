@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
+
+from app.api.rag import _get_llm_info, _get_llm_service
+from app.core.config import load_config, settings
 from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
 from app.services.metadata_service import MetadataService
-from app.core.config import settings, load_config
-from app.api.rag import _get_llm_service, _get_llm_info
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
@@ -15,13 +15,21 @@ USE_CHUNKS_LIMIT = 10  # Limit chunks included in prompt to avoid token overload
 
 class CompareRequest(BaseModel):
     """Request to compare papers"""
-    paper_ids: list[str] = Field(..., min_length=2, description="Paper IDs to compare (min 2)")
-    aspect: str = Field(default="all", description="Aspect to compare: methodology, findings, or all")
-    max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
+
+    paper_ids: list[str] = Field(
+        ..., min_length=2, description="Paper IDs to compare (min 2)"
+    )
+    aspect: str = Field(
+        default="all", description="Aspect to compare: methodology, findings, or all"
+    )
+    max_tokens: int | None = Field(
+        default=None, description="Max tokens for generated text"
+    )
 
 
 class CompareResponse(BaseModel):
     """Response with paper comparison"""
+
     comparison: str = Field(..., description="Generated comparison")
     paper_ids: list[str] = Field(..., description="Papers that were compared")
     papers: list[dict] = Field(default_factory=list, description="Paper metadata")
@@ -44,9 +52,7 @@ def get_services():
 
 @router.post("/collections/{collection_id}/compare", response_model=CompareResponse)
 def compare_papers(
-    collection_id: str,
-    request: CompareRequest,
-    services: tuple = Depends(get_services)
+    collection_id: str, request: CompareRequest, services: tuple = Depends(get_services)
 ):
     """
     Compare multiple papers to identify similarities and differences.
@@ -62,7 +68,9 @@ def compare_papers(
 
     # Validate request
     if len(request.paper_ids) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 papers are required for comparison")
+        raise HTTPException(
+            status_code=400, detail="At least 2 papers are required for comparison"
+        )
 
     # Check collection exists
     collection = collection_service.get_collection(collection_id)
@@ -77,13 +85,15 @@ def compare_papers(
         # Get paper metadata
         metadata = metadata_service.get_paper_metadata(collection_id, paper_id)
         if metadata:
-            papers_metadata.append({
-                "paper_id": paper_id,
-                "title": metadata.title,
-                "authors": metadata.authors,
-                "year": metadata.year,
-                "unique_id": metadata.unique_id
-            })
+            papers_metadata.append(
+                {
+                    "paper_id": paper_id,
+                    "title": metadata.title,
+                    "authors": metadata.authors,
+                    "year": metadata.year,
+                    "unique_id": metadata.unique_id,
+                }
+            )
 
         # Get chunks for this paper
         vector_size = qdrant.get_vector_size(collection_id)
@@ -92,18 +102,20 @@ def compare_papers(
             collection_name=collection_id,
             query_vector=dummy_embedding,
             limit=SEARCH_CHUNKS_LIMIT,
-            paper_ids=[paper_id]
+            paper_ids=[paper_id],
         )
 
         # Store chunks for this paper
         paper_chunks = [chunk.payload["chunk_text"] for chunk in chunks]
-        papers_content[paper_id] = "\n\n".join(paper_chunks[:USE_CHUNKS_LIMIT])  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
+        papers_content[paper_id] = "\n\n".join(
+            paper_chunks[:USE_CHUNKS_LIMIT]
+        )  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
 
     # Build comparison prompt based on aspect
     aspect_prompts = {
         "methodology": "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
         "findings": "Focus specifically on comparing the key findings, results, and conclusions.",
-        "all": "Compare all aspects including methodologies, findings, and implications."
+        "all": "Compare all aspects including methodologies, findings, and implications.",
     }
 
     aspect_instruction = aspect_prompts.get(request.aspect, aspect_prompts["all"])
@@ -113,7 +125,9 @@ def compare_papers(
     for i, paper_id in enumerate(request.paper_ids):
         paper_label = f"Paper {chr(65 + i)}"  # A, B, C, etc.
         if paper_id in papers_content:
-            paper_sections.append(f"{paper_label} ({paper_id}):\n{papers_content[paper_id]}")
+            paper_sections.append(
+                f"{paper_label} ({paper_id}):\n{papers_content[paper_id]}"
+            )
 
     combined_content = "\n\n---\n\n".join(paper_sections)
 
@@ -130,7 +144,9 @@ def compare_papers(
             Be specific and reference the papers by their labels (Paper A, Paper B, etc.)."""
 
     # Generate comparison using LLM
-    comparison = llm_service.generate(prompt=prompt, temperature=0.3, max_tokens=request.max_tokens)
+    comparison = llm_service.generate(
+        prompt=prompt, temperature=0.3, max_tokens=request.max_tokens
+    )
 
     return CompareResponse(
         comparison=comparison,

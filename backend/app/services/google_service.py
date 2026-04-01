@@ -9,7 +9,9 @@ class GoogleService:
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
-    def generate(self, prompt: str, temperature: float = 0.3, max_tokens: int = 500) -> str:
+    def generate(
+        self, prompt: str, temperature: float = 0.3, max_tokens: int = 500
+    ) -> str:
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,

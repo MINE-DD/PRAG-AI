@@ -1,11 +1,12 @@
 import ollama
-from typing import Optional
 
 
 class OllamaService:
     """Service for interacting with Ollama LLMs"""
 
-    def __init__(self, url: str, model: str = "llama3", embedding_model: str = "nomic-embed-text"):
+    def __init__(
+        self, url: str, model: str = "llama3", embedding_model: str = "nomic-embed-text"
+    ):
         self.url = url
         self.model = model
         self.embedding_model = embedding_model
@@ -13,10 +14,7 @@ class OllamaService:
 
     def generate_embedding(self, text: str) -> list[float]:
         """Generate embedding for a single text"""
-        response = self.client.embeddings(
-            model=self.embedding_model,
-            prompt=text
-        )
+        response = self.client.embeddings(model=self.embedding_model, prompt=text)
         return response["embedding"]
 
     def generate_embeddings_batch(self, texts: list[str]) -> list[list[float]]:
@@ -30,10 +28,10 @@ class OllamaService:
     def generate(
         self,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        chat_history: Optional[list[dict]] = None
+        max_tokens: int | None = None,
+        chat_history: list[dict] | None = None,
     ) -> str:
         """Generate text response from LLM"""
         messages = []

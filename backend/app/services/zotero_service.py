@@ -1,6 +1,7 @@
 """Zotero API integration: list collections/items, download PDFs, normalize metadata."""
 
 import time
+
 import httpx
 
 ZOTERO_API_BASE = "https://api.zotero.org"
@@ -89,7 +90,9 @@ def list_items(user_id: str, api_key: str, collection_key: str) -> list[dict]:
         resp = client.get(
             f"{ZOTERO_API_BASE}/users/{user_id}/collections/{collection_key}/items",
             headers=_headers(api_key),
-            params={"itemType": "journalArticle || book || bookSection || conferencePaper || preprint || thesis || report"},
+            params={
+                "itemType": "journalArticle || book || bookSection || conferencePaper || preprint || thesis || report"
+            },
         )
         resp.raise_for_status()
         items_raw = resp.json()
@@ -117,16 +120,22 @@ def list_items(user_id: str, api_key: str, collection_key: str) -> list[dict]:
                     year = int(part)
                     break
 
-            result.append({
-                "item_key": ikey,
-                "title": data.get("title"),
-                "authors": [_parse_author(c) for c in creators if c.get("creatorType") == "author"],
-                "year": year,
-                "doi": data.get("DOI"),
-                "journal": data.get("publicationTitle"),
-                "abstract": data.get("abstractNote"),
-                "attachment": attachment,
-            })
+            result.append(
+                {
+                    "item_key": ikey,
+                    "title": data.get("title"),
+                    "authors": [
+                        _parse_author(c)
+                        for c in creators
+                        if c.get("creatorType") == "author"
+                    ],
+                    "year": year,
+                    "doi": data.get("DOI"),
+                    "journal": data.get("publicationTitle"),
+                    "abstract": data.get("abstractNote"),
+                    "attachment": attachment,
+                }
+            )
 
     return result
 
@@ -146,7 +155,7 @@ def download_pdf(user_id: str, api_key: str, attachment_key: str) -> bytes:
                 return resp.content
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429 and attempt == 0:
-                    time.sleep(2 ** attempt * 2)  # 2s backoff
+                    time.sleep(2**attempt * 2)  # 2s backoff
                     continue
                 if e.response.status_code == 404:
                     raise RuntimeError(
