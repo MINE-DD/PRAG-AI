@@ -1,17 +1,18 @@
-import pytest
-import sys
-from pathlib import Path
-import tempfile
 import shutil
-from unittest.mock import patch, MagicMock
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.main import app
 from app.core.config import settings
+from app.main import app
 
 
 @pytest.fixture

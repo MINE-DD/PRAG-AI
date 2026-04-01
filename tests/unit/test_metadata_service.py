@@ -1,11 +1,11 @@
 import json
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from app.services.metadata_service import MetadataService
+import pytest
 from app.models.paper import PaperMetadata
+from app.services.metadata_service import MetadataService
 
 
 @pytest.fixture

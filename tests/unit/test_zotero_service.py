@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
-from unittest.mock import patch, MagicMock
-from app.services.zotero_service import normalize_metadata, list_collections, list_items
+from unittest.mock import MagicMock, patch
+
+from app.services.zotero_service import list_collections, list_items, normalize_metadata
 
 
 def test_normalize_metadata_full():

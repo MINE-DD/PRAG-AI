@@ -1,4 +1,3 @@
-import pytest
 import sys
 from pathlib import Path
 
@@ -6,8 +5,8 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.services.citation_service import CitationService
 from app.models.paper import PaperMetadata
+from app.services.citation_service import CitationService
 
 
 def test_format_apa_citation():

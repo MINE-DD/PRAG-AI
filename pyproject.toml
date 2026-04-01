@@ -57,8 +57,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "E402", "F841"]
-"test_real_pdf.py" = ["E402", "F841"]
+"tests/**/*.py" = [
+    "S101",   # assert statements are idiomatic in pytest tests
+    "E402",   # sys.path.insert() before app imports is required for test isolation without an installed package
+    "F841",   # named `as <var>` captures in `with patch(...) as <var>:` are intentional mock context managers
+]
+# F841: `papers = list_papers(...)` is called for its print side-effects; renaming to `_` requires an unsafe fix
+"test_real_pdf.py" = ["F841"]
 
 [tool.coverage.run]
 source = ["backend"]

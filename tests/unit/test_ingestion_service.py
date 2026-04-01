@@ -1,13 +1,13 @@
 import json
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from app.services.ingestion_service import IngestionService
-from app.services.chunking_service import ChunkingService
+import pytest
 from app.core.config import settings
+from app.services.chunking_service import ChunkingService
+from app.services.ingestion_service import IngestionService
 
 
 @pytest.fixture

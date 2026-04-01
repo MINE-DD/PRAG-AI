@@ -1,8 +1,9 @@
-import pytest
-from unittest.mock import patch
 from pathlib import Path
-from app.services.pymupdf4llm_service import PyMuPDF4LLMService
+from unittest.mock import patch
+
 from app.services.pdf_converter_base import PDFConverterBackend
+from app.services.pymupdf4llm_service import PyMuPDF4LLMService
+
 
 def test_implements_protocol():
     assert isinstance(PyMuPDF4LLMService(), PDFConverterBackend)

@@ -1,17 +1,16 @@
 # tests/integration/test_zotero_api.py
-import sys
 import json
-import tempfile
-import shutil
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
-import pytest
-from unittest.mock import patch, MagicMock
-from fastapi.testclient import TestClient
+from unittest.mock import MagicMock, patch
 
-from app.main import app
+import pytest
 from app.core.config import settings
+from app.main import app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

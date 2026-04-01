@@ -1,14 +1,12 @@
-import pytest
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.models.paper import PaperMetadata, Chunk, ChunkType
 from app.models.collection import Collection
+from app.models.paper import Chunk, ChunkType, PaperMetadata
 from app.models.rag import RAGRequest, RAGResponse, Source
 
 
