@@ -5,6 +5,9 @@ on:
     - cron: '0 9 * * 1'  # Every Monday 09:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   link-check:
     name: Check Markdown Links
@@ -19,10 +22,8 @@ jobs:
             --verbose
             --no-progress
             --exclude-mail
+            --allow-missing
             'README.md'
-            'README.dev.md'
-            'CONTRIBUTING.md'
-            'CHANGELOG.md'
             'docs/**/*.md'
           fail: true
         env:

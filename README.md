@@ -1,4 +1,5 @@
 [![CI](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml)
+
 [![codecov](https://codecov.io/gh/MINE-DD/PRAG-AI/branch/main/graph/badge.svg)](https://codecov.io/gh/MINE-DD/PRAG-AI)
 
 # PRAG-AI — Chat with your research papers
