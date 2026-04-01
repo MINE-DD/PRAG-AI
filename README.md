@@ -1,3 +1,6 @@
+[![CI](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/MINE-DD/PRAG-AI/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/MINE-DD/PRAG-AI/branch/main/graph/badge.svg)](https://codecov.io/gh/MINE-DD/PRAG-AI)
+
 # PRAG-AI — Chat with your research papers
 
 PRAG-AI lets you ask questions to a collection of academic PDF papers and get answers grounded in the text, with citations. Everything runs on your own computer — your papers never leave your machine.
