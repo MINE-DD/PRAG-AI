@@ -1,9 +1,11 @@
 import json
-from fastapi import APIRouter, HTTPException, Depends
 from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.config import settings
 from app.services.collection_service import CollectionService
 from app.services.qdrant_service import QdrantService
-from app.core.config import settings
 
 router = APIRouter()
 
@@ -17,7 +19,7 @@ def get_collection_service() -> CollectionService:
 @router.get("/collections/{collection_id}/papers")
 def list_papers(
     collection_id: str,
-    collection_service: CollectionService = Depends(get_collection_service)
+    collection_service: CollectionService = Depends(get_collection_service),
 ):
     """List all papers in a collection"""
     collection = collection_service.get_collection(collection_id)
@@ -36,15 +38,17 @@ def list_papers(
                 data = json.loads(json_file.read_text(encoding="utf-8"))
                 paper_id = data.get("paper_id", json_file.stem)
                 seen_ids.add(paper_id)
-                papers.append({
-                    "paper_id": paper_id,
-                    "filename": data.get("source_pdf", f"{paper_id}.md"),
-                    "title": data.get("title"),
-                    "authors": data.get("authors", []),
-                    "unique_id": data.get("unique_id", ""),
-                    "preprocessed_dir": data.get("preprocessed_dir"),
-                    "source_pdf": data.get("source_pdf"),
-                })
+                papers.append(
+                    {
+                        "paper_id": paper_id,
+                        "filename": data.get("source_pdf", f"{paper_id}.md"),
+                        "title": data.get("title"),
+                        "authors": data.get("authors", []),
+                        "unique_id": data.get("unique_id", ""),
+                        "preprocessed_dir": data.get("preprocessed_dir"),
+                        "source_pdf": data.get("source_pdf"),
+                    }
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
 
@@ -54,10 +58,12 @@ def list_papers(
         for pdf_file in pdf_dir.glob("*.pdf"):
             paper_id = pdf_file.stem
             if paper_id not in seen_ids:
-                papers.append({
-                    "paper_id": paper_id,
-                    "filename": pdf_file.name,
-                })
+                papers.append(
+                    {
+                        "paper_id": paper_id,
+                        "filename": pdf_file.name,
+                    }
+                )
 
     return papers
 
@@ -66,7 +72,7 @@ def list_papers(
 def get_paper_detail(
     collection_id: str,
     paper_id: str,
-    collection_service: CollectionService = Depends(get_collection_service)
+    collection_service: CollectionService = Depends(get_collection_service),
 ):
     """Get full metadata for a single paper in a collection (from collection metadata dir)."""
     collection = collection_service.get_collection(collection_id)
@@ -76,7 +82,9 @@ def get_paper_detail(
     data_dir = Path(settings.data_dir)
     metadata_path = data_dir / collection_id / "metadata" / f"{paper_id}.json"
     if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail="Paper metadata not found in collection")
+        raise HTTPException(
+            status_code=404, detail="Paper metadata not found in collection"
+        )
 
     data = json.loads(metadata_path.read_text(encoding="utf-8"))
     return data

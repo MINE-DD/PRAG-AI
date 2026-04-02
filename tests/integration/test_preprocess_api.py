@@ -1,17 +1,18 @@
-import pytest
-import sys
-from pathlib import Path
-import tempfile
 import shutil
-from unittest.mock import patch, MagicMock
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.main import app
 from app.core.config import settings
+from app.main import app
 
 
 @pytest.fixture
@@ -64,10 +65,7 @@ def test_list_directories(client, temp_dirs):
 
 def test_scan_directory_not_found(client):
     """Test scanning a non-existent directory."""
-    response = client.post(
-        "/preprocess/scan",
-        json={"dir_name": "nonexistent"}
-    )
+    response = client.post("/preprocess/scan", json={"dir_name": "nonexistent"})
     assert response.status_code == 404
 
 
@@ -78,10 +76,7 @@ def test_scan_directory(client, temp_dirs):
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    response = client.post(
-        "/preprocess/scan",
-        json={"dir_name": "my_papers"}
-    )
+    response = client.post("/preprocess/scan", json={"dir_name": "my_papers"})
     assert response.status_code == 200
     data = response.json()
     assert data["dir_name"] == "my_papers"
@@ -94,7 +89,7 @@ def test_convert_pdf_not_found(client):
     """Test converting a non-existent PDF."""
     response = client.post(
         "/preprocess/convert",
-        json={"dir_name": "nonexistent", "filename": "missing.pdf"}
+        json={"dir_name": "nonexistent", "filename": "missing.pdf"},
     )
     assert response.status_code == 404
 
@@ -117,10 +112,16 @@ def test_convert_pdf_success(client, temp_dirs):
     }
     del mock_converter.convert_and_extract
 
-    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+    with patch(
+        "app.services.preprocessing_service.get_converter", return_value=mock_converter
+    ):
         response = client.post(
             "/preprocess/convert",
-            json={"dir_name": "my_papers", "filename": "paper1.pdf", "metadata_backend": "none"}
+            json={
+                "dir_name": "my_papers",
+                "filename": "paper1.pdf",
+                "metadata_backend": "none",
+            },
         )
     assert response.status_code == 200
     data = response.json()

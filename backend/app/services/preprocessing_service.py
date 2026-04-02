@@ -1,17 +1,15 @@
 import json
 import re
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
-from typing import Optional
 
-from app.services.pdf_converter_base import get_converter
 # Ensure backend modules register themselves
 import app.services.docling_service  # noqa: F401
 import app.services.pymupdf4llm_service  # noqa: F401
-
 from app.core.config import settings
 from app.services.paper_metadata_api_service import enrich_metadata as _api_enrich
+from app.services.pdf_converter_base import get_converter
 
 # Module-level lock for thread-safe history.json writes
 _history_lock = threading.Lock()
@@ -22,8 +20,8 @@ class PreprocessingService:
 
     def __init__(
         self,
-        pdf_input_dir: Optional[str] = None,
-        preprocessed_dir: Optional[str] = None,
+        pdf_input_dir: str | None = None,
+        preprocessed_dir: str | None = None,
     ):
         self.pdf_input_dir = Path(pdf_input_dir or settings.pdf_input_dir)
         self.preprocessed_dir = Path(preprocessed_dir or settings.preprocessed_dir)
@@ -36,10 +34,12 @@ class PreprocessingService:
         for path in sorted(self.pdf_input_dir.iterdir()):
             if path.is_dir():
                 pdf_count = len(list(path.glob("*.pdf")))
-                dirs.append({
-                    "name": path.name,
-                    "pdf_count": pdf_count,
-                })
+                dirs.append(
+                    {
+                        "name": path.name,
+                        "pdf_count": pdf_count,
+                    }
+                )
         return dirs
 
     def scan_directory(self, dir_name: str) -> list[dict]:
@@ -53,15 +53,20 @@ class PreprocessingService:
         for pdf_path in sorted(source_dir.glob("*.pdf")):
             stem = pdf_path.stem
             md_path = output_dir / f"{stem}.md"
-            files.append({
-                "filename": pdf_path.name,
-                "processed": md_path.exists(),
-            })
+            files.append(
+                {
+                    "filename": pdf_path.name,
+                    "processed": md_path.exists(),
+                }
+            )
         return files
 
     def convert_single_pdf(
-        self, dir_name: str, filename: str,
-        backend: str = "docling", metadata_backend: str = "openalex",
+        self,
+        dir_name: str,
+        filename: str,
+        backend: str = "docling",
+        metadata_backend: str = "openalex",
     ) -> dict:
         """Convert a single PDF to markdown + metadata JSON.
 
@@ -81,7 +86,9 @@ class PreprocessingService:
         converter = get_converter(backend)
         # Use convert_and_extract if available (avoids double conversion for Docling)
         if hasattr(converter, "convert_and_extract"):
-            markdown_content, paper_meta = converter.convert_and_extract(source_path, stem)
+            markdown_content, paper_meta = converter.convert_and_extract(
+                source_path, stem
+            )
         else:
             markdown_content = converter.convert_to_markdown(source_path)
             paper_meta = converter.extract_metadata(source_path, stem)
@@ -113,7 +120,14 @@ class PreprocessingService:
                 title = paper_meta.get("title", stem)
                 api_data = _api_enrich(title, metadata_backend)
                 if api_data:
-                    for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+                    for key in (
+                        "title",
+                        "authors",
+                        "publication_date",
+                        "abstract",
+                        "doi",
+                        "journal",
+                    ):
                         if api_data.get(key):
                             metadata[key] = api_data[key]
                     if api_data.get("openalex_id"):
@@ -152,7 +166,14 @@ class PreprocessingService:
             return {"filename": filename, "enriched": False, "backend": backend}
 
         # Merge API data into metadata (overwrite with API values when present)
-        for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+        for key in (
+            "title",
+            "authors",
+            "publication_date",
+            "abstract",
+            "doi",
+            "journal",
+        ):
             if api_data.get(key):
                 metadata[key] = api_data[key]
 
@@ -162,7 +183,12 @@ class PreprocessingService:
         metadata["metadata_source"] = backend
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
-        return {"filename": filename, "enriched": True, "backend": backend, "title": metadata.get("title")}
+        return {
+            "filename": filename,
+            "enriched": True,
+            "backend": backend,
+            "title": metadata.get("title"),
+        }
 
     def enrich_with_doi(self, dir_name: str, filename: str, doi: str) -> dict:
         """Save DOI to metadata then enrich by looking it up across providers."""
@@ -183,7 +209,14 @@ class PreprocessingService:
         if not api_data:
             return {"filename": filename, "enriched": False}
 
-        for key in ("title", "authors", "publication_date", "abstract", "doi", "journal"):
+        for key in (
+            "title",
+            "authors",
+            "publication_date",
+            "abstract",
+            "doi",
+            "journal",
+        ):
             if api_data.get(key):
                 metadata[key] = api_data[key]
         if api_data.get("openalex_id"):
@@ -211,6 +244,7 @@ class PreprocessingService:
 
         # Re-run Docling with full converter (image/table generation enabled)
         from app.services.docling_service import DoclingService
+
         docling = DoclingService()
         doc = docling.convert_full(source_path)
 
@@ -282,7 +316,7 @@ class PreprocessingService:
             )
             ref_match = ref_pattern.search(md_text)
             if ref_match:
-                references = md_text[ref_match.start():]
+                references = md_text[ref_match.start() :]
 
         return {
             "tables": metadata.get("tables", []),
@@ -300,7 +334,9 @@ class PreprocessingService:
             },
         }
 
-    def get_asset_path(self, dir_name: str, filename: str, asset_type: str, asset_file: str) -> Path:
+    def get_asset_path(
+        self, dir_name: str, filename: str, asset_type: str, asset_file: str
+    ) -> Path:
         """Get the filesystem path for a specific asset file."""
         stem = Path(filename).stem
         output_dir = self.preprocessed_dir / dir_name
@@ -320,7 +356,9 @@ class PreprocessingService:
                 if not entry["files"]:
                     del history["directories"][dir_name]
                 self.preprocessed_dir.mkdir(parents=True, exist_ok=True)
-                self.history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+                self.history_path.write_text(
+                    json.dumps(history, indent=2), encoding="utf-8"
+                )
 
     def get_history(self) -> dict:
         """Read preprocessing history."""
@@ -332,7 +370,7 @@ class PreprocessingService:
         """Delete an entire PDF input directory and all its preprocessed output."""
         import shutil
 
-        pdf_dir  = self.pdf_input_dir   / dir_name
+        pdf_dir = self.pdf_input_dir / dir_name
         prep_dir = self.preprocessed_dir / dir_name
 
         pdf_count = 0
@@ -349,7 +387,9 @@ class PreprocessingService:
             if dir_name in history.get("directories", {}):
                 del history["directories"][dir_name]
                 self.preprocessed_dir.mkdir(parents=True, exist_ok=True)
-                self.history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+                self.history_path.write_text(
+                    json.dumps(history, indent=2), encoding="utf-8"
+                )
 
         return {"dir_name": dir_name, "deleted_pdfs": pdf_count}
 
@@ -370,4 +410,6 @@ class PreprocessingService:
                 entry["files"].append(filename)
             entry["last_processed"] = datetime.now(UTC).isoformat()
 
-            self.history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+            self.history_path.write_text(
+                json.dumps(history, indent=2), encoding="utf-8"
+            )

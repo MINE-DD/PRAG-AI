@@ -1,12 +1,25 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import health, collections, papers, rag, summarize, compare, preprocess, ingest, settings as settings_api, zotero, pipeline, prompts
-from app.core.config import settings
+
+from app.api import (
+    collections,
+    compare,
+    health,
+    ingest,
+    papers,
+    pipeline,
+    preprocess,
+    prompts,
+    rag,
+    summarize,
+    zotero,
+)
+from app.api import settings as settings_api
 
 app = FastAPI(
     title="PRAG-v2 API",
     description="RAG system for academic research papers",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 # CORS middleware

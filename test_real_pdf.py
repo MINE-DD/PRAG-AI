@@ -5,10 +5,10 @@ This script uploads a real PDF and verifies it gets processed correctly.
 """
 
 import sys
-from pathlib import Path
-import httpx
-import time
 from datetime import datetime
+from pathlib import Path
+
+import httpx
 
 # Configuration
 BACKEND_URL = "http://localhost:8000"
@@ -83,7 +83,7 @@ def upload_pdf(collection_id):
 
         if response.status_code == 200:
             paper = response.json()
-            print(f"\n✅ PDF processed successfully!")
+            print("\n✅ PDF processed successfully!")
             print(f"   Paper ID: {paper['paper_id']}")
             print(f"   Title: {paper['title']}")
             print(f"   Authors: {', '.join(paper.get('authors', []))}")
@@ -106,7 +106,7 @@ def upload_pdf(collection_id):
 
 def list_papers(collection_id):
     """List papers in collection"""
-    print(f"\n📋 Listing papers in collection...")
+    print("\n📋 Listing papers in collection...")
     try:
         response = httpx.get(
             f"{BACKEND_URL}/collections/{collection_id}/papers",
@@ -152,10 +152,10 @@ def main():
     print("\n" + "="*60)
     print("✅ TEST PASSED - Real PDF processing works end-to-end!")
     print("="*60)
-    print(f"\nNext steps:")
-    print(f"1. View collection in Qdrant dashboard: http://localhost:6333/dashboard")
-    print(f"2. Check API docs: http://localhost:8000/docs")
-    print(f"3. Try the frontend: http://localhost:8501")
+    print("\nNext steps:")
+    print("1. View collection in Qdrant dashboard: http://localhost:6333/dashboard")
+    print("2. Check API docs: http://localhost:8000/docs")
+    print("3. Try the frontend: http://localhost:8501")
 
 
 if __name__ == "__main__":
