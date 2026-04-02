@@ -1,14 +1,14 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
 from pathlib import Path
 
-from app.services.ingestion_service import IngestionService
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from app.core.config import load_config, settings
 from app.services.chunking_service import ChunkingService
+from app.services.ingestion_service import IngestionService
 from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
-from app.core.config import settings, load_config
 
 router = APIRouter()
 
@@ -19,23 +19,23 @@ class ScanRequest(BaseModel):
 
 class CreateRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     preprocessed_path: str
     search_type: str = "dense"
 
 
 class IngestFileRequest(BaseModel):
     markdown_file: str
-    dir_name: str               # subfolder under settings.preprocessed_dir
-    chunk_size: Optional[int] = None
-    chunk_overlap: Optional[int] = None
-    chunk_mode: Optional[str] = None  # "characters" or "tokens"
+    dir_name: str  # subfolder under settings.preprocessed_dir
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    chunk_mode: str | None = None  # "characters" or "tokens"
 
 
 def get_ingestion_service(
-    chunk_size: Optional[int] = None,
-    chunk_overlap: Optional[int] = None,
-    chunk_mode: Optional[str] = None,
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
+    chunk_mode: str | None = None,
 ) -> IngestionService:
     config = load_config("config.yaml")
     chunking_service = ChunkingService(
@@ -117,7 +117,9 @@ def ingest_file(collection_id: str, request: IngestFileRequest):
     # Check collection directory exists
     collection_path = Path(settings.data_dir) / collection_id
     if not collection_path.exists():
-        raise HTTPException(status_code=404, detail=f"Collection '{collection_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Collection '{collection_id}' not found"
+        )
 
     # Build full paths from backend-controlled preprocessed_dir
     preprocessed_path = Path(settings.preprocessed_dir) / request.dir_name

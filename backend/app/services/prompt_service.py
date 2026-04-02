@@ -1,6 +1,7 @@
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-import logging
+
 import yaml
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -50,10 +51,12 @@ class PromptService:
             raise ValueError(
                 f"Prompt '{name}' for task '{task_type}' must have 'system' and 'user' keys"
             )
-        template = ChatPromptTemplate.from_messages([
-            ("system", raw["system"]),
-            ("human", raw["user"]),
-        ])
+        template = ChatPromptTemplate.from_messages(
+            [
+                ("system", raw["system"]),
+                ("human", raw["user"]),
+            ]
+        )
 
         # If the YAML declares `variables:`, validate it matches the template exactly.
         declared = raw.get("variables")

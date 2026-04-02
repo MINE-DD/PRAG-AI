@@ -1,6 +1,3 @@
-from typing import Optional
-
-
 class SparseEmbeddingService:
     """Service for generating sparse (BM42) embeddings using fastembed."""
 
@@ -13,6 +10,7 @@ class SparseEmbeddingService:
         """Lazy-load the sparse embedding model on first use."""
         if self._model is None:
             from fastembed import SparseTextEmbedding
+
             self._model = SparseTextEmbedding(model_name=self.MODEL_NAME)
         return self._model
 

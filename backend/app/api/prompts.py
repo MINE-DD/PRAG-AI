@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
+
 from app.services.prompt_service import PromptService, get_prompt_service
 
 router = APIRouter()

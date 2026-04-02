@@ -1,13 +1,13 @@
 import json
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
-from app.services.ingestion_service import IngestionService
-from app.services.chunking_service import ChunkingService
+import pytest
 from app.core.config import settings
+from app.services.chunking_service import ChunkingService
+from app.services.ingestion_service import IngestionService
 
 
 @pytest.fixture
@@ -27,13 +27,17 @@ def temp_preprocessed_dir():
     temp_dir = tempfile.mkdtemp()
     # Create a markdown file and metadata
     (Path(temp_dir) / "paper1.md").write_text("# Paper 1\n\nContent of paper 1.")
-    (Path(temp_dir) / "paper1_metadata.json").write_text(json.dumps({
-        "title": "Test Paper One",
-        "authors": ["Alice Smith", "Bob Jones"],
-        "abstract": "An abstract.",
-        "publication_date": "2024",
-        "source_pdf": "paper1.pdf",
-    }))
+    (Path(temp_dir) / "paper1_metadata.json").write_text(
+        json.dumps(
+            {
+                "title": "Test Paper One",
+                "authors": ["Alice Smith", "Bob Jones"],
+                "abstract": "An abstract.",
+                "publication_date": "2024",
+                "source_pdf": "paper1.pdf",
+            }
+        )
+    )
     (Path(temp_dir) / "paper2.md").write_text("# Paper 2\n\nContent of paper 2.")
     yield temp_dir
     shutil.rmtree(temp_dir)
@@ -135,7 +139,9 @@ def test_ingest_file(service, temp_data_dir, temp_preprocessed_dir, mock_service
     qdrant.upsert_chunks.assert_called_once()
 
 
-def test_ingest_file_without_metadata(service, temp_data_dir, temp_preprocessed_dir, mock_services):
+def test_ingest_file_without_metadata(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
     """Test ingesting a file without metadata JSON."""
     _, ollama, _ = mock_services
     ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10

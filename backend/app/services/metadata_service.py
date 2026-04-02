@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional
+
 from app.models.paper import PaperMetadata
 
 
@@ -10,7 +10,9 @@ class MetadataService:
     def __init__(self, data_dir: str):
         self.data_dir = Path(data_dir)
 
-    def get_paper_metadata(self, collection_id: str, paper_id: str) -> Optional[PaperMetadata]:
+    def get_paper_metadata(
+        self, collection_id: str, paper_id: str
+    ) -> PaperMetadata | None:
         """
         Load paper metadata from JSON file.
 
@@ -31,13 +33,15 @@ class MetadataService:
             for json_file in sorted(metadata_dir.glob("*.json")):
                 try:
                     data = json.loads(json_file.read_text(encoding="utf-8"))
-                    papers.append({
-                        "paper_id": data.get("paper_id", json_file.stem),
-                        "title": data.get("title", json_file.stem),
-                        "authors": data.get("authors", []),
-                        "year": self._extract_year(data.get("publication_date")),
-                        "unique_id": data.get("unique_id", ""),
-                    })
+                    papers.append(
+                        {
+                            "paper_id": data.get("paper_id", json_file.stem),
+                            "title": data.get("title", json_file.stem),
+                            "authors": data.get("authors", []),
+                            "year": self._extract_year(data.get("publication_date")),
+                            "unique_id": data.get("unique_id", ""),
+                        }
+                    )
                 except (json.JSONDecodeError, KeyError):
                     continue
 
@@ -56,10 +60,11 @@ class MetadataService:
             publication_date=data.get("publication_date"),
         )
 
-    def _extract_year(self, publication_date) -> Optional[int]:
+    def _extract_year(self, publication_date) -> int | None:
         """Extract year from publication date string."""
         if not publication_date:
             return None
         import re
+
         match = re.search(r"\d{4}", str(publication_date))
         return int(match.group()) if match else None

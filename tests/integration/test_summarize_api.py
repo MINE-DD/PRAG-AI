@@ -1,18 +1,19 @@
-import pytest
-import sys
-from pathlib import Path
-import tempfile
 import shutil
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.main import app
 from app.core.config import settings
-from app.services.prompt_service import get_prompt_service, RenderedPrompt
+from app.main import app
+from app.services.prompt_service import RenderedPrompt, get_prompt_service
 
 
 @pytest.fixture
@@ -29,8 +30,10 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant service"""
-    with patch('app.api.collections.QdrantService') as mock_collections, \
-         patch('app.api.summarize.QdrantService') as mock_summarize:
+    with (
+        patch("app.api.collections.QdrantService") as mock_collections,
+        patch("app.api.summarize.QdrantService") as mock_summarize,
+    ):
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.collection_exists = Mock(return_value=True)
@@ -44,7 +47,7 @@ def mock_qdrant():
             "chunk_text": "This paper introduces a novel approach to natural language processing using transformers.",
             "chunk_type": "abstract",
             "page_number": 1,
-            "metadata": {}
+            "metadata": {},
         }
         mock_instance.search = Mock(return_value=[mock_chunk] * 5)
 
@@ -56,9 +59,11 @@ def mock_qdrant():
 @pytest.fixture
 def mock_ollama():
     """Mock LLM service (was OllamaService, now provider-agnostic via _get_llm_service)"""
-    with patch('app.api.summarize._get_llm_service') as mock:
+    with patch("app.api.summarize._get_llm_service") as mock:
         mock_instance = Mock()
-        mock_instance.generate = Mock(return_value="This paper presents a comprehensive study on transformers in NLP. Key findings include improved performance and efficiency.")
+        mock_instance.generate = Mock(
+            return_value="This paper presents a comprehensive study on transformers in NLP. Key findings include improved performance and efficiency."
+        )
         mock.return_value = mock_instance
         yield mock_instance
 
@@ -66,7 +71,7 @@ def mock_ollama():
 @pytest.fixture
 def mock_metadata_service():
     """Mock metadata service"""
-    with patch('app.api.summarize.MetadataService') as mock:
+    with patch("app.api.summarize.MetadataService") as mock:
         from app.models.paper import PaperMetadata
 
         mock_instance = Mock()
@@ -75,7 +80,7 @@ def mock_metadata_service():
             title="Transformers in NLP",
             authors=["Smith, J."],
             year=2024,
-            unique_id="AuthorTest2024"
+            unique_id="AuthorTest2024",
         )
         mock_instance.get_paper_metadata = Mock(return_value=fake_metadata)
         mock.return_value = mock_instance
@@ -85,10 +90,7 @@ def mock_metadata_service():
 @pytest.fixture
 def test_collection(client, temp_data_dir, mock_qdrant):
     """Create a test collection"""
-    response = client.post(
-        "/collections",
-        json={"name": "Test Collection"}
-    )
+    response = client.post("/collections", json={"name": "Test Collection"})
     return response.json()["collection_id"]
 
 
@@ -112,10 +114,7 @@ def client(temp_data_dir, mock_qdrant, mock_ollama, mock_metadata_service):
 def test_summarize_single_paper(client, test_collection):
     """Test summarizing a single paper"""
     response = client.post(
-        f"/collections/{test_collection}/summarize",
-        json={
-            "paper_ids": ["paper-123"]
-        }
+        f"/collections/{test_collection}/summarize", json={"paper_ids": ["paper-123"]}
     )
 
     assert response.status_code == 200
@@ -132,9 +131,7 @@ def test_summarize_multiple_papers(client, test_collection):
     """Test summarizing multiple papers"""
     response = client.post(
         f"/collections/{test_collection}/summarize",
-        json={
-            "paper_ids": ["paper-123", "paper-456"]
-        }
+        json={"paper_ids": ["paper-123", "paper-456"]},
     )
 
     assert response.status_code == 200
@@ -146,8 +143,7 @@ def test_summarize_multiple_papers(client, test_collection):
 def test_summarize_nonexistent_collection(client):
     """Test summarizing in nonexistent collection"""
     response = client.post(
-        "/collections/nonexistent/summarize",
-        json={"paper_ids": ["paper-123"]}
+        "/collections/nonexistent/summarize", json={"paper_ids": ["paper-123"]}
     )
 
     assert response.status_code == 404
@@ -156,8 +152,7 @@ def test_summarize_nonexistent_collection(client):
 def test_summarize_empty_paper_ids(client, test_collection):
     """Test summarize with empty paper_ids"""
     response = client.post(
-        f"/collections/{test_collection}/summarize",
-        json={"paper_ids": []}
+        f"/collections/{test_collection}/summarize", json={"paper_ids": []}
     )
 
     # Pydantic validation returns 422 for invalid input
@@ -167,8 +162,7 @@ def test_summarize_empty_paper_ids(client, test_collection):
 def test_summarize_includes_metadata(client, test_collection):
     """Test that summary includes paper metadata"""
     response = client.post(
-        f"/collections/{test_collection}/summarize",
-        json={"paper_ids": ["paper-123"]}
+        f"/collections/{test_collection}/summarize", json={"paper_ids": ["paper-123"]}
     )
 
     assert response.status_code == 200

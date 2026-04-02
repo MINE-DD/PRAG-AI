@@ -1,13 +1,14 @@
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from app.services.qdrant_service import QdrantService
 from app.models.paper import Chunk, ChunkType
+from app.services.qdrant_service import QdrantService
 
 
 @pytest.fixture
 def qdrant_service():
     """Create QdrantService with mocked client"""
-    with patch('backend.app.services.qdrant_service.QdrantClient') as mock_client:
+    with patch("backend.app.services.qdrant_service.QdrantClient") as mock_client:
         service = QdrantService(url="http://localhost:6333")
         service.client = Mock()
         return service
@@ -28,7 +29,9 @@ def test_delete_collection(qdrant_service):
 
     qdrant_service.delete_collection("test-collection")
 
-    qdrant_service.client.delete_collection.assert_called_once_with(collection_name="test-collection")
+    qdrant_service.client.delete_collection.assert_called_once_with(
+        collection_name="test-collection"
+    )
 
 
 def test_upsert_chunks(qdrant_service):
@@ -39,7 +42,7 @@ def test_upsert_chunks(qdrant_service):
             unique_id="Test2024",
             chunk_text="Test content",
             chunk_type=ChunkType.BODY,
-            page_number=1
+            page_number=1,
         )
     ]
     vectors = [[0.1] * 768]
@@ -64,9 +67,7 @@ def test_search_chunks(qdrant_service):
     qdrant_service.client.get_collection = Mock(return_value=mock_collection_info)
 
     results = qdrant_service.search(
-        collection_name="test-collection",
-        query_vector=[0.1] * 768,
-        limit=10
+        collection_name="test-collection", query_vector=[0.1] * 768, limit=10
     )
 
     assert isinstance(results, list)

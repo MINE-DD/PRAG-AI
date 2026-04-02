@@ -10,22 +10,45 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from app.services.pdf_converter_base import parse_authors, register_converter
 
 # Section headers to skip when looking for the paper title
 _BOILERPLATE_HEADERS = {
-    "research", "research article", "original research", "original article",
-    "review", "review article", "short communication", "brief communication",
-    "case report", "letter", "commentary", "editorial", "perspective",
-    "open access", "edited by:", "reviewed by:", "*correspondence:",
-    "specialty section:", "citation:", "abstract", "background",
-    "introduction", "methods", "results", "discussion", "conclusions",
-    "references", "acknowledgements", "acknowledgments",
-    "articleinfo", "articlei n f o",
+    "research",
+    "research article",
+    "original research",
+    "original article",
+    "review",
+    "review article",
+    "short communication",
+    "brief communication",
+    "case report",
+    "letter",
+    "commentary",
+    "editorial",
+    "perspective",
+    "open access",
+    "edited by:",
+    "reviewed by:",
+    "*correspondence:",
+    "specialty section:",
+    "citation:",
+    "abstract",
+    "background",
+    "introduction",
+    "methods",
+    "results",
+    "discussion",
+    "conclusions",
+    "references",
+    "acknowledgements",
+    "acknowledgments",
+    "articleinfo",
+    "articlei n f o",
 }
 
 
@@ -138,12 +161,14 @@ class DoclingService:
                 except Exception:
                     continue
 
-            table_info.append({
-                "index": i,
-                "caption": caption,
-                "page": page_no,
-                "file": csv_path.name,
-            })
+            table_info.append(
+                {
+                    "index": i,
+                    "caption": caption,
+                    "page": page_no,
+                    "file": csv_path.name,
+                }
+            )
 
         return table_info
 
@@ -183,14 +208,16 @@ class DoclingService:
             png_path = images_dir / f"image_{i}.png"
             pil_img.save(str(png_path))
 
-            image_info.append({
-                "index": i,
-                "caption": caption,
-                "page": page_no,
-                "file": png_path.name,
-                "width": pil_img.size[0],
-                "height": pil_img.size[1],
-            })
+            image_info.append(
+                {
+                    "index": i,
+                    "caption": caption,
+                    "page": page_no,
+                    "file": png_path.name,
+                    "width": pil_img.size[0],
+                    "height": pil_img.size[1],
+                }
+            )
 
         return image_info
 
@@ -202,7 +229,12 @@ class DoclingService:
         """Extract title, authors, abstract, and date from Docling document structure."""
         texts = getattr(doc, "texts", [])
         if not texts:
-            return {"title": fallback_title, "authors": [], "abstract": None, "publication_date": None}
+            return {
+                "title": fallback_title,
+                "authors": [],
+                "abstract": None,
+                "publication_date": None,
+            }
 
         title = None
         title_idx = None
@@ -216,18 +248,24 @@ class DoclingService:
             label = item.label.value
             text = (item.text or "").strip()
             lower = text.lower().rstrip(":")
-            normalized = re.sub(r'\s+', '', lower)
+            normalized = re.sub(r"\s+", "", lower)
 
             if label == "section_header" and normalized in (
-                "background", "introduction", "methods", "abstract",
-                "1.introduction", "1introduction",
+                "background",
+                "introduction",
+                "methods",
+                "abstract",
+                "1.introduction",
+                "1introduction",
             ):
                 break
 
-            if (label == "section_header"
-                    and lower not in _BOILERPLATE_HEADERS
-                    and normalized not in _BOILERPLATE_HEADERS
-                    and len(text) > best_len):
+            if (
+                label == "section_header"
+                and lower not in _BOILERPLATE_HEADERS
+                and normalized not in _BOILERPLATE_HEADERS
+                and len(text) > best_len
+            ):
                 best_len = len(text)
                 title = text
                 title_idx = i
@@ -237,7 +275,7 @@ class DoclingService:
 
         # --- Authors: first text item after the title, before next section_header ---
         if title_idx is not None:
-            for item in texts[title_idx + 1:]:
+            for item in texts[title_idx + 1 :]:
                 label = item.label.value
                 text = (item.text or "").strip()
                 if label == "section_header":
@@ -252,7 +290,7 @@ class DoclingService:
         for item in texts:
             label = item.label.value
             text = (item.text or "").strip()
-            normalized = re.sub(r'\s+', '', text).lower()
+            normalized = re.sub(r"\s+", "", text).lower()
 
             if label == "section_header" and normalized in ("abstract", "abstract:"):
                 in_abstract = True
@@ -270,7 +308,7 @@ class DoclingService:
         for item in texts[:5]:
             if item.label.value == "page_header":
                 text = item.text or ""
-                year_match = re.search(r'\b(19|20)\d{2}\b', text)
+                year_match = re.search(r"\b(19|20)\d{2}\b", text)
                 if year_match:
                     publication_date = year_match.group()
                     break
