@@ -1,0 +1,37 @@
+name: Setup Python with uv and caching
+description: Installs uv, sets up the requested Python version, and syncs dependencies with caching.
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: true
+    default: '3.12'
+  extras:
+    description: Comma-separated extras to install (e.g. "dev,publishing")
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: Set up Python ${{ inputs.python-version }}
+      run: uv python install ${{ inputs.python-version }}
+      shell: bash
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        EXTRAS="${{ inputs.extras }}"
+        if [ -n "$EXTRAS" ]; then
+          EXTRA_ARGS=$(echo "$EXTRAS" | tr ',' '\n' | sed 's/^/--extra=/' | tr '\n' ' ')
+          uv sync $EXTRA_ARGS
+        else
+          uv sync
+        fi

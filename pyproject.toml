@@ -27,10 +27,16 @@ dev = [
     "httpx>=0.26.0",
     "ruff>=0.4.0",
     "pre-commit>=3.7.0",
+    "mypy>=1.9",
+    "types-PyYAML>=6.0",
 ]
 api = [
     "anthropic>=0.18.0",
     "google-genai>=1.64.0",
+]
+publishing = [
+    "build>=1.0",
+    "twine>=5.0",
 ]
 
 [build-system]
@@ -65,6 +71,12 @@ ignore = [
 ]
 # F841: `papers = list_papers(...)` is called for its print side-effects; renaming to `_` requires an unsafe fix
 "test_real_pdf.py" = ["F841"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+no_error_summary = true
+plugins = ["pydantic.mypy"]
 
 [tool.coverage.run]
 source = ["backend"]

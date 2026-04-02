@@ -84,8 +84,8 @@ class PromptService:
 
         messages = template.invoke(variables).to_messages()
         return RenderedPrompt(
-            system=messages[0].content,
-            user=messages[1].content,
+            system=str(messages[0].content),
+            user=str(messages[1].content),
         )
 
 
