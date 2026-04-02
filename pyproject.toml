@@ -28,6 +28,7 @@ dev = [
     "ruff>=0.4.0",
     "pre-commit>=3.7.0",
     "mypy>=1.9",
+    "types-PyYAML>=6.0",
 ]
 api = [
     "anthropic>=0.18.0",
@@ -75,15 +76,7 @@ ignore = [
 python_version = "3.12"
 ignore_missing_imports = true
 no_error_summary = true
-
-# TODO: fix pre-existing type errors in these modules and remove overrides
-[[tool.mypy.overrides]]
-module = [
-    "app.services.prompt_service",
-    "app.services.qdrant_service",
-    "app.services.collection_service",
-]
-ignore_errors = true
+plugins = ["pydantic.mypy"]
 
 [tool.coverage.run]
 source = ["backend"]
