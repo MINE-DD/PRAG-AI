@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     preprocessed_dir: str = "/data/preprocessed"
     anthropic_api_key: str | None = None
     google_api_key: str | None = None
+    prompts_dir: str = "/app/prompts"
 
 
 def load_config(config_path: str = "config.yaml") -> dict:

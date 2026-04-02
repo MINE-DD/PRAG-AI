@@ -21,7 +21,9 @@ def service(temp_data_dir):
     return MetadataService(data_dir=temp_data_dir)
 
 
-def _create_metadata_json(data_dir: str, collection_id: str, paper_id: str, metadata: dict):
+def _create_metadata_json(
+    data_dir: str, collection_id: str, paper_id: str, metadata: dict
+):
     """Create a metadata JSON file in a collection."""
     meta_dir = Path(data_dir) / collection_id / "metadata"
     meta_dir.mkdir(parents=True, exist_ok=True)
@@ -31,14 +33,19 @@ def _create_metadata_json(data_dir: str, collection_id: str, paper_id: str, meta
 
 def test_get_paper_metadata_from_json(service, temp_data_dir):
     """Test loading metadata from JSON file (new flow)."""
-    _create_metadata_json(temp_data_dir, "test_coll", "paper1", {
-        "paper_id": "paper1",
-        "title": "Test Paper",
-        "authors": ["Author One", "Author Two"],
-        "publication_date": "2024",
-        "abstract": "An abstract.",
-        "unique_id": "OneTestPaper2024",
-    })
+    _create_metadata_json(
+        temp_data_dir,
+        "test_coll",
+        "paper1",
+        {
+            "paper_id": "paper1",
+            "title": "Test Paper",
+            "authors": ["Author One", "Author Two"],
+            "publication_date": "2024",
+            "abstract": "An abstract.",
+            "unique_id": "OneTestPaper2024",
+        },
+    )
 
     result = service.get_paper_metadata("test_coll", "paper1")
     assert result is not None
@@ -63,20 +70,30 @@ def test_list_papers_empty(service, temp_data_dir):
 
 def test_list_papers(service, temp_data_dir):
     """Test listing papers from metadata JSONs."""
-    _create_metadata_json(temp_data_dir, "test_coll", "paper1", {
-        "paper_id": "paper1",
-        "title": "First Paper",
-        "authors": ["Author A"],
-        "publication_date": "2023",
-        "unique_id": "AFirstPaper2023",
-    })
-    _create_metadata_json(temp_data_dir, "test_coll", "paper2", {
-        "paper_id": "paper2",
-        "title": "Second Paper",
-        "authors": ["Author B"],
-        "publication_date": "2024",
-        "unique_id": "BSecondPaper2024",
-    })
+    _create_metadata_json(
+        temp_data_dir,
+        "test_coll",
+        "paper1",
+        {
+            "paper_id": "paper1",
+            "title": "First Paper",
+            "authors": ["Author A"],
+            "publication_date": "2023",
+            "unique_id": "AFirstPaper2023",
+        },
+    )
+    _create_metadata_json(
+        temp_data_dir,
+        "test_coll",
+        "paper2",
+        {
+            "paper_id": "paper2",
+            "title": "Second Paper",
+            "authors": ["Author B"],
+            "publication_date": "2024",
+            "unique_id": "BSecondPaper2024",
+        },
+    )
 
     result = service.list_papers("test_coll")
     assert len(result) == 2
@@ -90,12 +107,17 @@ def test_list_papers_skips_invalid_json(service, temp_data_dir):
     meta_dir = Path(temp_data_dir) / "test_coll" / "metadata"
     meta_dir.mkdir(parents=True)
     (meta_dir / "bad.json").write_text("not valid json")
-    _create_metadata_json(temp_data_dir, "test_coll", "good", {
-        "paper_id": "good",
-        "title": "Good Paper",
-        "authors": [],
-        "unique_id": "GoodPaper",
-    })
+    _create_metadata_json(
+        temp_data_dir,
+        "test_coll",
+        "good",
+        {
+            "paper_id": "good",
+            "title": "Good Paper",
+            "authors": [],
+            "unique_id": "GoodPaper",
+        },
+    )
 
     result = service.list_papers("test_coll")
     assert len(result) == 1

@@ -31,7 +31,7 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant client"""
-    with patch('app.api.collections.QdrantService') as mock:
+    with patch("app.api.collections.QdrantService") as mock:
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.delete_collection = Mock()
@@ -48,8 +48,7 @@ def client(temp_data_dir, mock_qdrant):
 def test_create_collection(client):
     """Test creating a new collection"""
     response = client.post(
-        "/collections",
-        json={"name": "Test Collection", "description": "Test"}
+        "/collections", json={"name": "Test Collection", "description": "Test"}
     )
 
     assert response.status_code == 200
@@ -70,10 +69,7 @@ def test_list_collections(client):
 def test_get_collection(client):
     """Test getting a specific collection"""
     # First create a collection
-    create_response = client.post(
-        "/collections",
-        json={"name": "Test Collection 2"}
-    )
+    create_response = client.post("/collections", json={"name": "Test Collection 2"})
     collection_id = create_response.json()["collection_id"]
 
     # Then get it
@@ -87,10 +83,7 @@ def test_get_collection(client):
 def test_delete_collection(client):
     """Test deleting a collection"""
     # Create collection
-    create_response = client.post(
-        "/collections",
-        json={"name": "Delete Me"}
-    )
+    create_response = client.post("/collections", json={"name": "Delete Me"})
     collection_id = create_response.json()["collection_id"]
 
     # Delete it

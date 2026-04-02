@@ -31,7 +31,7 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant client"""
-    with patch('app.api.collections.QdrantService') as mock:
+    with patch("app.api.collections.QdrantService") as mock:
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.delete_collection = Mock()
@@ -48,10 +48,7 @@ def client(temp_data_dir, mock_qdrant):
 @pytest.fixture
 def test_collection(client, temp_data_dir, mock_qdrant):
     """Create a test collection"""
-    response = client.post(
-        "/collections",
-        json={"name": "Test Collection"}
-    )
+    response = client.post("/collections", json={"name": "Test Collection"})
     return response.json()["collection_id"]
 
 

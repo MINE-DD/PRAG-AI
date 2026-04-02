@@ -44,7 +44,11 @@ def _make_ingest():
 
 
 def _parse_sse(resp):
-    return [json.loads(line[6:]) for line in resp.text.splitlines() if line.startswith("data: ")]
+    return [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
 
 
 def test_happy_path_two_files(client):
@@ -54,16 +58,20 @@ def test_happy_path_two_files(client):
     ingest_factory = _make_ingest()
 
     # Patch Path.exists to return True so the ingest step doesn't skip files
-    with patch("app.api.pipeline.PreprocessingService", return_value=prep), \
-         patch("app.api.pipeline.CollectionService", return_value=coll), \
-         patch("app.api.pipeline.QdrantService"), \
-         patch("app.api.pipeline.get_ingestion_service", ingest_factory), \
-         patch("pathlib.Path.exists", return_value=True):
-
-        resp = client.post("/pipeline/run", json={
-            "dir_name": "my-dir",
-            "collection_name": "My Dir",
-        })
+    with (
+        patch("app.api.pipeline.PreprocessingService", return_value=prep),
+        patch("app.api.pipeline.CollectionService", return_value=coll),
+        patch("app.api.pipeline.QdrantService"),
+        patch("app.api.pipeline.get_ingestion_service", ingest_factory),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        resp = client.post(
+            "/pipeline/run",
+            json={
+                "dir_name": "my-dir",
+                "collection_name": "My Dir",
+            },
+        )
 
     assert resp.status_code == 200
     events = _parse_sse(resp)
@@ -85,16 +93,20 @@ def test_skips_already_converted(client):
     coll = _make_coll("my-dir")
     ingest_factory = _make_ingest()
 
-    with patch("app.api.pipeline.PreprocessingService", return_value=prep), \
-         patch("app.api.pipeline.CollectionService", return_value=coll), \
-         patch("app.api.pipeline.QdrantService"), \
-         patch("app.api.pipeline.get_ingestion_service", ingest_factory), \
-         patch("pathlib.Path.exists", return_value=True):
-
-        resp = client.post("/pipeline/run", json={
-            "dir_name": "my-dir",
-            "collection_name": "My Dir",
-        })
+    with (
+        patch("app.api.pipeline.PreprocessingService", return_value=prep),
+        patch("app.api.pipeline.CollectionService", return_value=coll),
+        patch("app.api.pipeline.QdrantService"),
+        patch("app.api.pipeline.get_ingestion_service", ingest_factory),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        resp = client.post(
+            "/pipeline/run",
+            json={
+                "dir_name": "my-dir",
+                "collection_name": "My Dir",
+            },
+        )
 
     assert resp.status_code == 200
     events = _parse_sse(resp)
@@ -115,16 +127,20 @@ def test_collection_already_exists(client):
     coll.get_collection.return_value = existing_coll
     ingest_factory = _make_ingest()
 
-    with patch("app.api.pipeline.PreprocessingService", return_value=prep), \
-         patch("app.api.pipeline.CollectionService", return_value=coll), \
-         patch("app.api.pipeline.QdrantService"), \
-         patch("app.api.pipeline.get_ingestion_service", ingest_factory), \
-         patch("pathlib.Path.exists", return_value=True):
-
-        resp = client.post("/pipeline/run", json={
-            "dir_name": "my-dir",
-            "collection_name": "My Dir",
-        })
+    with (
+        patch("app.api.pipeline.PreprocessingService", return_value=prep),
+        patch("app.api.pipeline.CollectionService", return_value=coll),
+        patch("app.api.pipeline.QdrantService"),
+        patch("app.api.pipeline.get_ingestion_service", ingest_factory),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        resp = client.post(
+            "/pipeline/run",
+            json={
+                "dir_name": "my-dir",
+                "collection_name": "My Dir",
+            },
+        )
 
     assert resp.status_code == 200
     events = _parse_sse(resp)
@@ -142,20 +158,26 @@ def test_convert_error_continues(client):
     coll = _make_coll("my-dir")
     ingest_factory = _make_ingest()
 
-    with patch("app.api.pipeline.PreprocessingService", return_value=prep), \
-         patch("app.api.pipeline.CollectionService", return_value=coll), \
-         patch("app.api.pipeline.QdrantService"), \
-         patch("app.api.pipeline.get_ingestion_service", ingest_factory), \
-         patch("pathlib.Path.exists", return_value=True):
-
-        resp = client.post("/pipeline/run", json={
-            "dir_name": "my-dir",
-            "collection_name": "My Dir",
-        })
+    with (
+        patch("app.api.pipeline.PreprocessingService", return_value=prep),
+        patch("app.api.pipeline.CollectionService", return_value=coll),
+        patch("app.api.pipeline.QdrantService"),
+        patch("app.api.pipeline.get_ingestion_service", ingest_factory),
+        patch("pathlib.Path.exists", return_value=True),
+    ):
+        resp = client.post(
+            "/pipeline/run",
+            json={
+                "dir_name": "my-dir",
+                "collection_name": "My Dir",
+            },
+        )
 
     assert resp.status_code == 200
     events = _parse_sse(resp)
-    error_events = [e for e in events if e.get("step") == "convert" and e.get("status") == "error"]
+    error_events = [
+        e for e in events if e.get("step") == "convert" and e.get("status") == "error"
+    ]
     assert len(error_events) == 1
     done = next(e for e in events if e.get("done"))
     assert done["errors"] >= 1
@@ -164,8 +186,11 @@ def test_convert_error_continues(client):
 
 def test_path_traversal_rejected(client):
     """dir_name with path traversal returns 400."""
-    resp = client.post("/pipeline/run", json={
-        "dir_name": "../etc",
-        "collection_name": "hack",
-    })
+    resp = client.post(
+        "/pipeline/run",
+        json={
+            "dir_name": "../etc",
+            "collection_name": "hack",
+        },
+    )
     assert resp.status_code == 400

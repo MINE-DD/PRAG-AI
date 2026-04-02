@@ -65,10 +65,7 @@ def test_list_directories(client, temp_dirs):
 
 def test_scan_directory_not_found(client):
     """Test scanning a non-existent directory."""
-    response = client.post(
-        "/preprocess/scan",
-        json={"dir_name": "nonexistent"}
-    )
+    response = client.post("/preprocess/scan", json={"dir_name": "nonexistent"})
     assert response.status_code == 404
 
 
@@ -79,10 +76,7 @@ def test_scan_directory(client, temp_dirs):
     dir1.mkdir()
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
-    response = client.post(
-        "/preprocess/scan",
-        json={"dir_name": "my_papers"}
-    )
+    response = client.post("/preprocess/scan", json={"dir_name": "my_papers"})
     assert response.status_code == 200
     data = response.json()
     assert data["dir_name"] == "my_papers"
@@ -95,7 +89,7 @@ def test_convert_pdf_not_found(client):
     """Test converting a non-existent PDF."""
     response = client.post(
         "/preprocess/convert",
-        json={"dir_name": "nonexistent", "filename": "missing.pdf"}
+        json={"dir_name": "nonexistent", "filename": "missing.pdf"},
     )
     assert response.status_code == 404
 
@@ -118,10 +112,16 @@ def test_convert_pdf_success(client, temp_dirs):
     }
     del mock_converter.convert_and_extract
 
-    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+    with patch(
+        "app.services.preprocessing_service.get_converter", return_value=mock_converter
+    ):
         response = client.post(
             "/preprocess/convert",
-            json={"dir_name": "my_papers", "filename": "paper1.pdf", "metadata_backend": "none"}
+            json={
+                "dir_name": "my_papers",
+                "filename": "paper1.pdf",
+                "metadata_backend": "none",
+            },
         )
     assert response.status_code == 200
     data = response.json()

@@ -10,12 +10,17 @@ class GoogleService:
         self.model = model
 
     def generate(
-        self, prompt: str, temperature: float = 0.3, max_tokens: int = 500
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = 0.3,
+        max_tokens: int = 500,
     ) -> str:
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
             config=types.GenerateContentConfig(
+                system_instruction=system,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),

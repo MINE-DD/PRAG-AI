@@ -43,7 +43,11 @@ def test_normalize_metadata_missing_fields():
         "doi": None,
         "journal": None,
         "abstract": None,
-        "attachment": {"type": "cloud", "filename": "minimal.pdf", "attachment_key": "K1"},
+        "attachment": {
+            "type": "cloud",
+            "filename": "minimal.pdf",
+            "attachment_key": "K1",
+        },
     }
     result = normalize_metadata(item)
     assert result["title"] == "Minimal Paper"
@@ -84,7 +88,9 @@ def test_list_items_cloud_attachment():
             "data": {
                 "itemType": "journalArticle",
                 "title": "Test Paper",
-                "creators": [{"creatorType": "author", "firstName": "Jane", "lastName": "Doe"}],
+                "creators": [
+                    {"creatorType": "author", "firstName": "Jane", "lastName": "Doe"}
+                ],
                 "date": "2022",
                 "DOI": "10.1234/test",
                 "publicationTitle": "Science",
@@ -163,8 +169,15 @@ def test_list_items_no_pdf_attachment():
     fake_items = [
         {
             "key": "ITEM3",
-            "data": {"itemType": "journalArticle", "title": "No PDF", "creators": [],
-                     "date": None, "DOI": None, "publicationTitle": None, "abstractNote": None},
+            "data": {
+                "itemType": "journalArticle",
+                "title": "No PDF",
+                "creators": [],
+                "date": None,
+                "DOI": None,
+                "publicationTitle": None,
+                "abstractNote": None,
+            },
         }
     ]
     fake_children = [
@@ -214,13 +227,16 @@ def test_download_pdf_retries_on_429():
             success.content = fake_pdf_bytes
             success.raise_for_status = MagicMock()
             instance.get.side_effect = [rate_limit, success]
-            result = download_pdf(user_id="12345", api_key="testkey", attachment_key="ATT1")
+            result = download_pdf(
+                user_id="12345", api_key="testkey", attachment_key="ATT1"
+            )
     assert result == fake_pdf_bytes
 
 
 def test_download_pdf_raises_on_double_429():
     """Should raise after two consecutive 429 responses."""
     import pytest
+
     with patch("httpx.Client") as MockClient:
         with patch("time.sleep"):
             instance = MockClient.return_value.__enter__.return_value

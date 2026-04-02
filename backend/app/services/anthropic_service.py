@@ -9,12 +9,17 @@ class AnthropicService:
         self.model = model
 
     def generate(
-        self, prompt: str, temperature: float = 0.3, max_tokens: int = 500
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = 0.3,
+        max_tokens: int = 500,
     ) -> str:
         message = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             temperature=temperature,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text

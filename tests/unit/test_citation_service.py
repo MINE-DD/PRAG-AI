@@ -19,7 +19,7 @@ def test_format_apa_citation():
         authors=["Vaswani, A.", "Shazeer, N.", "Parmar, N."],
         year=2017,
         unique_id="VaswaniAttention2017",
-        journal_conference="NeurIPS"
+        journal_conference="NeurIPS",
     )
 
     citation = service.format_apa(metadata)
@@ -39,7 +39,7 @@ def test_format_bibtex_citation():
         title="Attention Is All You Need",
         authors=["Vaswani, A.", "Shazeer, N."],
         year=2017,
-        unique_id="VaswaniAttention2017"
+        unique_id="VaswaniAttention2017",
     )
 
     citation = service.format_bibtex(metadata)
@@ -55,10 +55,7 @@ def test_format_citation_with_missing_fields():
     service = CitationService()
 
     metadata = PaperMetadata(
-        paper_id="paper-123",
-        title="Unknown Paper",
-        authors=[],
-        unique_id="Unknown"
+        paper_id="paper-123", title="Unknown Paper", authors=[], unique_id="Unknown"
     )
 
     # Should not raise error
@@ -79,7 +76,7 @@ def test_extract_citation_key():
         title="Test Paper",
         authors=["Author, A."],
         year=2024,
-        unique_id="AuthorTest2024"
+        unique_id="AuthorTest2024",
     )
 
     key = service.extract_citation_key(metadata)
@@ -94,13 +91,17 @@ def test_format_author_list_apa():
     assert service.format_authors_apa(["Smith, J."]) == "Smith, J."
 
     # Two authors
-    assert service.format_authors_apa(["Smith, J.", "Doe, A."]) == "Smith, J., & Doe, A."
+    assert (
+        service.format_authors_apa(["Smith, J.", "Doe, A."]) == "Smith, J., & Doe, A."
+    )
 
     # Three or more authors (use et al.)
     authors = ["Smith, J.", "Doe, A.", "Johnson, B."]
     formatted = service.format_authors_apa(authors)
     assert "Smith, J." in formatted
-    assert "et al." in formatted or "Doe, A." in formatted  # APA 7 shows all in reference
+    assert (
+        "et al." in formatted or "Doe, A." in formatted
+    )  # APA 7 shows all in reference
 
 
 def test_format_author_list_bibtex():

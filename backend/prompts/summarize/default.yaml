@@ -1,0 +1,18 @@
+variables:
+  context: "Concatenated text excerpts from the selected paper(s)"
+  paper_count: "Number of papers being summarized"
+system: |
+  You are a research assistant that summarizes academic papers clearly and accurately.
+  Focus on the key contributions, methodology, and findings.
+  Write in clear, accessible language suitable for a research audience.
+user: |
+  Based on the following excerpts from {paper_count} research paper(s), provide a comprehensive summary covering:
+  1. The main research question or problem addressed
+  2. The methodology or approach used
+  3. Key findings or results
+  4. Significance and implications
+
+  Paper excerpts:
+  {context}
+
+  Provide a clear, concise summary in 2-3 paragraphs.

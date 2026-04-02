@@ -13,6 +13,7 @@ sys.path.insert(0, str(backend_path))
 
 from app.core.config import settings
 from app.main import app
+from app.services.prompt_service import RenderedPrompt, get_prompt_service
 
 
 @pytest.fixture
@@ -29,8 +30,10 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant service"""
-    with patch('app.api.collections.QdrantService') as mock_collections, \
-         patch('app.api.rag.QdrantService') as mock_rag:
+    with (
+        patch("app.api.collections.QdrantService") as mock_collections,
+        patch("app.api.rag.QdrantService") as mock_rag,
+    ):
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.delete_collection = Mock()
@@ -46,7 +49,7 @@ def mock_qdrant():
             "chunk_text": "This is a relevant chunk about natural language processing.",
             "chunk_type": "body",
             "page_number": 1,
-            "metadata": {"chunk_index": 0}
+            "metadata": {"chunk_index": 0},
         }
         mock_instance.search = Mock(return_value=[mock_search_result])
 
@@ -58,11 +61,13 @@ def mock_qdrant():
 @pytest.fixture
 def mock_ollama():
     """Mock Ollama service"""
-    with patch('app.api.rag.OllamaService') as mock:
+    with patch("app.api.rag.OllamaService") as mock:
         mock_instance = Mock()
         # Return fake embedding (1024-dimensional)
         mock_instance.generate_embedding = Mock(return_value=[0.1] * 1024)
-        mock_instance.generate = Mock(return_value="This is a generated answer about NLP.")
+        mock_instance.generate = Mock(
+            return_value="This is a generated answer about NLP."
+        )
         mock.return_value = mock_instance
         yield mock_instance
 
@@ -70,7 +75,7 @@ def mock_ollama():
 @pytest.fixture
 def mock_metadata_service():
     """Mock metadata service"""
-    with patch('app.api.rag.MetadataService') as mock:
+    with patch("app.api.rag.MetadataService") as mock:
         from app.models.paper import PaperMetadata
 
         mock_instance = Mock()
@@ -80,7 +85,7 @@ def mock_metadata_service():
             title="Test Paper on NLP",
             authors=["Smith, J.", "Doe, A."],
             year=2024,
-            unique_id="SmithTestPaper2024"
+            unique_id="SmithTestPaper2024",
         )
         mock_instance.get_paper_metadata = Mock(return_value=fake_metadata)
         mock.return_value = mock_instance
@@ -90,11 +95,20 @@ def mock_metadata_service():
 @pytest.fixture
 def test_collection(client, temp_data_dir, mock_qdrant):
     """Create a test collection"""
-    response = client.post(
-        "/collections",
-        json={"name": "Test Collection"}
-    )
+    response = client.post("/collections", json={"name": "Test Collection"})
     return response.json()["collection_id"]
+
+
+@pytest.fixture(autouse=True)
+def mock_prompt_service():
+    mock = Mock()
+    mock.render.return_value = RenderedPrompt(
+        system="You are a research assistant.",
+        user="Answer the question using the context.",
+    )
+    app.dependency_overrides[get_prompt_service] = lambda: mock
+    yield
+    app.dependency_overrides.pop(get_prompt_service, None)
 
 
 @pytest.fixture
@@ -106,10 +120,7 @@ def test_rag_query_collection(client, test_collection):
     """Test RAG querying a collection with semantic search"""
     response = client.post(
         f"/collections/{test_collection}/rag",
-        json={
-            "query_text": "What is natural language processing?",
-            "limit": 5
-        }
+        json={"query_text": "What is natural language processing?", "limit": 5},
     )
 
     assert response.status_code == 200
@@ -136,11 +147,7 @@ def test_rag_query_with_paper_filter(client, test_collection):
     """Test RAG querying with paper_ids filter"""
     response = client.post(
         f"/collections/{test_collection}/rag",
-        json={
-            "query_text": "machine learning",
-            "paper_ids": ["paper-123"],
-            "limit": 3
-        }
+        json={"query_text": "machine learning", "paper_ids": ["paper-123"], "limit": 3},
     )
 
     assert response.status_code == 200
@@ -151,10 +158,7 @@ def test_rag_query_with_paper_filter(client, test_collection):
 
 def test_rag_query_nonexistent_collection(client):
     """Test RAG querying a collection that doesn't exist"""
-    response = client.post(
-        "/collections/nonexistent/rag",
-        json={"query_text": "test"}
-    )
+    response = client.post("/collections/nonexistent/rag", json={"query_text": "test"})
 
     assert response.status_code == 404
 
@@ -162,18 +166,29 @@ def test_rag_query_nonexistent_collection(client):
 def test_rag_query_empty_text(client, test_collection):
     """Test RAG querying with empty query text"""
     response = client.post(
-        f"/collections/{test_collection}/rag",
-        json={"query_text": ""}
+        f"/collections/{test_collection}/rag", json={"query_text": ""}
     )
 
     assert response.status_code == 400
+
+
+def test_rag_accepts_prompt_name_field(client, test_collection):
+    """prompt_name field is accepted and uses the named prompt."""
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={
+            "query_text": "What is attention?",
+            "prompt_name": "default",
+        },
+    )
+    assert response.status_code == 200
 
 
 def test_rag_query_returns_metadata(client, test_collection):
     """Test that RAG query results include chunk metadata"""
     response = client.post(
         f"/collections/{test_collection}/rag",
-        json={"query_text": "natural language processing"}
+        json={"query_text": "natural language processing"},
     )
 
     assert response.status_code == 200
@@ -190,7 +205,7 @@ def test_rag_query_with_citations(client, test_collection):
     """Test that RAG query results include citation information"""
     response = client.post(
         f"/collections/{test_collection}/rag",
-        json={"query_text": "machine learning", "include_citations": True}
+        json={"query_text": "machine learning", "include_citations": True},
     )
 
     assert response.status_code == 200

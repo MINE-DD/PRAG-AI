@@ -20,7 +20,9 @@ def client():
 def test_get_settings_includes_zotero_fields(client):
     with patch("app.api.settings._api_keys") as mock_keys:
         mock_keys.has_key.side_effect = lambda p: p == "anthropic"
-        mock_keys.get_key.side_effect = lambda p: "12345" if p == "zotero_user_id" else None
+        mock_keys.get_key.side_effect = lambda p: (
+            "12345" if p == "zotero_user_id" else None
+        )
         resp = client.get("/settings")
     assert resp.status_code == 200
     data = resp.json()
@@ -32,13 +34,22 @@ def test_get_settings_includes_zotero_fields(client):
 
 def test_post_settings_saves_zotero_user_id(client, tmp_path):
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.dump({
-        "models": {"embedding": "nomic", "llm": {"type": "local", "model": "llama3.2"}},
-        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
-        "retrieval": {"top_k": 10},
-    }))
-    with patch("app.api.settings.CONFIG_PATH", config_path), \
-         patch("app.api.settings._api_keys") as mock_keys:
+    config_path.write_text(
+        yaml.dump(
+            {
+                "models": {
+                    "embedding": "nomic",
+                    "llm": {"type": "local", "model": "llama3.2"},
+                },
+                "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+                "retrieval": {"top_k": 10},
+            }
+        )
+    )
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys") as mock_keys,
+    ):
         mock_keys.has_key.return_value = False
         resp = client.post("/settings", json={"zotero_user_id": "99887766"})
     assert resp.status_code == 200
@@ -50,13 +61,22 @@ def test_post_settings_saves_zotero_user_id(client, tmp_path):
 
 def test_post_settings_saves_zotero_key(client, tmp_path):
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(yaml.dump({
-        "models": {"embedding": "nomic", "llm": {"type": "local", "model": "llama3.2"}},
-        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
-        "retrieval": {"top_k": 10},
-    }))
-    with patch("app.api.settings.CONFIG_PATH", config_path), \
-         patch("app.api.settings._api_keys") as mock_keys:
+    config_path.write_text(
+        yaml.dump(
+            {
+                "models": {
+                    "embedding": "nomic",
+                    "llm": {"type": "local", "model": "llama3.2"},
+                },
+                "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+                "retrieval": {"top_k": 10},
+            }
+        )
+    )
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys") as mock_keys,
+    ):
         resp = client.post("/settings", json={"zotero_key": "secret_key_123"})
     assert resp.status_code == 200
     mock_keys.set_key.assert_called_once_with("zotero", "secret_key_123")

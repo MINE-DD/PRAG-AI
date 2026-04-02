@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +24,7 @@ class RAGRequest(BaseModel):
     use_hybrid: bool = Field(
         default=False, description="Use hybrid search (dense + sparse)"
     )
+    prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class Source(BaseModel):

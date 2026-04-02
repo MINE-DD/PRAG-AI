@@ -7,7 +7,7 @@ from app.services.ollama_service import OllamaService
 @pytest.fixture
 def ollama_service():
     """Create OllamaService with mocked client"""
-    with patch('backend.app.services.ollama_service.ollama') as mock_ollama:
+    with patch("backend.app.services.ollama_service.ollama") as mock_ollama:
         service = OllamaService(url="http://localhost:11434", model="llama3")
         service.client = mock_ollama
         return service
@@ -36,13 +36,12 @@ def test_generate_embeddings_batch(ollama_service):
 
 def test_generate_response(ollama_service):
     """Test generating LLM response"""
-    ollama_service.client.chat = Mock(return_value={
-        "message": {"content": "This is a response"}
-    })
+    ollama_service.client.chat = Mock(
+        return_value={"message": {"content": "This is a response"}}
+    )
 
     response = ollama_service.generate(
-        prompt="Test prompt",
-        system="You are a helpful assistant"
+        prompt="Test prompt", system="You are a helpful assistant"
     )
 
     assert "response" in response

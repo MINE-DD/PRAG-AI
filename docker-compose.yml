@@ -18,6 +18,7 @@ services:
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml
+      - ./backend/prompts:/app/prompts
     env_file:
       - .env
     environment:

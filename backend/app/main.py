@@ -9,6 +9,7 @@ from app.api import (
     papers,
     pipeline,
     preprocess,
+    prompts,
     rag,
     summarize,
     zotero,
@@ -47,6 +48,7 @@ app.include_router(ingest.router, tags=["ingest"])
 app.include_router(settings_api.router, tags=["settings"])
 app.include_router(zotero.router, tags=["zotero"])
 app.include_router(pipeline.router, tags=["pipeline"])
+app.include_router(prompts.router, tags=["prompts"])
 
 
 @app.get("/")
