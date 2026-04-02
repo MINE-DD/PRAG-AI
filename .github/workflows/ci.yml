@@ -10,39 +10,52 @@ permissions:
   contents: read
 
 jobs:
-  lint-and-test:
-    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+  lint:
+    name: Linting build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-cached
+        with:
+          python-version: '3.12'
+          extras: dev,publishing
+      - name: Check style against standards using ruff
+        run: |
+          ruff check
+          ruff format --check
+
+  typecheck:
+    name: Type check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-cached
+        with:
+          python-version: '3.12'
+          extras: dev
+      - name: Check types with mypy
+        run: mypy backend/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13"]
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - uses: ./.github/actions/setup-python-cached
         with:
-          version: "latest"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --extra dev
-
-      - name: Lint with ruff
-        run: |
-          uv run ruff check .
-          uv run ruff format --check .
-
+          python-version: ${{ matrix.python-version }}
+          extras: dev
       - name: Run tests with coverage
         # test_anthropic/google_service require optional 'api' extras (cloud keys not in CI)
         # test_ingest_api has 2 pre-existing failures on main (API schema mismatch, unrelated to this PR)
-        run: uv run pytest --cov=backend --cov-report=xml --cov-fail-under=60 --ignore=tests/unit/test_anthropic_service.py --ignore=tests/unit/test_google_service.py --ignore=tests/integration/test_ingest_api.py
-
+        run: pytest --cov=backend --cov-report=xml --cov-fail-under=60 --ignore=tests/unit/test_anthropic_service.py --ignore=tests/unit/test_google_service.py --ignore=tests/integration/test_ingest_api.py
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
