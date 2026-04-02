@@ -1,25 +1,32 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
+
+from app.api.rag import _get_llm_info, _get_llm_service
+from app.core.config import load_config, settings
 from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
 from app.services.metadata_service import MetadataService
 from app.services.prompt_service import PromptService, get_prompt_service
-from app.core.config import settings, load_config
-from app.api.rag import _get_llm_service, _get_llm_info
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
 
 class SummarizeRequest(BaseModel):
     """Request to summarize papers"""
-    paper_ids: list[str] = Field(..., min_length=1, description="Paper IDs to summarize")
-    max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
+
+    paper_ids: list[str] = Field(
+        ..., min_length=1, description="Paper IDs to summarize"
+    )
+    max_tokens: int | None = Field(
+        default=None, description="Max tokens for generated text"
+    )
     prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class SummarizeResponse(BaseModel):
     """Response with paper summary"""
+
     summary: str = Field(..., description="Generated summary")
     paper_ids: list[str] = Field(..., description="Papers that were summarized")
     papers: list[dict] = Field(default_factory=list, description="Paper metadata")
@@ -74,13 +81,15 @@ def summarize_papers(
         # Get paper metadata
         metadata = metadata_service.get_paper_metadata(collection_id, paper_id)
         if metadata:
-            papers_metadata.append({
-                "paper_id": paper_id,
-                "title": metadata.title,
-                "authors": metadata.authors,
-                "year": metadata.year,
-                "unique_id": metadata.unique_id
-            })
+            papers_metadata.append(
+                {
+                    "paper_id": paper_id,
+                    "title": metadata.title,
+                    "authors": metadata.authors,
+                    "year": metadata.year,
+                    "unique_id": metadata.unique_id,
+                }
+            )
 
         # Search for all chunks from this paper (use zero vector to get all)
         vector_size = qdrant.get_vector_size(collection_id)
@@ -89,19 +98,22 @@ def summarize_papers(
             collection_name=collection_id,
             query_vector=dummy_embedding,
             limit=100,  # Get up to 100 chunks per paper
-            paper_ids=[paper_id]
+            paper_ids=[paper_id],
         )
 
         for chunk in chunks:
             all_chunks.append(chunk.payload["chunk_text"])
 
     # Combine all chunks into context
-    context = "\n\n".join(all_chunks[:20])  # Limit to first 20 chunks to avoid token limits
+    context = "\n\n".join(
+        all_chunks[:20]
+    )  # Limit to first 20 chunks to avoid token limits
 
     # Render prompt via PromptService
     try:
         rendered = prompt_service.render(
-            "summarize", request.prompt_name,
+            "summarize",
+            request.prompt_name,
             context=context,
             paper_count=len(request.paper_ids),
         )
@@ -109,10 +121,13 @@ def summarize_papers(
         raise HTTPException(status_code=422, detail=str(e))
 
     # Generate summary using LLM
-    summary = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=request.max_tokens)
+    summary = llm_service.generate(
+        prompt=rendered.user,
+        system=rendered.system,
+        temperature=0.3,
+        max_tokens=request.max_tokens,
+    )
 
     return SummarizeResponse(
-        summary=summary,
-        paper_ids=request.paper_ids,
-        papers=papers_metadata
+        summary=summary, paper_ids=request.paper_ids, papers=papers_metadata
     )

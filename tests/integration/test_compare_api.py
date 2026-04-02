@@ -1,18 +1,19 @@
-import pytest
-import sys
-from pathlib import Path
-import tempfile
 import shutil
+import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.main import app
 from app.core.config import settings
-from app.services.prompt_service import get_prompt_service, RenderedPrompt
+from app.main import app
+from app.services.prompt_service import RenderedPrompt, get_prompt_service
 
 
 @pytest.fixture
@@ -29,8 +30,10 @@ def temp_data_dir():
 @pytest.fixture
 def mock_qdrant():
     """Mock Qdrant service"""
-    with patch('app.api.collections.QdrantService') as mock_collections, \
-         patch('app.api.compare.QdrantService') as mock_compare:
+    with (
+        patch("app.api.collections.QdrantService") as mock_collections,
+        patch("app.api.compare.QdrantService") as mock_compare,
+    ):
         mock_instance = Mock()
         mock_instance.create_collection = Mock()
         mock_instance.collection_exists = Mock(return_value=True)
@@ -44,7 +47,7 @@ def mock_qdrant():
             "chunk_text": "This paper introduces transformers with attention mechanisms.",
             "chunk_type": "abstract",
             "page_number": 1,
-            "metadata": {}
+            "metadata": {},
         }
         mock_instance.search = Mock(return_value=[mock_chunk] * 3)
 
@@ -56,7 +59,7 @@ def mock_qdrant():
 @pytest.fixture
 def mock_ollama():
     """Mock LLM service (provider-agnostic via _get_llm_service)"""
-    with patch('app.api.compare._get_llm_service') as mock:
+    with patch("app.api.compare._get_llm_service") as mock:
         mock_instance = Mock()
         comparison_text = """## Similarities
 Both papers focus on transformer architectures and attention mechanisms.
@@ -74,7 +77,7 @@ Both demonstrate improved performance on NLP tasks."""
 @pytest.fixture
 def mock_metadata_service():
     """Mock metadata service"""
-    with patch('app.api.compare.MetadataService') as mock:
+    with patch("app.api.compare.MetadataService") as mock:
         from app.models.paper import PaperMetadata
 
         mock_instance = Mock()
@@ -85,7 +88,7 @@ def mock_metadata_service():
                 title=f"Paper {paper_id[-3:]}",
                 authors=["Smith, J."],
                 year=2024,
-                unique_id=f"Smith{paper_id[-3:]}2024"
+                unique_id=f"Smith{paper_id[-3:]}2024",
             )
 
         mock_instance.get_paper_metadata = Mock(side_effect=get_metadata)
@@ -96,10 +99,7 @@ def mock_metadata_service():
 @pytest.fixture
 def test_collection(client, temp_data_dir, mock_qdrant):
     """Create a test collection"""
-    response = client.post(
-        "/collections",
-        json={"name": "Test Collection"}
-    )
+    response = client.post("/collections", json={"name": "Test Collection"})
     return response.json()["collection_id"]
 
 
@@ -124,9 +124,7 @@ def test_compare_two_papers(client, test_collection):
     """Test comparing two papers"""
     response = client.post(
         f"/collections/{test_collection}/compare",
-        json={
-            "paper_ids": ["paper-123", "paper-456"]
-        }
+        json={"paper_ids": ["paper-123", "paper-456"]},
     )
 
     assert response.status_code == 200
@@ -143,9 +141,7 @@ def test_compare_multiple_papers(client, test_collection):
     """Test comparing more than two papers"""
     response = client.post(
         f"/collections/{test_collection}/compare",
-        json={
-            "paper_ids": ["paper-123", "paper-456", "paper-789"]
-        }
+        json={"paper_ids": ["paper-123", "paper-456", "paper-789"]},
     )
 
     assert response.status_code == 200
@@ -157,10 +153,7 @@ def test_compare_with_aspect_filter(client, test_collection):
     """Test comparing papers with specific aspect"""
     response = client.post(
         f"/collections/{test_collection}/compare",
-        json={
-            "paper_ids": ["paper-123", "paper-456"],
-            "aspect": "methodology"
-        }
+        json={"paper_ids": ["paper-123", "paper-456"], "aspect": "methodology"},
     )
 
     assert response.status_code == 200
@@ -172,7 +165,7 @@ def test_compare_nonexistent_collection(client):
     """Test comparing in nonexistent collection"""
     response = client.post(
         "/collections/nonexistent/compare",
-        json={"paper_ids": ["paper-123", "paper-456"]}
+        json={"paper_ids": ["paper-123", "paper-456"]},
     )
 
     assert response.status_code == 404
@@ -181,8 +174,7 @@ def test_compare_nonexistent_collection(client):
 def test_compare_single_paper(client, test_collection):
     """Test compare with only one paper (should fail)"""
     response = client.post(
-        f"/collections/{test_collection}/compare",
-        json={"paper_ids": ["paper-123"]}
+        f"/collections/{test_collection}/compare", json={"paper_ids": ["paper-123"]}
     )
 
     # Need at least 2 papers to compare
@@ -193,7 +185,7 @@ def test_compare_includes_metadata(client, test_collection):
     """Test that comparison includes paper metadata"""
     response = client.post(
         f"/collections/{test_collection}/compare",
-        json={"paper_ids": ["paper-123", "paper-456"]}
+        json={"paper_ids": ["paper-123", "paper-456"]},
     )
 
     assert response.status_code == 200

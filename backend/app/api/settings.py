@@ -1,15 +1,14 @@
 import json
-import yaml
 from pathlib import Path
-from typing import Optional
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import settings, load_config
-from app.services.ollama_service import OllamaService
+from app.core.config import load_config, settings
 from app.services.api_keys_service import ApiKeysService
+from app.services.ollama_service import OllamaService
 
 router = APIRouter()
 
@@ -33,12 +32,11 @@ RECOMMENDED_EMBEDDING_MODELS = [
     "mxbai-embed-large",
     "qwen3-embedding:0.6b",
     "qwen3-embedding:4b",
-    "qwen3-embedding:8b"
+    "qwen3-embedding:8b",
 ]
 
 RECOMMENDED_LLM_MODELS = [
-    "llama3.2:1b"
-    "gemma3:1b",
+    "llama3.2:1bgemma3:1b",
     "llama3.2",
     "phi3:mini",
     "gemma3:4b",
@@ -55,10 +53,12 @@ def list_ollama_models():
         response = client.client.list()
         result = []
         for m in response.models:
-            result.append({
-                "name": m.model,
-                "size": m.size,
-            })
+            result.append(
+                {
+                    "name": m.model,
+                    "size": m.size,
+                }
+            )
         return result
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
@@ -109,6 +109,7 @@ class PullModelRequest(BaseModel):
 @router.post("/ollama/pull")
 def pull_ollama_model(request: PullModelRequest):
     """Pull an Ollama model, streaming download progress as SSE."""
+
     def generate():
         try:
             client = OllamaService(url=settings.ollama_url)
@@ -126,22 +127,22 @@ def pull_ollama_model(request: PullModelRequest):
 
 
 class UpdateSettingsRequest(BaseModel):
-    embedding_model: Optional[str] = None
-    llm_model: Optional[str] = None
-    llm_provider: Optional[str] = None   # "local", "anthropic", "google"
-    anthropic_model: Optional[str] = None
-    google_model: Optional[str] = None
-    anthropic_key: Optional[str] = None  # write-only — never returned
-    google_key: Optional[str] = None     # write-only — never returned
+    embedding_model: str | None = None
+    llm_model: str | None = None
+    llm_provider: str | None = None  # "local", "anthropic", "google"
+    anthropic_model: str | None = None
+    google_model: str | None = None
+    anthropic_key: str | None = None  # write-only — never returned
+    google_key: str | None = None  # write-only — never returned
     clear_anthropic_key: bool = False
     clear_google_key: bool = False
-    zotero_user_id: Optional[str] = None
-    zotero_key: Optional[str] = None     # write-only — never returned
+    zotero_user_id: str | None = None
+    zotero_key: str | None = None  # write-only — never returned
     clear_zotero_key: bool = False
-    chunk_size: Optional[int] = None
-    chunk_overlap: Optional[int] = None
-    chunk_mode: Optional[str] = None
-    top_k: Optional[int] = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    chunk_mode: str | None = None
+    top_k: int | None = None
 
 
 @router.post("/settings")

@@ -1,14 +1,13 @@
 import json
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.services.preprocessing_service import PreprocessingService
+from app.core.config import load_config, settings
 from app.services.ollama_service import OllamaService
-from app.core.config import settings, load_config
+from app.services.preprocessing_service import PreprocessingService
 
 router = APIRouter()
 
@@ -29,7 +28,9 @@ class ConvertRequest(BaseModel):
     dir_name: str
     filename: str
     backend: str = "docling"  # "docling" or "pymupdf"
-    metadata_backend: str = "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
+    metadata_backend: str = (
+        "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
+    )
 
 
 def get_preprocessing_service() -> PreprocessingService:
@@ -62,8 +63,10 @@ def convert_pdf(request: ConvertRequest):
     service = get_preprocessing_service()
     try:
         result = service.convert_single_pdf(
-            dir_name, filename,
-            backend=request.backend, metadata_backend=request.metadata_backend,
+            dir_name,
+            filename,
+            backend=request.backend,
+            metadata_backend=request.metadata_backend,
         )
         return result
     except FileNotFoundError as e:
@@ -149,8 +152,8 @@ def delete_directory(request: DeleteDirRequest):
     """Delete an entire PDF directory and all its preprocessed output."""
     dir_name = _safe(request.dir_name)
     service = get_preprocessing_service()
-    pdf_dir  = Path(settings.pdf_input_dir) / dir_name
-    prep_dir = service.preprocessed_dir     / dir_name
+    pdf_dir = Path(settings.pdf_input_dir) / dir_name
+    prep_dir = service.preprocessed_dir / dir_name
     if not pdf_dir.is_dir() and not prep_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Directory '{dir_name}' not found")
     return service.delete_directory(dir_name)
@@ -193,16 +196,18 @@ def get_assets(request: AssetsRequest):
 
 
 class UpdateMetadataRequest(BaseModel):
-    title: Optional[str] = None
-    authors: Optional[list[str]] = None
-    year: Optional[int] = None
-    journal: Optional[str] = None
-    doi: Optional[str] = None
-    abstract: Optional[str] = None
+    title: str | None = None
+    authors: list[str] | None = None
+    year: int | None = None
+    journal: str | None = None
+    doi: str | None = None
+    abstract: str | None = None
 
 
 @router.patch("/preprocess/{dir_name}/{filename}/metadata")
-def update_metadata_manually(dir_name: str, filename: str, request: UpdateMetadataRequest):
+def update_metadata_manually(
+    dir_name: str, filename: str, request: UpdateMetadataRequest
+):
     """Manually override metadata fields and mark source as 'manual'."""
     dir_name, filename = _safe(dir_name), _safe(filename)
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
@@ -213,12 +218,18 @@ def update_metadata_manually(dir_name: str, filename: str, request: UpdateMetada
 
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
-    if request.title is not None:    meta["title"] = request.title
-    if request.authors is not None:  meta["authors"] = request.authors
-    if request.year is not None:     meta["publication_date"] = str(request.year)
-    if request.journal is not None:  meta["journal"] = request.journal
-    if request.doi is not None:      meta["doi"] = request.doi
-    if request.abstract is not None: meta["abstract"] = request.abstract
+    if request.title is not None:
+        meta["title"] = request.title
+    if request.authors is not None:
+        meta["authors"] = request.authors
+    if request.year is not None:
+        meta["publication_date"] = str(request.year)
+    if request.journal is not None:
+        meta["journal"] = request.journal
+    if request.doi is not None:
+        meta["doi"] = request.doi
+    if request.abstract is not None:
+        meta["abstract"] = request.abstract
     meta["metadata_source"] = "manual"
 
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -233,12 +244,18 @@ def update_metadata_manually(dir_name: str, filename: str, request: UpdateMetada
             if not coll_meta_path.exists():
                 continue
             coll_meta = json.loads(coll_meta_path.read_text(encoding="utf-8"))
-            if request.title is not None:    coll_meta["title"] = request.title
-            if request.authors is not None:  coll_meta["authors"] = request.authors
-            if request.year is not None:     coll_meta["publication_date"] = str(request.year)
-            if request.journal is not None:  coll_meta["journal"] = request.journal
-            if request.doi is not None:      coll_meta["doi"] = request.doi
-            if request.abstract is not None: coll_meta["abstract"] = request.abstract
+            if request.title is not None:
+                coll_meta["title"] = request.title
+            if request.authors is not None:
+                coll_meta["authors"] = request.authors
+            if request.year is not None:
+                coll_meta["publication_date"] = str(request.year)
+            if request.journal is not None:
+                coll_meta["journal"] = request.journal
+            if request.doi is not None:
+                coll_meta["doi"] = request.doi
+            if request.abstract is not None:
+                coll_meta["abstract"] = request.abstract
             coll_meta["metadata_source"] = "manual"
             coll_meta_path.write_text(json.dumps(coll_meta, indent=2), encoding="utf-8")
 
@@ -252,14 +269,18 @@ def serve_pdf(dir_name: str, filename: str):
     pdf_path = Path(settings.pdf_input_dir) / dir_name / filename
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="PDF not found")
-    return FileResponse(str(pdf_path), media_type="application/pdf", content_disposition_type="inline")
+    return FileResponse(
+        str(pdf_path), media_type="application/pdf", content_disposition_type="inline"
+    )
 
 
 @router.get("/preprocess/download/{dir_name}/{filename}/{file_type}")
 def download_output(dir_name: str, filename: str, file_type: str):
     """Download the preprocessed markdown or metadata JSON for a PDF."""
     if file_type not in ("markdown", "metadata"):
-        raise HTTPException(status_code=400, detail="file_type must be 'markdown' or 'metadata'")
+        raise HTTPException(
+            status_code=400, detail="file_type must be 'markdown' or 'metadata'"
+        )
 
     dir_name, filename = _safe(dir_name), _safe(filename)
     service = get_preprocessing_service()
@@ -285,7 +306,9 @@ def download_output(dir_name: str, filename: str, file_type: str):
 def download_asset(dir_name: str, filename: str, asset_type: str, asset_file: str):
     """Download a specific asset file (table CSV or image PNG)."""
     if asset_type not in ("tables", "images"):
-        raise HTTPException(status_code=400, detail="asset_type must be 'tables' or 'images'")
+        raise HTTPException(
+            status_code=400, detail="asset_type must be 'tables' or 'images'"
+        )
 
     dir_name, filename, asset_file = _safe(dir_name), _safe(filename), _safe(asset_file)
     service = get_preprocessing_service()
@@ -310,7 +333,11 @@ class AnalyzeTableRequest(BaseModel):
 @router.post("/preprocess/analyze-table")
 def analyze_table(request: AnalyzeTableRequest):
     """Send a CSV table to the LLM for analysis."""
-    dir_name, filename, table_file = _safe(request.dir_name), _safe(request.filename), _safe(request.table_file)
+    dir_name, filename, table_file = (
+        _safe(request.dir_name),
+        _safe(request.filename),
+        _safe(request.table_file),
+    )
     service = get_preprocessing_service()
     try:
         path = service.get_asset_path(dir_name, filename, "tables", table_file)

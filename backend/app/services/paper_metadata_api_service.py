@@ -70,7 +70,9 @@ def fetch_crossref(title: str) -> dict:
             authors.append(" ".join(name_parts))
 
     pub_date = None
-    date_parts = (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[]])
+    date_parts = (
+        item.get("published-print") or item.get("published-online") or {}
+    ).get("date-parts", [[]])
     if date_parts and date_parts[0]:
         parts = date_parts[0]
         pub_date = "-".join(str(p).zfill(2) for p in parts)
@@ -81,7 +83,9 @@ def fetch_crossref(title: str) -> dict:
         "publication_date": pub_date,
         "abstract": item.get("abstract"),
         "doi": item.get("DOI"),
-        "journal": item.get("container-title", [""])[0] if item.get("container-title") else None,
+        "journal": item.get("container-title", [""])[0]
+        if item.get("container-title")
+        else None,
     }
 
 
@@ -152,7 +156,9 @@ def fetch_crossref_by_doi(doi: str) -> dict:
             authors.append(" ".join(name_parts))
 
     pub_date = None
-    date_parts = (item.get("published-print") or item.get("published-online") or {}).get("date-parts", [[]])
+    date_parts = (
+        item.get("published-print") or item.get("published-online") or {}
+    ).get("date-parts", [[]])
     if date_parts and date_parts[0]:
         parts = date_parts[0]
         pub_date = "-".join(str(p).zfill(2) for p in parts)
@@ -163,7 +169,9 @@ def fetch_crossref_by_doi(doi: str) -> dict:
         "publication_date": pub_date,
         "abstract": item.get("abstract"),
         "doi": item.get("DOI"),
-        "journal": item.get("container-title", [""])[0] if item.get("container-title") else None,
+        "journal": item.get("container-title", [""])[0]
+        if item.get("container-title")
+        else None,
     }
 
 
@@ -199,7 +207,9 @@ def fetch_semantic_scholar_by_doi(doi: str) -> dict:
     """Fetch metadata from Semantic Scholar by exact DOI."""
     resp = httpx.get(
         f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
-        params={"fields": "title,authors,year,abstract,externalIds,publicationDate,journal"},
+        params={
+            "fields": "title,authors,year,abstract,externalIds,publicationDate,journal"
+        },
         timeout=15.0,
     )
     if resp.status_code == 404:
@@ -218,7 +228,11 @@ def fetch_semantic_scholar_by_doi(doi: str) -> dict:
 
 def enrich_metadata_by_doi(doi: str) -> dict:
     """Try CrossRef → OpenAlex → Semantic Scholar by DOI. Returns {} if all fail."""
-    for fn in (fetch_crossref_by_doi, fetch_openalex_by_doi, fetch_semantic_scholar_by_doi):
+    for fn in (
+        fetch_crossref_by_doi,
+        fetch_openalex_by_doi,
+        fetch_semantic_scholar_by_doi,
+    ):
         try:
             result = fn(doi)
             if result.get("title"):

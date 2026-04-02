@@ -1,10 +1,10 @@
 import json
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from app.services.preprocessing_service import PreprocessingService
 
 
@@ -123,7 +123,9 @@ def test_convert_single_pdf_success(service, temp_dirs):
     _create_fake_pdf(str(dir1), "paper1.pdf")
 
     mock_converter = MagicMock()
-    mock_converter.convert_to_markdown.return_value = "# Test Paper\n\nSome content here."
+    mock_converter.convert_to_markdown.return_value = (
+        "# Test Paper\n\nSome content here."
+    )
     mock_converter.extract_metadata.return_value = {
         "title": "Test Paper",
         "authors": [],
@@ -133,8 +135,12 @@ def test_convert_single_pdf_success(service, temp_dirs):
     # Remove convert_and_extract so the else branch is used
     del mock_converter.convert_and_extract
 
-    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
-        result = service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
+    with patch(
+        "app.services.preprocessing_service.get_converter", return_value=mock_converter
+    ):
+        result = service.convert_single_pdf(
+            "my_papers", "paper1.pdf", metadata_backend="none"
+        )
 
     assert result["filename"] == "paper1.pdf"
     assert result["markdown_length"] > 0
@@ -171,7 +177,9 @@ def test_history_updated_after_conversion(service, temp_dirs):
     }
     del mock_converter.convert_and_extract
 
-    with patch("app.services.preprocessing_service.get_converter", return_value=mock_converter):
+    with patch(
+        "app.services.preprocessing_service.get_converter", return_value=mock_converter
+    ):
         service.convert_single_pdf("my_papers", "paper1.pdf", metadata_backend="none")
 
     history = service.get_history()
@@ -203,13 +211,20 @@ def test_convert_skips_enrichment_when_metadata_exists(service, temp_dirs):
     }
     meta_path.write_text(json.dumps(zotero_meta), encoding="utf-8")
 
-    with patch("app.services.preprocessing_service._api_enrich") as mock_enrich, \
-         patch("app.services.preprocessing_service.get_converter") as mock_conv:
+    with (
+        patch("app.services.preprocessing_service._api_enrich") as mock_enrich,
+        patch("app.services.preprocessing_service.get_converter") as mock_conv,
+    ):
         mock_converter = MagicMock()
-        mock_converter.convert_and_extract.return_value = ("# Markdown content", {"title": "Extracted"})
+        mock_converter.convert_and_extract.return_value = (
+            "# Markdown content",
+            {"title": "Extracted"},
+        )
         mock_conv.return_value = mock_converter
 
-        result = service.convert_single_pdf(dir_name, "mypaper.pdf", backend="pymupdf", metadata_backend="openalex")
+        result = service.convert_single_pdf(
+            dir_name, "mypaper.pdf", backend="pymupdf", metadata_backend="openalex"
+        )
 
     # Enrichment API must NOT have been called
     mock_enrich.assert_not_called()

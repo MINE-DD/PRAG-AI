@@ -1,7 +1,8 @@
 from fastapi import APIRouter
+
 from app.core.config import settings
-from app.services.qdrant_service import QdrantService
 from app.services.ollama_service import OllamaService
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
@@ -13,10 +14,7 @@ def health_check():
         "api": "ok",
         "qdrant": "error",
         "ollama": "error",
-        "models": {
-            "embedding": "unknown",
-            "llm": "unknown"
-        }
+        "models": {"embedding": "unknown", "llm": "unknown"},
     }
 
     # Check Qdrant

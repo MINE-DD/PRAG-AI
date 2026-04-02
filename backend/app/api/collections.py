@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
-from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
+
 from app.core.config import settings
 from app.models.collection import Collection, CreateCollectionRequest
+from app.services.collection_service import CollectionService
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
@@ -26,10 +26,7 @@ def create_collection(request: CreateCollectionRequest):
             search_type=request.search_type,
         )
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @router.get("/collections", response_model=list[Collection])
@@ -48,7 +45,7 @@ def get_collection(collection_id: str):
     if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Collection '{collection_id}' not found"
+            detail=f"Collection '{collection_id}' not found",
         )
 
     return collection
