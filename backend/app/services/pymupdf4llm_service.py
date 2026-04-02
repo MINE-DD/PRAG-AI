@@ -40,7 +40,9 @@ class PyMuPDF4LLMService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _extract_metadata_from_markdown(self, markdown_text: str, fallback_title: str) -> dict:
+    def _extract_metadata_from_markdown(
+        self, markdown_text: str, fallback_title: str
+    ) -> dict:
         """Parse title and authors from raw markdown text."""
         lines = markdown_text.strip().split("\n")
 
@@ -59,7 +61,11 @@ class PyMuPDF4LLMService:
         if title is None:
             for i, line in enumerate(lines):
                 stripped = line.strip()
-                if stripped and not stripped.startswith("!") and not stripped.startswith("["):
+                if (
+                    stripped
+                    and not stripped.startswith("!")
+                    and not stripped.startswith("[")
+                ):
                     title = stripped
                     title_idx = i
                     break
@@ -70,7 +76,7 @@ class PyMuPDF4LLMService:
         # Authors: first non-empty, non-heading line after title
         authors = []
         if title_idx is not None:
-            for line in lines[title_idx + 1:]:
+            for line in lines[title_idx + 1 :]:
                 stripped = line.strip()
                 if stripped.startswith("#"):
                     break

@@ -1,6 +1,7 @@
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 # Add backend to path for local testing

@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
+
+from app.api.rag import _get_llm_info, _get_llm_service
+from app.core.config import load_config, settings
 from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
 from app.services.metadata_service import MetadataService
 from app.services.prompt_service import PromptService, get_prompt_service
-from app.core.config import settings, load_config
-from app.api.rag import _get_llm_service, _get_llm_info
+from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
 
@@ -16,14 +17,22 @@ USE_CHUNKS_LIMIT = 10  # Limit chunks included in prompt to avoid token overload
 
 class CompareRequest(BaseModel):
     """Request to compare papers"""
-    paper_ids: list[str] = Field(..., min_length=2, description="Paper IDs to compare (min 2)")
-    aspect: str = Field(default="all", description="Aspect to compare: methodology, findings, or all")
-    max_tokens: Optional[int] = Field(default=None, description="Max tokens for generated text")
+
+    paper_ids: list[str] = Field(
+        ..., min_length=2, description="Paper IDs to compare (min 2)"
+    )
+    aspect: str = Field(
+        default="all", description="Aspect to compare: methodology, findings, or all"
+    )
+    max_tokens: int | None = Field(
+        default=None, description="Max tokens for generated text"
+    )
     prompt_name: str = Field(default="default", description="Prompt variant to use")
 
 
 class CompareResponse(BaseModel):
     """Response with paper comparison"""
+
     comparison: str = Field(..., description="Generated comparison")
     paper_ids: list[str] = Field(..., description="Papers that were compared")
     papers: list[dict] = Field(default_factory=list, description="Paper metadata")
@@ -65,7 +74,9 @@ def compare_papers(
 
     # Validate request
     if len(request.paper_ids) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 papers are required for comparison")
+        raise HTTPException(
+            status_code=400, detail="At least 2 papers are required for comparison"
+        )
 
     # Check collection exists
     collection = collection_service.get_collection(collection_id)
@@ -80,13 +91,15 @@ def compare_papers(
         # Get paper metadata
         metadata = metadata_service.get_paper_metadata(collection_id, paper_id)
         if metadata:
-            papers_metadata.append({
-                "paper_id": paper_id,
-                "title": metadata.title,
-                "authors": metadata.authors,
-                "year": metadata.year,
-                "unique_id": metadata.unique_id
-            })
+            papers_metadata.append(
+                {
+                    "paper_id": paper_id,
+                    "title": metadata.title,
+                    "authors": metadata.authors,
+                    "year": metadata.year,
+                    "unique_id": metadata.unique_id,
+                }
+            )
 
         # Get chunks for this paper
         vector_size = qdrant.get_vector_size(collection_id)
@@ -95,21 +108,23 @@ def compare_papers(
             collection_name=collection_id,
             query_vector=dummy_embedding,
             limit=SEARCH_CHUNKS_LIMIT,
-            paper_ids=[paper_id]
+            paper_ids=[paper_id],
         )
 
         # Store chunks for this paper
         paper_chunks = [chunk.payload["chunk_text"] for chunk in chunks]
-        papers_content[paper_id] = "\n\n".join(paper_chunks[:USE_CHUNKS_LIMIT])  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
+        papers_content[paper_id] = "\n\n".join(
+            paper_chunks[:USE_CHUNKS_LIMIT]
+        )  # Limit to USE_CHUNKS_LIMIT chunks per paper to avoid token overload
 
     # Build aspect instruction and labeled content
     aspect_prompts = {
-        "methodology":    "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
-        "findings":       "Focus specifically on comparing the key findings, results, and conclusions.",
-        "results":        "Focus specifically on comparing the key results, findings, and conclusions reported.",
-        "limitations":    "Focus specifically on comparing the limitations, weaknesses, and constraints acknowledged by each study.",
-        "contributions":  "Focus specifically on comparing the novel contributions, innovations, and impact claimed by each paper.",
-        "all":            "Compare all aspects including methodologies, findings, contributions, limitations, and implications.",
+        "methodology": "Focus specifically on comparing the research methodologies, experimental designs, and approaches used.",
+        "findings": "Focus specifically on comparing the key findings, results, and conclusions.",
+        "results": "Focus specifically on comparing the key results, findings, and conclusions reported.",
+        "limitations": "Focus specifically on comparing the limitations, weaknesses, and constraints acknowledged by each study.",
+        "contributions": "Focus specifically on comparing the novel contributions, innovations, and impact claimed by each paper.",
+        "all": "Compare all aspects including methodologies, findings, contributions, limitations, and implications.",
     }
     aspect_instruction = aspect_prompts.get(request.aspect, aspect_prompts["all"])
 
@@ -124,9 +139,13 @@ def compare_papers(
         meta = meta_by_id.get(paper_id)
         if meta:
             authors = meta["authors"][:3]
-            authors_str = ", ".join(authors) + (" et al." if len(meta["authors"]) > 3 else "")
+            authors_str = ", ".join(authors) + (
+                " et al." if len(meta["authors"]) > 3 else ""
+            )
             year_str = f" ({meta['year']})" if meta.get("year") else ""
-            papers_info_parts.append(f"{paper_label}: \"{meta['title']}\"{year_str} — {authors_str}")
+            papers_info_parts.append(
+                f'{paper_label}: "{meta["title"]}"{year_str} — {authors_str}'
+            )
         else:
             papers_info_parts.append(f"{paper_label}: {paper_id}")
 
@@ -136,7 +155,8 @@ def compare_papers(
     # Render prompt via PromptService
     try:
         rendered = prompt_service.render(
-            "compare", request.prompt_name,
+            "compare",
+            request.prompt_name,
             combined_content=combined_content,
             paper_count=len(request.paper_ids),
             aspect_instruction=aspect_instruction,
@@ -146,7 +166,12 @@ def compare_papers(
         raise HTTPException(status_code=422, detail=str(e))
 
     # Generate comparison using LLM
-    comparison = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=request.max_tokens)
+    comparison = llm_service.generate(
+        prompt=rendered.user,
+        system=rendered.system,
+        temperature=0.3,
+        max_tokens=request.max_tokens,
+    )
 
     return CompareResponse(
         comparison=comparison,

@@ -1,7 +1,8 @@
 import sys
-import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))

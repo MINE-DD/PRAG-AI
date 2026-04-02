@@ -1,7 +1,8 @@
 import sys
-import pytest
 from pathlib import Path
 from unittest.mock import Mock
+
+import pytest
 from fastapi.testclient import TestClient
 
 backend_path = Path(__file__).parent.parent.parent / "backend"
@@ -60,7 +61,9 @@ def test_list_prompts_unknown_task_returns_404(client):
 
 def test_get_prompt_not_found_returns_404(client):
     mock = Mock()
-    mock.get_raw.side_effect = FileNotFoundError("Prompt 'gone' not found for task 'rag'")
+    mock.get_raw.side_effect = FileNotFoundError(
+        "Prompt 'gone' not found for task 'rag'"
+    )
     app.dependency_overrides[get_prompt_service] = lambda: mock
 
     response = client.get("/prompts/rag/gone")

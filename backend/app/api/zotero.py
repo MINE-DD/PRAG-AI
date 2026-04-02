@@ -9,8 +9,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.services.api_keys_service import ApiKeysService
 from app.services import zotero_service
+from app.services.api_keys_service import ApiKeysService
 from app.services.zotero_service import normalize_metadata
 
 router = APIRouter()
@@ -68,7 +68,7 @@ def import_from_zotero(request: ImportRequest):
     safe_dir = Path(request.dir_name).name
     dir_name = f"{safe_dir}_zt"
 
-    pdf_dir  = Path(settings.pdf_input_dir)  / dir_name
+    pdf_dir = Path(settings.pdf_input_dir) / dir_name
     prep_dir = Path(settings.preprocessed_dir) / dir_name
     pdf_dir.mkdir(parents=True, exist_ok=True)
     prep_dir.mkdir(parents=True, exist_ok=True)
@@ -88,14 +88,18 @@ def import_from_zotero(request: ImportRequest):
             filename = attachment.get("filename", "attachment.pdf")
             stem = Path(filename).stem
 
-            pdf_path  = pdf_dir  / filename
+            pdf_path = pdf_dir / filename
             meta_path = prep_dir / f"{stem}_metadata.json"
 
             yield f"data: {json.dumps({'filename': filename, 'status': 'downloading'})}\n\n"
             try:
-                pdf_bytes = zotero_service.download_pdf(user_id, api_key, attachment["attachment_key"])
+                pdf_bytes = zotero_service.download_pdf(
+                    user_id, api_key, attachment["attachment_key"]
+                )
                 pdf_path.write_bytes(pdf_bytes)
-                meta_path.write_text(json.dumps(normalize_metadata(item), indent=2), encoding="utf-8")
+                meta_path.write_text(
+                    json.dumps(normalize_metadata(item), indent=2), encoding="utf-8"
+                )
                 yield f"data: {json.dumps({'filename': filename, 'status': 'done'})}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'filename': filename, 'status': 'error', 'message': str(e)})}\n\n"

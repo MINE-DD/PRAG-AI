@@ -1,10 +1,9 @@
-from typing import List, Optional
-
-
 class ChunkingService:
     """Service for chunking text into smaller pieces"""
 
-    def __init__(self, chunk_size: int = 500, overlap: int = 100, mode: str = "characters"):
+    def __init__(
+        self, chunk_size: int = 500, overlap: int = 100, mode: str = "characters"
+    ):
         """
         Args:
             chunk_size: Size of each chunk (in characters or tokens depending on mode)
@@ -20,10 +19,11 @@ class ChunkingService:
     def tokenizer(self):
         if self._tokenizer is None:
             from transformers import AutoTokenizer
+
             self._tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         return self._tokenizer
 
-    def chunk_text(self, text: str) -> List[str]:
+    def chunk_text(self, text: str) -> list[str]:
         """
         Chunk text using fixed-size strategy with overlap.
 
@@ -33,7 +33,7 @@ class ChunkingService:
             return self._chunk_by_tokens(text)
         return self._chunk_by_characters(text)
 
-    def _chunk_by_characters(self, text: str) -> List[str]:
+    def _chunk_by_characters(self, text: str) -> list[str]:
         """Chunk text by character count with overlap."""
         if len(text) <= self.chunk_size:
             return [text]
@@ -46,14 +46,14 @@ class ChunkingService:
             chunk = text[start:end]
             chunks.append(chunk)
 
-            start += (self.chunk_size - self.overlap)
+            start += self.chunk_size - self.overlap
 
             if end >= len(text):
                 break
 
         return chunks
 
-    def _chunk_by_tokens(self, text: str) -> List[str]:
+    def _chunk_by_tokens(self, text: str) -> list[str]:
         """Chunk text by token count with overlap, returning text strings."""
         token_ids = self.tokenizer.encode(text, add_special_tokens=False)
 
@@ -76,9 +76,9 @@ class ChunkingService:
 
         return chunks
 
-    def chunk_by_paragraphs(self, text: str) -> List[str]:
+    def chunk_by_paragraphs(self, text: str) -> list[str]:
         """
         Chunk text by paragraph boundaries (for future use).
         """
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         return [p.strip() for p in paragraphs if p.strip()]
