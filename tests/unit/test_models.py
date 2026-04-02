@@ -1,14 +1,12 @@
-import pytest
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # Add backend to path for local testing
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from app.models.paper import PaperMetadata, Chunk, ChunkType
 from app.models.collection import Collection
+from app.models.paper import Chunk, ChunkType, PaperMetadata
 from app.models.rag import RAGRequest, RAGResponse, Source
 
 
@@ -20,7 +18,7 @@ def test_paper_metadata_creation():
         authors=["Author One", "Author Two"],
         year=2024,
         abstract="This is a test abstract",
-        unique_id="AuthorTest2024"
+        unique_id="AuthorTest2024",
     )
 
     assert metadata.paper_id == "test-123"
@@ -36,7 +34,7 @@ def test_chunk_creation():
         unique_id="AuthorTest2024",
         chunk_text="This is test content",
         chunk_type=ChunkType.BODY,
-        page_number=1
+        page_number=1,
     )
 
     assert chunk.paper_id == "test-123"
@@ -57,7 +55,7 @@ def test_collection_creation():
     collection = Collection(
         collection_id="test-collection",
         name="Test Collection",
-        description="Test description"
+        description="Test description",
     )
 
     assert collection.collection_id == "test-collection"
@@ -68,9 +66,7 @@ def test_collection_creation():
 def test_rag_request():
     """Test RAGRequest model"""
     req = RAGRequest(
-        query_text="What is attention?",
-        paper_ids=["paper-1", "paper-2"],
-        limit=5
+        query_text="What is attention?", paper_ids=["paper-1", "paper-2"], limit=5
     )
 
     assert req.query_text == "What is attention?"
@@ -88,13 +84,11 @@ def test_rag_response_with_sources():
         authors=["Author"],
         year=2024,
         excerpts=["Excerpt 1"],
-        pages=[1]
+        pages=[1],
     )
 
     response = RAGResponse(
-        answer="This is the answer",
-        sources=[source],
-        cited_paper_ids=["paper-1"]
+        answer="This is the answer", sources=[source], cited_paper_ids=["paper-1"]
     )
 
     assert "answer" in response.answer

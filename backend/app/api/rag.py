@@ -1,15 +1,17 @@
 import re
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.config import load_config, settings
 from app.models.rag import RAGRequest
-from app.services.collection_service import CollectionService
-from app.services.qdrant_service import QdrantService
-from app.services.ollama_service import OllamaService
-from app.services.citation_service import CitationService
-from app.services.metadata_service import MetadataService
-from app.services.sparse_embedding_service import SparseEmbeddingService
 from app.services.api_keys_service import ApiKeysService
+from app.services.citation_service import CitationService
+from app.services.collection_service import CollectionService
+from app.services.metadata_service import MetadataService
+from app.services.ollama_service import OllamaService
 from app.services.prompt_service import PromptService, get_prompt_service
-from app.core.config import settings, load_config
+from app.services.qdrant_service import QdrantService
+from app.services.sparse_embedding_service import SparseEmbeddingService
 
 router = APIRouter()
 _api_keys = ApiKeysService()
@@ -22,9 +24,15 @@ def _get_llm_info(config: dict) -> dict:
     llm_cfg = config["models"]["llm"]
     provider = llm_cfg.get("type", "local")
     if provider == "anthropic":
-        return {"provider": "anthropic", "model": llm_cfg.get("anthropic_model", "claude-opus-4-6")}
+        return {
+            "provider": "anthropic",
+            "model": llm_cfg.get("anthropic_model", "claude-opus-4-6"),
+        }
     if provider == "google":
-        return {"provider": "google", "model": llm_cfg.get("google_model", "gemini-2.5-flash")}
+        return {
+            "provider": "google",
+            "model": llm_cfg.get("google_model", "gemini-2.5-flash"),
+        }
     return {"provider": "local", "model": llm_cfg.get("model", "")}
 
 
@@ -35,6 +43,7 @@ def _get_llm_service(config: dict):
 
     if provider == "anthropic":
         from app.services.anthropic_service import AnthropicService
+
         api_key = _api_keys.get_key("anthropic")
         if not api_key:
             raise HTTPException(
@@ -46,6 +55,7 @@ def _get_llm_service(config: dict):
 
     if provider == "google":
         from app.services.google_service import GoogleService
+
         api_key = _api_keys.get_key("google")
         if not api_key:
             raise HTTPException(
@@ -70,15 +80,15 @@ def _clean_context(text: str) -> str:
     so they don't clash with our own citation keys.
     """
     # Remove parentheses containing comma-separated numbers, e.g. (2, 3, 11, 12)
-    text = re.sub(r'\(\s*\d+(?:\s*,\s*\d+)*\s*\)', '', text)
+    text = re.sub(r"\(\s*\d+(?:\s*,\s*\d+)*\s*\)", "", text)
     # Remove square brackets containing comma-separated numbers, e.g. [2, 3, 11, 12] or [7,32]
-    text = re.sub(r'\[\s*\d+(?:\s*,\s*\d+)*\s*\]', '', text)
+    text = re.sub(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]", "", text)
     # Remove consecutive square-bracket numbers, e.g. [2][3][4]
-    text = re.sub(r'(?:\[\d+\])+', '', text)
+    text = re.sub(r"(?:\[\d+\])+", "", text)
     # Remove standalone numbers in square brackets, e.g. [2], [3]
-    text = re.sub(r'\[\d+\]', '', text)
+    text = re.sub(r"\[\d+\]", "", text)
     # Remove standalone numbers in parentheses followed by punctuation, e.g. (2)., (3),
-    text = re.sub(r'\(\d+\)[\.\,]+', '', text)
+    text = re.sub(r"\(\d+\)[\.\,]+", "", text)
     return text
 
 
@@ -100,7 +110,16 @@ def get_services():
     llm_service = _get_llm_service(config)
     llm_info = _get_llm_info(config)
 
-    return collection_service, qdrant, ollama_service, citation_service, metadata_service, sparse_embedding_service, llm_service, llm_info
+    return (
+        collection_service,
+        qdrant,
+        ollama_service,
+        citation_service,
+        metadata_service,
+        sparse_embedding_service,
+        llm_service,
+        llm_info,
+    )
 
 
 @router.post("/collections/{collection_id}/rag")
@@ -116,7 +135,16 @@ def rag_query(
     Supports hybrid search (dense + BM42 sparse) when the collection
     was created with search_type="hybrid" and use_hybrid=True is passed.
     """
-    collection_service, qdrant, ollama, citation_service, metadata_service, sparse_embedding_service, llm_service, llm_info = services
+    (
+        collection_service,
+        qdrant,
+        ollama,
+        citation_service,
+        metadata_service,
+        sparse_embedding_service,
+        llm_service,
+        llm_info,
+    ) = services
 
     # Validate query text
     if not rag_request.query_text or not rag_request.query_text.strip():
@@ -134,7 +162,9 @@ def rag_query(
     sparse_vector = None
     use_hybrid = False
     if rag_request.use_hybrid and collection.search_type == "hybrid":
-        sparse_vector = sparse_embedding_service.generate_sparse_embedding(rag_request.query_text)
+        sparse_vector = sparse_embedding_service.generate_sparse_embedding(
+            rag_request.query_text
+        )
         use_hybrid = True
 
     # Search Qdrant
@@ -157,15 +187,17 @@ def rag_query(
         unique_id = result.payload["unique_id"]
         paper_citation_keys[paper_id] = unique_id
 
-        results.append({
-            "chunk_text": result.payload["chunk_text"],
-            "paper_id": paper_id,
-            "unique_id": unique_id,
-            "chunk_type": result.payload["chunk_type"],
-            "page_number": result.payload["page_number"],
-            "score": result.score,
-            "metadata": result.payload.get("metadata", {})
-        })
+        results.append(
+            {
+                "chunk_text": result.payload["chunk_text"],
+                "paper_id": paper_id,
+                "unique_id": unique_id,
+                "chunk_type": result.payload["chunk_type"],
+                "page_number": result.payload["page_number"],
+                "score": result.score,
+                "metadata": result.payload.get("metadata", {}),
+            }
+        )
 
     # Load metadata for all cited papers upfront
     paper_metadata_map = {}  # paper_id → PaperMetadata
@@ -182,9 +214,7 @@ def rag_query(
         for r in results:
             citation_key = r["unique_id"] or r["paper_id"]
             cleaned_text = _clean_context(r["chunk_text"])
-            context_parts.append(
-                f"--- Source: [{citation_key}] ---\n{cleaned_text}"
-            )
+            context_parts.append(f"--- Source: [{citation_key}] ---\n{cleaned_text}")
         context = "\n\n".join(context_parts)
 
         # List all valid citation keys for the prompt
@@ -194,7 +224,8 @@ def rag_query(
         word_target = rag_request.max_tokens
         try:
             rendered = prompt_service.render(
-                "rag", rag_request.prompt_name,
+                "rag",
+                rag_request.prompt_name,
                 context=context,
                 question=rag_request.query_text,
                 word_target=word_target,
@@ -203,7 +234,12 @@ def rag_query(
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
-        answer = llm_service.generate(prompt=rendered.user, system=rendered.system, temperature=0.3, max_tokens=rag_request.max_tokens)
+        answer = llm_service.generate(
+            prompt=rendered.user,
+            system=rendered.system,
+            temperature=0.3,
+            max_tokens=rag_request.max_tokens,
+        )
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():

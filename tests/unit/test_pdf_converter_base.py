@@ -1,5 +1,8 @@
 import pytest
-from app.services.pdf_converter_base import PDFConverterBackend, get_converter, parse_authors
+from app.services.pdf_converter_base import (
+    get_converter,
+    parse_authors,
+)
 
 
 def test_parse_authors_simple():

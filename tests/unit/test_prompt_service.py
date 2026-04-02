@@ -1,6 +1,7 @@
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
@@ -9,11 +10,14 @@ sys.path.insert(0, str(backend_path))
 def make_yaml(tmp_path, task: str, name: str, system: str, user: str) -> None:
     task_dir = tmp_path / task
     task_dir.mkdir(exist_ok=True)
-    (task_dir / f"{name}.yaml").write_text(f"system: |\n  {system}\nuser: |\n  {user}\n")
+    (task_dir / f"{name}.yaml").write_text(
+        f"system: |\n  {system}\nuser: |\n  {user}\n"
+    )
 
 
 def test_list_prompts(tmp_path):
     from app.services.prompt_service import PromptService
+
     make_yaml(tmp_path, "rag", "default", "sys", "usr")
     make_yaml(tmp_path, "rag", "concise", "sys2", "usr2")
 
@@ -25,6 +29,7 @@ def test_list_prompts(tmp_path):
 
 def test_list_prompts_unknown_task_raises(tmp_path):
     from app.services.prompt_service import PromptService
+
     service = PromptService(str(tmp_path))
 
     with pytest.raises(FileNotFoundError, match="Unknown task type"):
@@ -33,9 +38,12 @@ def test_list_prompts_unknown_task_raises(tmp_path):
 
 def test_get_raw_returns_content_with_name(tmp_path):
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
-    (task_dir / "default.yaml").write_text("system: You are helpful\nuser: Answer {question}\n")
+    (task_dir / "default.yaml").write_text(
+        "system: You are helpful\nuser: Answer {question}\n"
+    )
 
     service = PromptService(str(tmp_path))
     result = service.get_raw("rag", "default")
@@ -47,6 +55,7 @@ def test_get_raw_returns_content_with_name(tmp_path):
 
 def test_get_raw_not_found_raises(tmp_path):
     from app.services.prompt_service import PromptService
+
     (tmp_path / "rag").mkdir()
 
     service = PromptService(str(tmp_path))
@@ -57,6 +66,7 @@ def test_get_raw_not_found_raises(tmp_path):
 
 def test_render_substitutes_variables(tmp_path):
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     (task_dir / "default.yaml").write_text(
@@ -72,6 +82,7 @@ def test_render_substitutes_variables(tmp_path):
 
 def test_render_missing_variable_raises(tmp_path):
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     (task_dir / "default.yaml").write_text(
@@ -86,6 +97,7 @@ def test_render_missing_variable_raises(tmp_path):
 
 def test_render_missing_yaml_keys_raises(tmp_path):
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     (task_dir / "default.yaml").write_text("system: You are helpful\n")  # no user key
@@ -97,8 +109,10 @@ def test_render_missing_yaml_keys_raises(tmp_path):
 
 
 def test_validate_defaults_warns_on_missing_default(tmp_path, caplog):
-    from app.services.prompt_service import PromptService
     import logging
+
+    from app.services.prompt_service import PromptService
+
     (tmp_path / "rag").mkdir()  # no default.yaml inside
 
     with caplog.at_level(logging.WARNING):
@@ -110,6 +124,7 @@ def test_validate_defaults_warns_on_missing_default(tmp_path, caplog):
 def test_render_with_declared_variables_validates_correctly(tmp_path):
     """variables: list matching template variables renders successfully."""
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     (task_dir / "default.yaml").write_text(
@@ -119,7 +134,9 @@ def test_render_with_declared_variables_validates_correctly(tmp_path):
     )
 
     service = PromptService(str(tmp_path))
-    result = service.render("rag", "default", question="What is AI?", context="AI is...")
+    result = service.render(
+        "rag", "default", question="What is AI?", context="AI is..."
+    )
 
     assert "What is AI?" in result.user
 
@@ -127,6 +144,7 @@ def test_render_with_declared_variables_validates_correctly(tmp_path):
 def test_render_declared_variables_mismatch_raises(tmp_path):
     """variables: list that doesn't match actual template variables raises ValueError."""
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     # declares [question] but template also uses {context} — mismatch
@@ -145,6 +163,7 @@ def test_render_declared_variables_mismatch_raises(tmp_path):
 def test_get_raw_returns_variables_list(tmp_path):
     """get_raw includes the variables list when declared in YAML."""
     from app.services.prompt_service import PromptService
+
     task_dir = tmp_path / "rag"
     task_dir.mkdir()
     (task_dir / "default.yaml").write_text(

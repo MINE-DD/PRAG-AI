@@ -12,10 +12,10 @@ import re
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class PDFConverterBackend(Protocol):
@@ -63,17 +63,18 @@ def get_converter(backend: str) -> PDFConverterBackend:
 # Shared utility – author parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_authors(raw: str) -> list[str]:
     """Parse a raw author line into a list of clean author names.
 
     Strips superscript numbers, footnote markers (*†‡§), letter
     annotations, and filters out affiliations / emails.
     """
-    cleaned = re.sub(r'\s+\d+(?:\s*,\s*\d+)*[*†‡§]*', '', raw)
-    cleaned = re.sub(r'[*†‡§]+', '', cleaned)
-    cleaned = re.sub(r'\s+[a-e]\b', '', cleaned)
+    cleaned = re.sub(r"\s+\d+(?:\s*,\s*\d+)*[*†‡§]*", "", raw)
+    cleaned = re.sub(r"[*†‡§]+", "", cleaned)
+    cleaned = re.sub(r"\s+[a-e]\b", "", cleaned)
 
-    parts = re.split(r'\s*,\s*|\s+and\s+|\s+&\s+', cleaned)
+    parts = re.split(r"\s*,\s*|\s+and\s+|\s+&\s+", cleaned)
 
     authors: list[str] = []
     for part in parts:

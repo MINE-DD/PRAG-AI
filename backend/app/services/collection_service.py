@@ -1,12 +1,12 @@
 import json
 import re
-from pathlib import Path
-from datetime import datetime, UTC
 import shutil
-from typing import Optional
+from datetime import UTC, datetime
+from pathlib import Path
+
+from app.core.config import load_config, settings
 from app.models.collection import Collection
 from app.services.qdrant_service import QdrantService
-from app.core.config import settings, load_config
 
 
 class CollectionService:
@@ -18,18 +18,17 @@ class CollectionService:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def create_collection(
-        self, name: str, description: Optional[str] = None, search_type: str = "hybrid"
+        self, name: str, description: str | None = None, search_type: str = "hybrid"
     ) -> Collection:
         """Create a new collection"""
         # Generate collection ID: lowercase, spaces/special chars → dashes
-        collection_id = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        collection_id = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
         # Check if already exists
         collection_path = self.data_dir / collection_id
         if collection_path.exists():
             raise ValueError(
-                f'Collection "{name}" already exists. '
-                f'Please use a different name.'
+                f'Collection "{name}" already exists. Please use a different name.'
             )
 
         # Create directories
@@ -42,6 +41,7 @@ class CollectionService:
         vector_size = 768  # fallback for nomic-embed-text
         try:
             from app.services.ollama_service import OllamaService
+
             config = load_config("config.yaml")
             ollama = OllamaService(
                 url=settings.ollama_url,
@@ -53,7 +53,9 @@ class CollectionService:
             pass
 
         # Create Qdrant collection with correct settings
-        self.qdrant.create_collection(collection_id, vector_size=vector_size, search_type=search_type)
+        self.qdrant.create_collection(
+            collection_id, vector_size=vector_size, search_type=search_type
+        )
 
         # Write collection_info.json so ingestion can read search_type
         info = {
@@ -100,18 +102,24 @@ class CollectionService:
         for path in self.data_dir.iterdir():
             if path.is_dir():
                 info = self._read_collection_info(path)
-                collections.append(Collection(
-                    collection_id=path.name,
-                    name=info.get("name", path.name.replace("_", " ").title()),
-                    paper_count=self._count_papers(path),
-                    created_date=datetime.fromtimestamp(path.stat().st_ctime, tz=UTC),
-                    last_updated=datetime.fromtimestamp(path.stat().st_mtime, tz=UTC),
-                    search_type=info.get("search_type", "dense"),
-                ))
+                collections.append(
+                    Collection(
+                        collection_id=path.name,
+                        name=info.get("name", path.name.replace("_", " ").title()),
+                        paper_count=self._count_papers(path),
+                        created_date=datetime.fromtimestamp(
+                            path.stat().st_ctime, tz=UTC
+                        ),
+                        last_updated=datetime.fromtimestamp(
+                            path.stat().st_mtime, tz=UTC
+                        ),
+                        search_type=info.get("search_type", "dense"),
+                    )
+                )
 
         return collections
 
-    def get_collection(self, collection_id: str) -> Optional[Collection]:
+    def get_collection(self, collection_id: str) -> Collection | None:
         """Get a specific collection"""
         collection_path = self.data_dir / collection_id
 
@@ -123,8 +131,12 @@ class CollectionService:
             collection_id=collection_id,
             name=info.get("name", collection_id.replace("_", " ").title()),
             paper_count=self._count_papers(collection_path),
-            created_date=datetime.fromtimestamp(collection_path.stat().st_ctime, tz=UTC),
-            last_updated=datetime.fromtimestamp(collection_path.stat().st_mtime, tz=UTC),
+            created_date=datetime.fromtimestamp(
+                collection_path.stat().st_ctime, tz=UTC
+            ),
+            last_updated=datetime.fromtimestamp(
+                collection_path.stat().st_mtime, tz=UTC
+            ),
             search_type=info.get("search_type", "dense"),
         )
 
