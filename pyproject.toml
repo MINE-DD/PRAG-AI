@@ -36,6 +36,12 @@ api = [
     "anthropic>=0.18.0",
     "google-genai>=1.64.0",
 ]
+docs = [
+    "sphinx>=7.0",
+    "furo>=2024.1.29",
+    "myst-parser>=2.0",
+    "sphinx-autodoc-typehints>=1.25",
+]
 publishing = [
     "build>=1.0",
     "twine>=5.0",
