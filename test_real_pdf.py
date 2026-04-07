@@ -43,13 +43,16 @@ def create_collection():
     try:
         response = httpx.post(
             f"{BACKEND_URL}/collections",
-            json={"name": COLLECTION_NAME, "description": "Testing real PDF processing"},
-            timeout=10.0
+            json={
+                "name": COLLECTION_NAME,
+                "description": "Testing real PDF processing",
+            },
+            timeout=10.0,
         )
         if response.status_code == 200:
             collection = response.json()
             print(f"✅ Created collection: {collection['collection_id']}")
-            return collection['collection_id']
+            return collection["collection_id"]
         else:
             print(f"❌ Failed to create collection: {response.status_code}")
             print(response.text)
@@ -78,7 +81,7 @@ def upload_pdf(collection_id):
             response = httpx.post(
                 f"{BACKEND_URL}/collections/{collection_id}/papers",
                 files=files,
-                timeout=300.0  # 5 minutes for processing
+                timeout=300.0,  # 5 minutes for processing
             )
 
         if response.status_code == 200:
@@ -109,8 +112,7 @@ def list_papers(collection_id):
     print("\n📋 Listing papers in collection...")
     try:
         response = httpx.get(
-            f"{BACKEND_URL}/collections/{collection_id}/papers",
-            timeout=10.0
+            f"{BACKEND_URL}/collections/{collection_id}/papers", timeout=10.0
         )
         if response.status_code == 200:
             papers = response.json()
@@ -128,9 +130,9 @@ def list_papers(collection_id):
 
 def main():
     """Run the complete test"""
-    print("="*60)
+    print("=" * 60)
     print("PRAG-v2 Real PDF Processing Test")
-    print("="*60)
+    print("=" * 60)
 
     # Check services
     if not check_services():
@@ -149,9 +151,9 @@ def main():
     # List papers to verify
     papers = list_papers(collection_id)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("✅ TEST PASSED - Real PDF processing works end-to-end!")
-    print("="*60)
+    print("=" * 60)
     print("\nNext steps:")
     print("1. View collection in Qdrant dashboard: http://localhost:6333/dashboard")
     print("2. Check API docs: http://localhost:8000/docs")

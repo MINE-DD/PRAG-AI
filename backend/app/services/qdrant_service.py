@@ -3,8 +3,12 @@ import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
     Fusion,
     FusionQuery,
+    MatchValue,
     Modifier,
     PointStruct,
     Prefetch,
@@ -77,6 +81,9 @@ class QdrantService:
         config = self.client.get_collection(collection_name).config.params.vectors
         if isinstance(config, dict):
             return config["dense"].size
+        assert config is not None, (
+            f"No vector config for collection '{collection_name}'"
+        )
         return config.size
 
     def upsert_chunks(
@@ -191,7 +198,11 @@ class QdrantService:
         """Delete all chunks for a specific paper"""
         self.client.delete(
             collection_name=collection_name,
-            points_selector={
-                "filter": {"must": [{"key": "paper_id", "match": {"value": paper_id}}]}
-            },
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(key="paper_id", match=MatchValue(value=paper_id))
+                    ]
+                )
+            ),
         )
