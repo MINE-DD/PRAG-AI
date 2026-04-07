@@ -1,4 +1,5 @@
 """Sphinx configuration for PRAG-AI documentation."""
+
 import os
 import sys
 
