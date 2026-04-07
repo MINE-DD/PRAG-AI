@@ -6,6 +6,9 @@
 
 # PRAG-AI — Chat with your research papers
 
+[![fair-software.eu](https://img.shields.io/badge/fair--software.eu-%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8F%20%20%E2%97%8B-yellow)](https://fair-software.eu)
+
+PRAG-AI lets you ask questions to a collection of academic PDF papers and get answers grounded in the text, with citations. Everything runs on your own computer — your papers never leave your machine.
 PRAG-AI lets you ask questions to one or more collections of PDF documents and get answers grounded in the text, with citations. Everything runs on your own computer and your documents never leave your machine.
 It is designed as a REST-API with a frontend that can be expanded with custom prompts to perform similar kinds of tasks to explore your collections. Currently it can perform the following:
 - Basic Retrieval-augmented generation (RAG) in the whole collection.
