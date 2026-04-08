@@ -41,6 +41,7 @@ docs = [
     "furo>=2024.1.29",
     "myst-parser>=2.0",
     "sphinx-autodoc-typehints>=1.25",
+    "sphinxcontrib-mermaid>=0.9",
 ]
 publishing = [
     "build>=1.0",

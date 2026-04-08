@@ -1,264 +1,118 @@
-# PRAG-v2 Architecture
+# PRAG Architecture
 
-```mermaid
-classDiagram
-    direction TB
+PRAG is a **Retrieval-Augmented Generation (RAG)** system for academic research papers.
+Upload PDFs, organize them into collections, and use local LLMs (via Ollama) to query,
+summarize, and compare papers — through a Vue.js frontend backed by a FastAPI service.
 
-    %% ── External Systems ──────────────────────────────
-    class Qdrant {
-        <<external>>
-        Vector Database
-        port 6333
-    }
-    class Ollama {
-        <<external>>
-        LLM Inference
-        port 11434
-    }
-    class Filesystem {
-        <<external>>
-        /data/pdf_input
-        /data/preprocessed
-        /data/collections
-    }
-    class Docling {
-        <<external>>
-        DocumentConverter
-        PDF → Markdown
-    }
-    class FastEmbed {
-        <<external>>
-        SparseTextEmbedding
-        BM42 model
-    }
+The system is organized in three layers: **Dependencies** (external tools), **Services** (internal logic), and **API** (HTTP endpoints).
 
-    %% ── Configuration ─────────────────────────────────
-    class Settings {
-        <<pydantic-settings>>
-        +qdrant_url: str
-        +ollama_url: str
-        +data_dir: str
-        +pdf_input_dir: str
-        +preprocessed_dir: str
-    }
+---
 
-    %% ── Data Models ───────────────────────────────────
-    class Collection {
-        <<pydantic>>
-        +collection_id: str
-        +name: str
-        +description: str
-        +paper_count: int
-        +search_type: str
-        +created_date: datetime
-    }
-    class PaperMetadata {
-        <<pydantic>>
-        +paper_id: str
-        +title: str
-        +authors: list~str~
-        +year: int
-        +abstract: str
-        +unique_id: str
-    }
-    class Chunk {
-        <<pydantic>>
-        +paper_id: str
-        +unique_id: str
-        +chunk_text: str
-        +chunk_type: ChunkType
-        +page_number: int
-    }
-    class RAGRequest {
-        <<pydantic>>
-        +query_text: str
-        +paper_ids: list~str~
-        +limit: int
-        +max_tokens: int
-        +use_hybrid: bool
-        +include_citations: bool
-    }
-    class RAGResponse {
-        <<pydantic>>
-        +answer: str
-        +sources: list~Source~
-        +cited_paper_ids: list~str~
-    }
+## Dependencies
 
-    %% ── Services ──────────────────────────────────────
-    class QdrantService {
-        -client: QdrantClient
-        +create_collection(name, vector_size, search_type)
-        +upsert_chunks(name, chunks, vectors, sparse_vectors)
-        +search(name, query_vector, limit, paper_ids, sparse_vector, use_hybrid)
-        +get_vector_size(name) int
-        +delete_collection(name)
-        +delete_by_paper_id(name, paper_id)
-        -_collection_uses_named_vectors(name) bool
-        -_collection_has_sparse(name) bool
-    }
-    class OllamaService {
-        -url: str
-        -model: str
-        -embedding_model: str
-        +generate_embedding(text) list~float~
-        +generate_embeddings_batch(texts) list
-        +generate(prompt, temperature, max_tokens) str
-        +check_health() bool
-    }
-    class SparseEmbeddingService {
-        -_model: SparseTextEmbedding
-        +generate_sparse_embedding(text) dict
-        +generate_sparse_embeddings_batch(texts) list~dict~
-        -_get_model()
-    }
-    class ChunkingService {
-        -chunk_size: int
-        -overlap: int
-        -mode: str
-        +chunk_text(text) list~str~
-        -_chunk_by_characters(text)
-        -_chunk_by_tokens(text)
-    }
-    class CollectionService {
-        -qdrant: QdrantService
-        -data_dir: Path
-        +create_collection(name, description) Collection
-        +list_collections() list~Collection~
-        +get_collection(id) Collection
-        +delete_collection(id)
-        -_read_collection_info(path) dict
-        -_count_papers(path) int
-    }
-    class IngestionService {
-        -chunking_service: ChunkingService
-        -ollama_service: OllamaService
-        -qdrant_service: QdrantService
-        -sparse_embedding_service: SparseEmbeddingService
-        +scan_preprocessed(path) dict
-        +create_collection(id, name, desc, search_type) dict
-        +ingest_file(collection_id, md_path, metadata_path) dict
-        -_is_hybrid_collection(id) bool
-    }
-    class PreprocessingService {
-        -converter: DocumentConverter
-        -pdf_input_dir: Path
-        -preprocessed_dir: Path
-        +list_directories() list~dict~
-        +scan_directory(dir_name) list~dict~
-        +convert_single_pdf(dir_name, filename) dict
-        +get_assets(dir_name, filename) dict
-        +delete_preprocessed(dir_name, filename) dict
-        -_extract_paper_metadata(doc, fallback) dict
-        -_parse_authors(raw) list~str~
-        -_extract_tables(doc, path) list~dict~
-        -_extract_images(doc, path) list~dict~
-    }
-    class MetadataService {
-        -data_dir: Path
-        +get_paper_metadata(collection_id, paper_id) PaperMetadata
-        +list_papers(collection_id) list~dict~
-    }
-    class CitationService {
-        +format_apa(metadata) str
-        +format_bibtex(metadata) str
-    }
+External packages and services that PRAG relies on. These are installed automatically — you only need Docker to run Qdrant and Ollama locally.
 
-    %% ── API Routers ───────────────────────────────────
-    class PreprocessRouter {
-        <<FastAPI Router>>
-        GET /preprocess/directories
-        POST /preprocess/scan
-        POST /preprocess/convert
-        POST /preprocess/delete
-        POST /preprocess/assets
-    }
-    class IngestRouter {
-        <<FastAPI Router>>
-        POST /ingest/scan
-        POST /ingest/create
-        POST /ingest/~collection_id~/file
-    }
-    class CollectionsRouter {
-        <<FastAPI Router>>
-        GET /collections
-        POST /collections
-        GET /collections/~id~
-        DELETE /collections/~id~
-    }
-    class RAGRouter {
-        <<FastAPI Router>>
-        POST /collections/~id~/rag
-        +_clean_context(text) str
-    }
-    class SummarizeRouter {
-        <<FastAPI Router>>
-        POST /collections/~id~/summarize
-    }
-    class CompareRouter {
-        <<FastAPI Router>>
-        POST /collections/~id~/compare
-    }
+- **PDF Processing**
+  - **Docling** — converts PDFs to structured Markdown, preserving tables and layout
+  - **PyMuPDF4LLM** — fast alternative PDF extractor for simpler documents
+  - **OpenAlex / CrossRef / Semantic Scholar** — public APIs used to enrich papers with metadata (authors, year, abstract, DOI)
+- **Database Management**
+  - **Qdrant** — vector database that stores chunk embeddings and handles similarity search
+  - **FastEmbed** — generates sparse BM42 vectors for hybrid search
+- **LLM Engines**
+  - **Ollama** — runs LLMs locally (embeddings + text generation); the core and default backend
+  - **Anthropic** *(optional)* — cloud LLM backend using Claude models; requires an API key
+  - **Google Gemini** *(optional)* — cloud LLM backend; requires an API key
+- **Application**
+  - **Docker Compose** — orchestrates Qdrant and Ollama containers alongside the app
+  - **FastAPI** — Python web framework powering the REST API
+  - **Vue.js** — lightweight JavaScript framework for the frontend; communicates with FastAPI over HTTP
 
-    %% ── Frontend ──────────────────────────────────────
-    class StreamlitApp {
-        <<Streamlit>>
-        Tab 1 · PDF Management
-        Tab 2 · Collection Management
-        Tab 3 · RAG
-        Tab 4 · Summarize
-        Tab 5 · Compare
-        Sidebar · Settings
-    }
+> **Note on LLM backends:** Ollama is the intended default — it runs entirely locally with no API key or internet connection required. Anthropic and Google Gemini are fully optional alternatives for users who prefer cloud-hosted models.
 
-    %% ── Relationships: Services → External ────────────
-    QdrantService --> Qdrant : query_points\nupsert\ncreate_collection
-    OllamaService --> Ollama : embeddings\ngenerate
-    SparseEmbeddingService --> FastEmbed : embed
-    PreprocessingService --> Docling : convert
-    PreprocessingService --> Filesystem : read PDF\nwrite .md + .json
-    CollectionService --> Filesystem : read collection_info.json
-    IngestionService --> Filesystem : read .md\nwrite metadata
-    MetadataService --> Filesystem : read metadata JSON
+---
 
-    %% ── Relationships: Services → Services ────────────
-    CollectionService --> QdrantService
-    IngestionService --> ChunkingService
-    IngestionService --> OllamaService
-    IngestionService --> QdrantService
-    IngestionService --> SparseEmbeddingService
+## Services
 
-    %% ── Relationships: Routers → Services ─────────────
-    PreprocessRouter --> PreprocessingService
-    IngestRouter --> IngestionService
-    CollectionsRouter --> CollectionService
-    RAGRouter --> QdrantService
-    RAGRouter --> OllamaService
-    RAGRouter --> CollectionService
-    RAGRouter --> CitationService
-    RAGRouter --> MetadataService
-    RAGRouter --> SparseEmbeddingService
-    SummarizeRouter --> QdrantService
-    SummarizeRouter --> OllamaService
-    SummarizeRouter --> CollectionService
-    SummarizeRouter --> MetadataService
-    CompareRouter --> QdrantService
-    CompareRouter --> OllamaService
-    CompareRouter --> CollectionService
-    CompareRouter --> MetadataService
+Each service is a Python class in `backend/app/services/` with one clear responsibility. Services are injected into API endpoints via FastAPI dependency injection.
 
-    %% ── Relationships: Frontend → Routers ─────────────
-    StreamlitApp --> PreprocessRouter : httpx
-    StreamlitApp --> IngestRouter : httpx
-    StreamlitApp --> CollectionsRouter : httpx
-    StreamlitApp --> RAGRouter : httpx
-    StreamlitApp --> SummarizeRouter : httpx
-    StreamlitApp --> CompareRouter : httpx
+- **PDF Processing**
+  - **PDF Converter** (`pdf_converter_base.py`) — abstract base that selects Docling or PyMuPDF4LLM per file
+  - **Docling** (`docling_service.py`) — wraps Docling's `DocumentConverter` for high-fidelity PDF conversion
+  - **PyMuPDF4LLM** (`pymupdf4llm_service.py`) — wraps PyMuPDF for fast, lightweight extraction
+  - **Preprocessing** (`preprocessing_service.py`) — orchestrates PDF → Markdown, extracts tables and images, saves outputs to disk
+  - **Paper Metadata** (`paper_metadata_api_service.py`) — queries OpenAlex, CrossRef, and Semantic Scholar to enrich paper metadata
+  - **Zotero** (`zotero_service.py`) — connects to the Zotero Web API to browse and import a user's library
+- **Data & Retrieval**
+  - **Ingestion** (`ingestion_service.py`) — reads Markdown files, chunks text, generates embeddings, upserts to Qdrant
+  - **Chunking** (`chunking_service.py`) — splits text into overlapping chunks by characters or tokens
+  - **Metadata** (`metadata_service.py`) — reads and writes per-paper JSON metadata from the filesystem
+  - **Collection** (`collection_service.py`) — manages collection directories and `collection_info.json` files
+  - **Citation** (`citation_service.py`) — formats paper metadata as APA or BibTeX citations
+  - **Qdrant** (`qdrant_service.py`) — wraps the Qdrant client: create collections, upsert, search (dense + hybrid RRF)
+  - **Sparse Embedding** (`sparse_embedding_service.py`) — generates BM42 sparse vectors via FastEmbed for hybrid search
+- **LLM & Prompts**
+  - **Ollama** (`ollama_service.py`) — generates dense embeddings and LLM completions via local Ollama
+  - **Anthropic** (`anthropic_service.py`) — calls Anthropic's Claude API as an optional LLM backend
+  - **Google** (`google_service.py`) — calls Google Gemini API as an optional LLM backend
+  - **Prompt** (`prompt_service.py`) — loads, validates, and renders YAML prompt templates with variable substitution
+  - **API Keys** (`api_keys_service.py`) — stores and retrieves cloud API keys (Anthropic, Google) at runtime
 
-    %% ── Relationships: Models used by ─────────────────
-    RAGRouter ..> RAGRequest : receives
-    RAGRouter ..> RAGResponse : returns
-    CollectionService ..> Collection : returns
-    IngestionService ..> Chunk : creates
-    MetadataService ..> PaperMetadata : returns
+---
+
+## API Endpoints
+
+HTTP endpoints served by FastAPI. Called by the Vue.js frontend, any custom application, or directly via the interactive explorer below.
+
+- **Ingestion Pipeline**
+  - **/preprocess** — list directories, convert PDFs to Markdown, manage converted assets
+  - **/ingest** — scan preprocessed files, create collections, push chunks and embeddings into Qdrant
+  - **/pipeline** — end-to-end shortcut: runs preprocess + ingest in a single call
+  - **/zotero** — browse and import papers from a connected Zotero library
+- **Collection & Papers**
+  - **/collections** — create, list, get, and delete paper collections
+  - **/papers** — list, retrieve, and delete paper metadata within a collection
+- **AI / RAG**
+  - **/rag** — run a RAG query against a collection; returns an LLM-generated answer with source citations
+  - **/compare** — compare two or more papers side by side using LLM reasoning
+  - **/summarize** — generate a structured summary of a single paper
+  - **/prompts** — list and retrieve YAML prompt templates by task type
+- **System**
+  - **/settings** — read and update runtime configuration (config.yaml) without restarting
+  - **/health** — check that Qdrant and Ollama are reachable; used by the frontend status indicator
+
+---
+
+## Interactive API Explorer
+
+FastAPI ships with two built-in interactive documentation UIs — no extra setup needed. Start the backend and open either URL in your browser:
+
+| UI | URL | Best for |
+|---|---|---|
+| **Swagger UI** | `http://localhost:8000/docs` | Try endpoints live, fill in parameters, see responses |
+| **ReDoc** | `http://localhost:8000/redoc` | Clean read-only reference, easier to browse all endpoints |
+
+Both UIs are auto-generated from the code and stay in sync as the API evolves.
+
+---
+
+## Data Flow
+
+```
+PDF files
+   └─▶ Preprocessing (Docling / PyMuPDF4LLM)
+          └─▶ Markdown + metadata JSON on disk
+                 └─▶ Ingestion
+                        ├─▶ Chunking
+                        ├─▶ Embeddings (Ollama dense + FastEmbed sparse)
+                        └─▶ Qdrant (vector storage)
+
+Query
+   └─▶ RAG / Summarize / Compare endpoint
+          ├─▶ Qdrant search (dense or hybrid retrieval)
+          ├─▶ Context assembly + citation formatting
+          └─▶ LLM generation (Ollama · Anthropic* · Google*)
+                 └─▶ Answer + sources
+
+* optional cloud backends
 ```
