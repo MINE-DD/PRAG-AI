@@ -17,6 +17,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.mermaid",
 ]
 
 intersphinx_mapping = {
@@ -34,7 +35,7 @@ autodoc_mock_imports = [
 ]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "superpowers", "plans"]
 
 html_theme = "furo"
 html_static_path = ["_static"]

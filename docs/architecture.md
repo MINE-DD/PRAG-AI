@@ -1,130 +1,98 @@
 # PRAG Architecture
 
 PRAG is a **Retrieval-Augmented Generation (RAG)** system for academic research papers.
-You upload PDFs, organize them into collections, and use local or cloud LLMs to query,
-summarize, and compare papers — all through a Streamlit frontend backed by a FastAPI service.
+Upload PDFs, organize them into collections, and use local LLMs (via Ollama) to query,
+summarize, and compare papers — through a Vue.js frontend backed by a FastAPI service.
 
-The system is organized in three layers:
-
-- **Dependencies** — external tools and services PRAG relies on
-- **API** — HTTP endpoints the frontend (and any external tool) calls
-- **Services** — internal logic: PDF conversion, embeddings, chunking, LLM calls, and more
+The system is organized in three layers: **Dependencies** (external tools), **Services** (internal logic), and **API** (HTTP endpoints).
 
 ---
 
-## System Overview
+## Dependencies
 
-```mermaid
-flowchart TB
+External packages and services that PRAG relies on. These are installed automatically — you only need Docker to run Qdrant and Ollama locally.
 
-    subgraph DEPS["PRAG Dependencies"]
-        direction LR
-        Docling["Docling\nPDF → Markdown"]
-        PyMuPDF["PyMuPDF4LLM\nFast PDF extract"]
-        MetaAPIs["OpenAlex · CrossRef\nSemantic Scholar"]
-        QdrantDep["Qdrant\nVector DB"]
-        OllamaDep["Ollama\nLocal LLMs"]
-        AnthropicDep["Anthropic\nClaude API"]
-        GoogleDep["Google Gemini\nAPI"]
-        DC["Docker Compose"]
-        FP["FastAPI"]
-        ST["Streamlit"]
-    end
+- **PDF Processing**
+  - **Docling** — converts PDFs to structured Markdown, preserving tables and layout
+  - **PyMuPDF4LLM** — fast alternative PDF extractor for simpler documents
+  - **OpenAlex / CrossRef / Semantic Scholar** — public APIs used to enrich papers with metadata (authors, year, abstract, DOI)
+- **Database Management**
+  - **Qdrant** — vector database that stores chunk embeddings and handles similarity search
+  - **FastEmbed** — generates sparse BM42 vectors for hybrid search
+- **LLM Engines**
+  - **Ollama** — runs LLMs locally (embeddings + text generation); the core and default backend
+  - **Anthropic** *(optional)* — cloud LLM backend using Claude models; requires an API key
+  - **Google Gemini** *(optional)* — cloud LLM backend; requires an API key
+- **Application**
+  - **Docker Compose** — orchestrates Qdrant and Ollama containers alongside the app
+  - **FastAPI** — Python web framework powering the REST API
+  - **Vue.js** — lightweight JavaScript framework for the frontend; communicates with FastAPI over HTTP
 
-    subgraph API["API PRAG"]
-        direction LR
-        EP_pre["Preprocess\nPDF → Markdown"]
-        EP_ing["Ingest\nMarkdown → Chunks"]
-        EP_pap["Papers\nMetadata & Files"]
-        EP_col["Collections\nCRUD"]
-        EP_rag["RAG\nQuery & Answer"]
-        EP_cmp["Compare\nMulti-paper"]
-        EP_sum["Summarize\nSingle paper"]
-        EP_pro["Prompts\nManage templates"]
-        EP_pip["Pipeline\nEnd-to-end"]
-        EP_zot["Zotero\nLibrary sync"]
-        EP_set["Settings\nConfig"]
-        EP_hlt["Health\nStatus check"]
-    end
-
-    subgraph SVC["Services PRAG"]
-        direction LR
-        S_pdf["PDF Converter\nDocling / PyMuPDF4LLM"]
-        S_pre["Preprocessing"]
-        S_pma["Paper Metadata API"]
-        S_ing["Ingestion"]
-        S_chu["Chunking"]
-        S_met["Metadata"]
-        S_col["Collection"]
-        S_cit["Citation"]
-        S_qdr["Qdrant"]
-        S_spa["Sparse Embedding\nBM42 / FastEmbed"]
-        S_oll["Ollama"]
-        S_ant["Anthropic"]
-        S_goo["Google"]
-        S_pro["Prompt"]
-        S_key["API Keys"]
-        S_zot["Zotero"]
-    end
-
-    classDef blue  fill:#AEC6E8,stroke:#5B9BD5,color:#000,rx:6
-    classDef green fill:#B5D5A8,stroke:#70AD47,color:#000,rx:6
-    classDef pink  fill:#F4CCCC,stroke:#E06666,color:#000,rx:6
-
-    class Docling,PyMuPDF,MetaAPIs blue
-    class QdrantDep,OllamaDep,AnthropicDep,GoogleDep green
-    class DC,FP,ST pink
-
-    class EP_pre,EP_ing,EP_zot,EP_pip blue
-    class EP_pap,EP_col,EP_rag,EP_cmp,EP_sum,EP_pro green
-    class EP_set,EP_hlt pink
-
-    class S_pdf,S_pre,S_pma,S_ing,S_chu,S_met blue
-    class S_col,S_cit,S_qdr,S_spa green
-    class S_oll,S_ant,S_goo,S_pro,S_key,S_zot pink
-```
-
----
-
-## API Endpoints
-
-| Endpoint | Method(s) | Description |
-|---|---|---|
-| `/preprocess` | GET, POST | List directories, convert PDFs to Markdown, manage assets |
-| `/ingest` | POST | Scan preprocessed files, create collections, ingest chunks into Qdrant |
-| `/papers` | GET, DELETE | List papers in a collection, retrieve or remove metadata |
-| `/collections` | GET, POST, DELETE | Create, list, and delete paper collections |
-| `/collections/{id}/rag` | POST | Run a RAG query against a collection |
-| `/collections/{id}/summarize` | POST | Summarize a single paper using retrieved context |
-| `/collections/{id}/compare` | POST | Compare two or more papers side by side |
-| `/prompts` | GET | List and retrieve prompt templates by task type |
-| `/pipeline` | POST | Run the full preprocess → ingest pipeline in one call |
-| `/zotero` | GET, POST | Browse and import papers from a Zotero library |
-| `/settings` | GET, PATCH | Read and update runtime configuration (config.yaml) |
-| `/health` | GET | Check that Qdrant and Ollama are reachable |
+> **Note on LLM backends:** Ollama is the intended default — it runs entirely locally with no API key or internet connection required. Anthropic and Google Gemini are fully optional alternatives for users who prefer cloud-hosted models.
 
 ---
 
 ## Services
 
-| Service | Responsibility |
-|---|---|
-| **PDF Converter** | Abstracts Docling and PyMuPDF4LLM; selects the right converter per file |
-| **Preprocessing** | Orchestrates PDF → Markdown conversion, extracts tables and images |
-| **Paper Metadata API** | Fetches paper metadata from OpenAlex, CrossRef, and Semantic Scholar |
-| **Ingestion** | Reads Markdown files, creates chunks, generates embeddings, upserts to Qdrant |
-| **Chunking** | Splits text into overlapping chunks by characters or tokens |
-| **Metadata** | Reads and writes per-paper JSON metadata from the filesystem |
-| **Collection** | Manages collection directories and `collection_info.json` files |
-| **Citation** | Formats paper metadata as APA or BibTeX citations |
-| **Qdrant** | Wraps the Qdrant client: create collections, upsert, search (dense + hybrid RRF) |
-| **Sparse Embedding** | Generates BM42 sparse vectors via FastEmbed for hybrid search |
-| **Ollama** | Generates dense embeddings and LLM completions via local Ollama instance |
-| **Anthropic** | Calls Anthropic's Claude API as an alternative LLM backend |
-| **Google** | Calls Google Gemini API as an alternative LLM backend |
-| **Prompt** | Loads, validates, and renders YAML prompt templates with variable substitution |
-| **API Keys** | Stores and retrieves cloud API keys (Anthropic, Google) at runtime |
-| **Zotero** | Connects to the Zotero Web API to browse and import a user's library |
+Each service is a Python class in `backend/app/services/` with one clear responsibility. Services are injected into API endpoints via FastAPI dependency injection.
+
+- **PDF Processing**
+  - **PDF Converter** (`pdf_converter_base.py`) — abstract base that selects Docling or PyMuPDF4LLM per file
+  - **Docling** (`docling_service.py`) — wraps Docling's `DocumentConverter` for high-fidelity PDF conversion
+  - **PyMuPDF4LLM** (`pymupdf4llm_service.py`) — wraps PyMuPDF for fast, lightweight extraction
+  - **Preprocessing** (`preprocessing_service.py`) — orchestrates PDF → Markdown, extracts tables and images, saves outputs to disk
+  - **Paper Metadata** (`paper_metadata_api_service.py`) — queries OpenAlex, CrossRef, and Semantic Scholar to enrich paper metadata
+  - **Zotero** (`zotero_service.py`) — connects to the Zotero Web API to browse and import a user's library
+- **Data & Retrieval**
+  - **Ingestion** (`ingestion_service.py`) — reads Markdown files, chunks text, generates embeddings, upserts to Qdrant
+  - **Chunking** (`chunking_service.py`) — splits text into overlapping chunks by characters or tokens
+  - **Metadata** (`metadata_service.py`) — reads and writes per-paper JSON metadata from the filesystem
+  - **Collection** (`collection_service.py`) — manages collection directories and `collection_info.json` files
+  - **Citation** (`citation_service.py`) — formats paper metadata as APA or BibTeX citations
+  - **Qdrant** (`qdrant_service.py`) — wraps the Qdrant client: create collections, upsert, search (dense + hybrid RRF)
+  - **Sparse Embedding** (`sparse_embedding_service.py`) — generates BM42 sparse vectors via FastEmbed for hybrid search
+- **LLM & Prompts**
+  - **Ollama** (`ollama_service.py`) — generates dense embeddings and LLM completions via local Ollama
+  - **Anthropic** (`anthropic_service.py`) — calls Anthropic's Claude API as an optional LLM backend
+  - **Google** (`google_service.py`) — calls Google Gemini API as an optional LLM backend
+  - **Prompt** (`prompt_service.py`) — loads, validates, and renders YAML prompt templates with variable substitution
+  - **API Keys** (`api_keys_service.py`) — stores and retrieves cloud API keys (Anthropic, Google) at runtime
+
+---
+
+## API Endpoints
+
+HTTP endpoints served by FastAPI. Called by the Vue.js frontend, any custom application, or directly via the interactive explorer below.
+
+- **Ingestion Pipeline**
+  - **/preprocess** — list directories, convert PDFs to Markdown, manage converted assets
+  - **/ingest** — scan preprocessed files, create collections, push chunks and embeddings into Qdrant
+  - **/pipeline** — end-to-end shortcut: runs preprocess + ingest in a single call
+  - **/zotero** — browse and import papers from a connected Zotero library
+- **Collection & Papers**
+  - **/collections** — create, list, get, and delete paper collections
+  - **/papers** — list, retrieve, and delete paper metadata within a collection
+- **AI / RAG**
+  - **/rag** — run a RAG query against a collection; returns an LLM-generated answer with source citations
+  - **/compare** — compare two or more papers side by side using LLM reasoning
+  - **/summarize** — generate a structured summary of a single paper
+  - **/prompts** — list and retrieve YAML prompt templates by task type
+- **System**
+  - **/settings** — read and update runtime configuration (config.yaml) without restarting
+  - **/health** — check that Qdrant and Ollama are reachable; used by the frontend status indicator
+
+---
+
+## Interactive API Explorer
+
+FastAPI ships with two built-in interactive documentation UIs — no extra setup needed. Start the backend and open either URL in your browser:
+
+| UI | URL | Best for |
+|---|---|---|
+| **Swagger UI** | `http://localhost:8000/docs` | Try endpoints live, fill in parameters, see responses |
+| **ReDoc** | `http://localhost:8000/redoc` | Clean read-only reference, easier to browse all endpoints |
+
+Both UIs are auto-generated from the code and stay in sync as the API evolves.
 
 ---
 
@@ -141,8 +109,10 @@ PDF files
 
 Query
    └─▶ RAG / Summarize / Compare endpoint
-          ├─▶ Qdrant search (dense or hybrid RRF)
+          ├─▶ Qdrant search (dense or hybrid retrieval)
           ├─▶ Context assembly + citation formatting
-          └─▶ LLM generation (Ollama · Anthropic · Google)
+          └─▶ LLM generation (Ollama · Anthropic* · Google*)
                  └─▶ Answer + sources
+
+* optional cloud backends
 ```
