@@ -50,7 +50,23 @@ Models for `hf_vlm_model` / `HuggingFaceService(vlm_model_id=...)` and `HuggingF
 | `microsoft/Phi-3.5-vision-instruct` | 4B | Compact multimodal from Microsoft, permissive licence. |
 | `google/paligemma-3b-mix-224` | 3B | Requires HF token (accept Google licence). |
 
-### Specialised OCR models
+---
+
+## Ollama Vision-Language Models (OllamaVLMConverter)
+
+Models for `OllamaVLMConverter(model=...)`. Pull with `ollama pull <model>` before use.
+
+| Model | Size | Notes |
+|---|---|---|
+| `llava-phi3` | 3B | **Recommended default.** Fast, good quality, runs well on Apple Silicon. |
+| `moondream` | 1.8B | Lightest option; lower quality but very fast. |
+| `llava:7b` | 7B | Stronger quality; needs ≥8GB VRAM. |
+| `llava:13b` | 13B | Best Llava quality; needs ≥16GB VRAM. |
+| `minicpm-v` | 8B | Strong document and OCR understanding. |
+
+---
+
+### Specialised OCR models (HuggingFace only)
 
 For pure OCR (no conversational interface needed):
 
@@ -71,7 +87,7 @@ For pure OCR (no conversational interface needed):
 | GPU 8–16GB VRAM | 3B models, or 7B with 4-bit quantisation (`load_in_4bit=True` via bitsandbytes) |
 | CPU only | 3B models only; inference will be slow (minutes per query) |
 
-> `device_map="auto"` in `HuggingFaceService` automatically distributes across all available GPUs and falls back to CPU.
+> `HuggingFaceService` auto-selects the best device: CUDA (Nvidia GPU) → MPS (Apple Silicon) → CPU.
 
 ---
 
