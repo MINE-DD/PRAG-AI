@@ -102,7 +102,7 @@ class HuggingFaceVLMConverter:
         images = []
         for page in doc:
             pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             images.append(img)
         doc.close()
         return images
