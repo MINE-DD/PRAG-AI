@@ -223,6 +223,138 @@ def test_get_vlm_pipe_raises_without_model_id():
 
 
 # ---------------------------------------------------------------------------
+# _get_text_pipe lazy loading
+# ---------------------------------------------------------------------------
+
+
+def test_get_text_pipe_lazy_loads():
+    svc = _make_service()
+    mock_pipe = Mock()
+    mock_transformers = Mock()
+    mock_transformers.pipeline.return_value = mock_pipe
+
+    with patch.dict("sys.modules", {"transformers": mock_transformers}):
+        with patch.object(HuggingFaceService, "_get_device", return_value="cpu"):
+            pipe = svc._get_text_pipe()
+
+    assert pipe is mock_pipe
+    assert svc._text_pipe is mock_pipe
+    mock_transformers.pipeline.assert_called_once_with(
+        "text-generation",
+        model="test/model",
+        device="cpu",
+        torch_dtype="auto",
+    )
+
+
+def test_get_text_pipe_cached_on_second_call():
+    svc = _make_service()
+    mock_pipe = Mock()
+    svc._text_pipe = mock_pipe
+    assert svc._get_text_pipe() is mock_pipe
+
+
+# ---------------------------------------------------------------------------
+# _get_embed_model lazy loading
+# ---------------------------------------------------------------------------
+
+
+def test_get_embed_model_lazy_loads():
+    svc = _make_service()
+    mock_tokenizer = Mock()
+    mock_model_instance = Mock()
+
+    mock_automodel = Mock()
+    mock_automodel.from_pretrained.return_value.to.return_value = mock_model_instance
+    mock_autotokenizer = Mock()
+    mock_autotokenizer.from_pretrained.return_value = mock_tokenizer
+
+    mock_transformers = Mock()
+    mock_transformers.AutoModel = mock_automodel
+    mock_transformers.AutoTokenizer = mock_autotokenizer
+
+    with patch.dict("sys.modules", {"transformers": mock_transformers}):
+        with patch.object(HuggingFaceService, "_get_device", return_value="cpu"):
+            tokenizer, model = svc._get_embed_model()
+
+    assert tokenizer is mock_tokenizer
+    assert model is mock_model_instance
+    mock_model_instance.eval.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _get_vlm_pipe lazy loading
+# ---------------------------------------------------------------------------
+
+
+def test_get_vlm_pipe_lazy_loads():
+    svc = _make_service(vlm_model_id="test/vlm")
+    mock_pipe = Mock()
+    mock_transformers = Mock()
+    mock_transformers.pipeline.return_value = mock_pipe
+
+    with patch.dict("sys.modules", {"transformers": mock_transformers}):
+        with patch.object(HuggingFaceService, "_get_device", return_value="cpu"):
+            pipe = svc._get_vlm_pipe()
+
+    assert pipe is mock_pipe
+    assert svc._vlm_pipe is mock_pipe
+    mock_transformers.pipeline.assert_called_once_with(
+        "image-text-to-text",
+        model="test/vlm",
+        device="cpu",
+        torch_dtype="auto",
+    )
+
+
+# ---------------------------------------------------------------------------
+# _mean_pool
+# ---------------------------------------------------------------------------
+
+
+def test_mean_pool_returns_normalised_list():
+    import torch
+
+    # 1 batch, 3 tokens, 4 dims — all ones → mean = ones → L2 norm = 0.5 each
+    token_embeddings = torch.ones(1, 3, 4)
+    attention_mask = torch.ones(1, 3)
+
+    result = HuggingFaceService._mean_pool(token_embeddings, attention_mask)
+
+    assert isinstance(result, list)
+    assert len(result) == 4
+    assert abs(result[0] - 0.5) < 1e-5
+
+
+def test_mean_pool_ignores_padding_tokens():
+    import torch
+
+    # Token 3 is padding (mask=0) — result should only reflect tokens 1-2
+    token_embeddings = torch.tensor([[[1.0, 0.0], [1.0, 0.0], [99.0, 99.0]]])
+    attention_mask = torch.tensor([[1, 1, 0]])
+
+    result = HuggingFaceService._mean_pool(token_embeddings, attention_mask)
+
+    # Mean of first two tokens: [1, 0] → L2-normalised → [1, 0]
+    assert abs(result[0] - 1.0) < 1e-5
+    assert abs(result[1] - 0.0) < 1e-5
+
+
+# ---------------------------------------------------------------------------
+# generate_multimodal — plain string branch
+# ---------------------------------------------------------------------------
+
+
+def test_generate_multimodal_plain_string_output():
+    svc = _make_service(vlm_model_id="test/vlm")
+    mock_pipe = Mock(return_value=[{"generated_text": "plain text"}])
+    svc._vlm_pipe = mock_pipe
+
+    result = svc.generate_multimodal(prompt="p", images=[Mock()])
+    assert result == "plain text"
+
+
+# ---------------------------------------------------------------------------
 # extract_from_image
 # ---------------------------------------------------------------------------
 
