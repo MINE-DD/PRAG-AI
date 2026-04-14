@@ -33,6 +33,11 @@ def _get_llm_info(config: dict) -> dict:
             "provider": "google",
             "model": llm_cfg.get("google_model", "gemini-2.5-flash"),
         }
+    if provider == "huggingface":
+        return {
+            "provider": "huggingface",
+            "model": llm_cfg.get("hf_model", settings.hf_text_model),
+        }
     return {"provider": "local", "model": llm_cfg.get("model", "")}
 
 
@@ -64,6 +69,16 @@ def _get_llm_service(config: dict):
             )
         model = llm_cfg.get("google_model", "gemini-2.5-flash")
         return GoogleService(api_key=api_key, model=model)
+
+    if provider == "huggingface":
+        from app.services.huggingface_service import HuggingFaceService
+
+        return HuggingFaceService(
+            model_id=llm_cfg.get("hf_model", settings.hf_text_model),
+            embedding_model_id=llm_cfg.get(
+                "hf_embedding_model", settings.hf_embedding_model
+            ),
+        )
 
     # Default: local Ollama
     return OllamaService(

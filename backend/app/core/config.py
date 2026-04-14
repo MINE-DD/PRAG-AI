@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     google_api_key: str | None = None
     prompts_dir: str = "/app/prompts"
+    hf_text_model: str = "Qwen/Qwen2.5-3B-Instruct"
+    hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    hf_vlm_model: str = "Qwen/Qwen2-VL-2B-Instruct"
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
