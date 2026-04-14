@@ -8,17 +8,15 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pytest
-
 backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
 from app.api.rag import _get_llm_info, _get_llm_service
 
-
 # ---------------------------------------------------------------------------
 # _get_llm_info
 # ---------------------------------------------------------------------------
+
 
 def test_get_llm_info_huggingface_uses_config_model():
     config = {
@@ -47,6 +45,7 @@ def test_get_llm_info_huggingface_falls_back_to_settings():
 # _get_llm_service
 # ---------------------------------------------------------------------------
 
+
 def test_get_llm_service_huggingface_returns_huggingface_service():
     config = {
         "models": {
@@ -62,15 +61,24 @@ def test_get_llm_service_huggingface_returns_huggingface_service():
     mock_hf_class = Mock(return_value=mock_hf_instance)
 
     with patch("app.api.rag.HuggingFaceService", mock_hf_class, create=True):
-        with patch.dict("sys.modules", {"app.services.huggingface_service": Mock(HuggingFaceService=mock_hf_class)}):
+        with patch.dict(
+            "sys.modules",
+            {
+                "app.services.huggingface_service": Mock(
+                    HuggingFaceService=mock_hf_class
+                )
+            },
+        ):
             # Patch the import inside the function
             with patch("builtins.__import__", wraps=__import__) as mock_import:
+
                 def side_effect(name, *args, **kwargs):
                     if name == "app.services.huggingface_service":
                         m = Mock()
                         m.HuggingFaceService = mock_hf_class
                         return m
                     return __import__(name, *args, **kwargs)
+
                 mock_import.side_effect = side_effect
                 service = _get_llm_service(config)
 

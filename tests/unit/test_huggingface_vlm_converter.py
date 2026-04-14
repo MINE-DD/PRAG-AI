@@ -12,10 +12,10 @@ sys.path.insert(0, str(backend_path))
 
 from app.services.huggingface_vlm_converter import HuggingFaceVLMConverter
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_converter(pages=2):
     """Return a converter with a mocked VLM service and patched _render_pages."""
@@ -29,6 +29,7 @@ def _make_converter(pages=2):
 # ---------------------------------------------------------------------------
 # convert_to_markdown
 # ---------------------------------------------------------------------------
+
 
 def test_convert_to_markdown_joins_pages_with_separator():
     conv, mock_svc, fake_imgs = _make_converter(pages=3)
@@ -57,18 +58,20 @@ def test_convert_to_markdown_passes_extract_prompt():
 
     call_kwargs = mock_svc.extract_from_image.call_args[1]
     assert "prompt" in call_kwargs
-    assert "extraction" in call_kwargs["prompt"].lower() or "extract" in call_kwargs["prompt"].lower()
+    assert (
+        "extraction" in call_kwargs["prompt"].lower()
+        or "extract" in call_kwargs["prompt"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
 # extract_metadata
 # ---------------------------------------------------------------------------
 
+
 def test_extract_metadata_parses_valid_json():
     conv, mock_svc, _ = _make_converter(pages=1)
-    mock_svc.extract_from_image.return_value = (
-        '{"title": "My Paper", "authors": "Alice, Bob", "abstract": "An abstract.", "year": 2023}'
-    )
+    mock_svc.extract_from_image.return_value = '{"title": "My Paper", "authors": "Alice, Bob", "abstract": "An abstract.", "year": 2023}'
 
     meta = conv.extract_metadata(Path("/fake/paper.pdf"), "fallback")
 
@@ -129,6 +132,7 @@ def test_extract_metadata_null_year_gives_none():
 # ---------------------------------------------------------------------------
 # _render_pages (mocking fitz and PIL)
 # ---------------------------------------------------------------------------
+
 
 def test_render_pages_returns_pil_images():
     mock_service = Mock()

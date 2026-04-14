@@ -12,10 +12,10 @@ sys.path.insert(0, str(backend_path))
 
 from app.services.ollama_vlm_converter import OllamaVLMConverter
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_converter(pages=2):
     """Return a converter with a mocked Ollama client and patched _render_pages."""
@@ -34,6 +34,7 @@ def _make_converter(pages=2):
 # ---------------------------------------------------------------------------
 # convert_to_markdown
 # ---------------------------------------------------------------------------
+
 
 def test_convert_to_markdown_joins_pages_with_separator():
     conv, mock_client, fake_pages = _make_converter(pages=3)
@@ -82,6 +83,7 @@ def test_convert_to_markdown_uses_correct_model():
 # extract_metadata
 # ---------------------------------------------------------------------------
 
+
 def test_extract_metadata_parses_valid_json():
     conv, mock_client, _ = _make_converter(pages=1)
     mock_client.chat.return_value = {
@@ -103,7 +105,7 @@ def test_extract_metadata_strips_markdown_fences():
     conv, mock_client, _ = _make_converter(pages=1)
     mock_client.chat.return_value = {
         "message": {
-            "content": "```json\n{\"title\": \"Wrapped\", \"authors\": \"Carol\", \"abstract\": null, \"year\": null}\n```"
+            "content": '```json\n{"title": "Wrapped", "authors": "Carol", "abstract": null, "year": null}\n```'
         }
     }
 
@@ -140,7 +142,9 @@ def test_extract_metadata_no_pages_returns_fallback():
 def test_extract_metadata_only_uses_first_page():
     conv, mock_client, fake_pages = _make_converter(pages=3)
     mock_client.chat.return_value = {
-        "message": {"content": '{"title": "T", "authors": "", "abstract": null, "year": null}'}
+        "message": {
+            "content": '{"title": "T", "authors": "", "abstract": null, "year": null}'
+        }
     }
 
     conv.extract_metadata(Path("/fake/paper.pdf"), "fallback")
@@ -153,6 +157,7 @@ def test_extract_metadata_only_uses_first_page():
 # ---------------------------------------------------------------------------
 # _render_pages (mocking fitz)
 # ---------------------------------------------------------------------------
+
 
 def test_render_pages_returns_jpeg_bytes():
     with patch("ollama.Client"):
