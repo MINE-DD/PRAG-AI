@@ -20,25 +20,9 @@ from pathlib import Path
 import ollama
 
 from app.services.pdf_converter_base import register_converter
+from app.services.prompt_service import PromptService
 
 logger = logging.getLogger(__name__)
-
-_EXTRACT_PROMPT = (
-    "You are a document extraction assistant. "
-    "Extract all text from this PDF page exactly as it appears. "
-    "Preserve headings, paragraphs, lists, and table structure using Markdown formatting. "
-    "Do not add commentary or summaries — output only the extracted content."
-)
-
-_METADATA_PROMPT = (
-    "Extract the following fields from this document page if present:\n"
-    "- title\n"
-    "- authors (comma-separated full names)\n"
-    "- abstract\n"
-    "- publication year (4-digit number)\n\n"
-    "Return ONLY a JSON object with keys: title, authors, abstract, year. "
-    "Use null for any field not found. Do not include any other text."
-)
 
 
 class OllamaVLMConverter:
@@ -48,11 +32,23 @@ class OllamaVLMConverter:
     via its chat API. Per-page outputs are concatenated with Markdown
     horizontal rules as page separators.
 
+    Prompts are loaded from the prompt template system (``vlm_extract`` and
+    ``vlm_metadata`` task types), allowing different prompt variants per
+    document type without changing code.
+
     Args:
         url: Ollama server URL.
         model: Vision-capable model name (must be pulled in Ollama first).
         dpi: Page render resolution. Higher DPI improves OCR quality but
             increases image size and inference time.
+        prompt_service: Service used to render extraction and metadata prompts.
+        extract_prompt_name: Named prompt under ``vlm_extract/`` to use for
+            per-page text extraction.
+        metadata_prompt_name: Named prompt under ``vlm_metadata/`` to use for
+            first-page metadata extraction.
+        document_type: Passed as ``{document_type}`` template variable to the
+            prompts. Use to tune extraction for a specific document class
+            (e.g. ``"academic paper"``, ``"invoice"``, ``"report"``).
     """
 
     name: str = "ollama_vlm"
@@ -62,10 +58,19 @@ class OllamaVLMConverter:
         url: str = "http://host.docker.internal:11434",
         model: str = "llava-phi3",
         dpi: int = 150,
+        *,
+        prompt_service: PromptService,
+        extract_prompt_name: str = "default",
+        metadata_prompt_name: str = "default",
+        document_type: str = "document",
     ) -> None:
         self.client = ollama.Client(host=url)
         self.model = model
         self.dpi = dpi
+        self._prompt_service = prompt_service
+        self._extract_prompt_name = extract_prompt_name
+        self._metadata_prompt_name = metadata_prompt_name
+        self._document_type = document_type
 
     # ──────────────────────────────────────────────────────────────────────
     # Protocol methods (PDFConverterBackend)
@@ -73,6 +78,11 @@ class OllamaVLMConverter:
 
     def convert_to_markdown(self, source_path: Path) -> str:
         """Convert all pages of a PDF to Markdown via Ollama VLM extraction."""
+        rendered = self._prompt_service.render(
+            "vlm_extract",
+            self._extract_prompt_name,
+            document_type=self._document_type,
+        )
         pages = self._render_pages(source_path)
         parts = []
         for i, img_bytes in enumerate(pages):
@@ -82,35 +92,34 @@ class OllamaVLMConverter:
                 len(pages),
                 source_path.name,
             )
-            response = self.client.chat(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": _EXTRACT_PROMPT,
-                        "images": [img_bytes],
-                    }
-                ],
+            messages = []
+            if rendered.system:
+                messages.append({"role": "system", "content": rendered.system})
+            messages.append(
+                {"role": "user", "content": rendered.user, "images": [img_bytes]}
             )
+            response = self.client.chat(model=self.model, messages=messages)
             parts.append(response["message"]["content"])
         return "\n\n---\n\n".join(parts)
 
     def extract_metadata(self, source_path: Path, fallback_title: str) -> dict:
-        """Extract title, authors, abstract, and year from the first page."""
+        """Extract title, authors or creators, summary, and date from the first page."""
         pages = self._render_pages(source_path)
         if not pages:
             return self._empty_metadata(fallback_title)
 
-        response = self.client.chat(
-            model=self.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": _METADATA_PROMPT,
-                    "images": [pages[0]],
-                }
-            ],
+        rendered = self._prompt_service.render(
+            "vlm_metadata",
+            self._metadata_prompt_name,
+            document_type=self._document_type,
         )
+        messages = []
+        if rendered.system:
+            messages.append({"role": "system", "content": rendered.system})
+        messages.append(
+            {"role": "user", "content": rendered.user, "images": [pages[0]]}
+        )
+        response = self.client.chat(model=self.model, messages=messages)
         raw = response["message"]["content"]
         return self._parse_metadata_json(raw, fallback_title)
 

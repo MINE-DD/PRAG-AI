@@ -14,6 +14,7 @@ from app.api.preprocess import _safe
 from app.core.config import settings
 from app.services.collection_service import CollectionService
 from app.services.preprocessing_service import PreprocessingService
+from app.services.prompt_service import get_prompt_service
 from app.services.qdrant_service import QdrantService
 
 router = APIRouter()
@@ -35,7 +36,7 @@ def run_pipeline(req: PipelineRequest):
     """Convert all unconverted PDFs in a directory, create a collection, ingest all. Streams SSE."""
     dir_name = _safe(req.dir_name)
 
-    prep_svc = PreprocessingService()
+    prep_svc = PreprocessingService(prompt_service=get_prompt_service())
     try:
         files = prep_svc.scan_directory(dir_name)
     except FileNotFoundError as e:

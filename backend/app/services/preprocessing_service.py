@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Ensure backend modules register themselves
 import app.services.docling_service  # noqa: F401
@@ -10,6 +13,9 @@ import app.services.pymupdf4llm_service  # noqa: F401
 from app.core.config import settings
 from app.services.paper_metadata_api_service import enrich_metadata as _api_enrich
 from app.services.pdf_converter_base import get_converter
+
+if TYPE_CHECKING:
+    from app.services.prompt_service import PromptService
 
 # Module-level lock for thread-safe history.json writes
 _history_lock = threading.Lock()
@@ -22,10 +28,12 @@ class PreprocessingService:
         self,
         pdf_input_dir: str | None = None,
         preprocessed_dir: str | None = None,
+        prompt_service: PromptService | None = None,
     ):
         self.pdf_input_dir = Path(pdf_input_dir or settings.pdf_input_dir)
         self.preprocessed_dir = Path(preprocessed_dir or settings.preprocessed_dir)
         self.history_path = self.preprocessed_dir / "history.json"
+        self._prompt_service = prompt_service
 
     def list_directories(self) -> list[dict]:
         """List subdirectories under pdf_input_dir with PDF counts."""
@@ -83,7 +91,13 @@ class PreprocessingService:
 
         stem = source_path.stem
 
-        converter = get_converter(backend)
+        if backend == "ollama_vlm" and self._prompt_service is None:
+            raise ValueError(
+                "A PromptService is required to use the ollama_vlm backend. "
+                "Pass prompt_service= when creating PreprocessingService."
+            )
+        kwargs = {"prompt_service": self._prompt_service} if backend == "ollama_vlm" else {}
+        converter = get_converter(backend, **kwargs)
         # Use convert_and_extract if available (avoids double conversion for Docling)
         if hasattr(converter, "convert_and_extract"):
             markdown_content, paper_meta = converter.convert_and_extract(

@@ -44,8 +44,11 @@ def register_converter(name: str, cls: type[PDFConverterBackend]) -> None:
     _CONVERTER_REGISTRY[name] = cls
 
 
-def get_converter(backend: str) -> PDFConverterBackend:
+def get_converter(backend: str, **kwargs) -> PDFConverterBackend:
     """Instantiate and return the converter registered under *backend*.
+
+    Extra *kwargs* are forwarded to the converter constructor. Backends that
+    do not accept a given kwarg will raise ``TypeError`` at instantiation time.
 
     Raises ``KeyError`` if *backend* has not been registered.
     """
@@ -56,7 +59,7 @@ def get_converter(backend: str) -> PDFConverterBackend:
             f"Unknown converter backend {backend!r}. "
             f"Available: {sorted(_CONVERTER_REGISTRY)}"
         )
-    return cls()
+    return cls(**kwargs)
 
 
 # ---------------------------------------------------------------------------

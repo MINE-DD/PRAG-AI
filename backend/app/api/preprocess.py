@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.core.config import load_config, settings
 from app.services.ollama_service import OllamaService
 from app.services.preprocessing_service import PreprocessingService
+from app.services.prompt_service import get_prompt_service
 
 router = APIRouter()
 
@@ -34,7 +35,7 @@ class ConvertRequest(BaseModel):
 
 
 def get_preprocessing_service() -> PreprocessingService:
-    return PreprocessingService()
+    return PreprocessingService(prompt_service=get_prompt_service())
 
 
 @router.get("/preprocess/directories")
