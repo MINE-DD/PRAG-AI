@@ -13,13 +13,13 @@ class ChunkType(str, Enum):
 
 
 class PaperMetadata(BaseModel):
-    """Metadata for a research paper"""
+    """Metadata for a document (paper, invoice, report, or any other type)."""
 
-    paper_id: str = Field(..., description="Unique paper identifier")
-    title: str = Field(..., description="Paper title")
-    authors: list[str] = Field(default_factory=list, description="List of authors")
-    year: int | None = Field(None, description="Publication year")
-    abstract: str | None = Field(None, description="Paper abstract")
+    paper_id: str = Field(..., description="Unique document identifier")
+    title: str = Field(..., description="Document title")
+    authors: list[str] = Field(default_factory=list, description="Authors or creators")
+    year: int | None = Field(None, description="Publication or creation year")
+    abstract: str | None = Field(None, description="Abstract or summary")
     keywords: list[str] = Field(default_factory=list, description="Keywords")
     journal_conference: str | None = Field(None, description="Publication venue")
     citations: list[str] = Field(default_factory=list, description="Cited papers")
@@ -27,6 +27,10 @@ class PaperMetadata(BaseModel):
     pdf_path: str | None = Field(None, description="Path to PDF file")
     figures: list[dict] = Field(default_factory=list, description="Figure metadata")
     publication_date: str | None = Field(None, description="Publication date")
+    extra_metadata: dict = Field(
+        default_factory=dict,
+        description="Document-type-specific fields (e.g. vendor, invoice_number for invoices)",
+    )
 
 
 class Chunk(BaseModel):

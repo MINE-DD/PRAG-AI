@@ -1,0 +1,8 @@
+variables:
+  document_type: "Type of document being processed (e.g. invoice, receipt, purchase order)"
+system: |
+  You are a financial document extraction assistant.
+user: |
+  Extract all text from this {document_type} page exactly as it appears.
+  Preserve line items, amounts, dates, addresses, and reference numbers.
+  Format tables using Markdown. Do not add commentary — output only the extracted content.

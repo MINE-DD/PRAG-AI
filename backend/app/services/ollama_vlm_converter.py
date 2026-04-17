@@ -142,7 +142,13 @@ class OllamaVLMConverter:
         return images
 
     def _parse_metadata_json(self, raw: str, fallback_title: str) -> dict:
-        """Parse the model's JSON output into the standard metadata dict."""
+        """Parse the model's JSON output into the standard metadata dict.
+
+        Known keys (title, authors, abstract, year) are mapped to fixed fields.
+        Any additional keys returned by the model are collected into extra_metadata,
+        allowing document-type-specific prompts to extract arbitrary fields.
+        """
+        _KNOWN_KEYS = {"title", "authors", "abstract", "year"}
         try:
             cleaned = (
                 raw.strip()
@@ -154,11 +160,13 @@ class OllamaVLMConverter:
             data = json.loads(cleaned)
             authors_raw = data.get("authors") or ""
             authors = [a.strip() for a in authors_raw.split(",") if a.strip()]
+            extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS and v is not None}
             return {
                 "title": data.get("title") or fallback_title,
                 "authors": authors,
                 "abstract": data.get("abstract"),
                 "publication_date": str(data["year"]) if data.get("year") else None,
+                "extra_metadata": extra,
             }
         except (json.JSONDecodeError, AttributeError, KeyError):
             logger.warning(
@@ -173,6 +181,7 @@ class OllamaVLMConverter:
             "authors": [],
             "abstract": None,
             "publication_date": None,
+            "extra_metadata": {},
         }
 
 

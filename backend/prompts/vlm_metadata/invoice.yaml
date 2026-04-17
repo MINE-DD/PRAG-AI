@@ -1,0 +1,19 @@
+variables:
+  document_type: "Type of document being processed (e.g. invoice, receipt, purchase order)"
+system: |
+  You are a financial document metadata extractor.
+user: |
+  Extract the following fields from this {document_type} if present:
+  - title (document title or type, e.g. "Invoice", "Receipt")
+  - authors (vendor or supplier name)
+  - abstract (null — not applicable)
+  - year (4-digit year from the document date)
+  - invoice_number (reference or invoice number)
+  - vendor (vendor or supplier name)
+  - client (client or bill-to name)
+  - total_amount (total amount due, as a string including currency symbol)
+  - issue_date (document date as written)
+  - due_date (payment due date if present)
+
+  Return ONLY a JSON object with these exact keys.
+  Use null for any field not found. Do not include any other text.

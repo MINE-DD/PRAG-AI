@@ -58,6 +58,7 @@ class MetadataService:
             abstract=data.get("abstract"),
             unique_id=data.get("unique_id", paper_id),
             publication_date=data.get("publication_date"),
+            extra_metadata=data.get("extra_metadata", {}),
         )
 
     def _extract_year(self, publication_date) -> int | None:

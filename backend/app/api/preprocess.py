@@ -32,6 +32,7 @@ class ConvertRequest(BaseModel):
     metadata_backend: str = (
         "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
     )
+    document_type: str = "default"  # matches a vlm_extract/vlm_metadata YAML name
 
 
 def get_preprocessing_service() -> PreprocessingService:
@@ -68,6 +69,7 @@ def convert_pdf(request: ConvertRequest):
             filename,
             backend=request.backend,
             metadata_backend=request.metadata_backend,
+            document_type=request.document_type,
         )
         return result
     except FileNotFoundError as e:

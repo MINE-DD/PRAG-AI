@@ -75,6 +75,7 @@ class PreprocessingService:
         filename: str,
         backend: str = "docling",
         metadata_backend: str = "openalex",
+        document_type: str = "default",
     ) -> dict:
         """Convert a single PDF to markdown + metadata JSON.
 
@@ -96,7 +97,16 @@ class PreprocessingService:
                 "A PromptService is required to use the ollama_vlm backend. "
                 "Pass prompt_service= when creating PreprocessingService."
             )
-        kwargs = {"prompt_service": self._prompt_service} if backend == "ollama_vlm" else {}
+        kwargs = (
+            {
+                "prompt_service": self._prompt_service,
+                "extract_prompt_name": document_type,
+                "metadata_prompt_name": document_type,
+                "document_type": document_type,
+            }
+            if backend == "ollama_vlm"
+            else {}
+        )
         converter = get_converter(backend, **kwargs)
         # Use convert_and_extract if available (avoids double conversion for Docling)
         if hasattr(converter, "convert_and_extract"):

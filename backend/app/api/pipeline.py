@@ -29,6 +29,7 @@ class PipelineRequest(BaseModel):
     chunk_size: int = 500
     chunk_overlap: int = 100
     chunk_mode: str = "tokens"
+    document_type: str = "default"  # matches a vlm_extract/vlm_metadata YAML name
 
 
 @router.post("/pipeline/run")
@@ -68,6 +69,7 @@ def run_pipeline(req: PipelineRequest):
                     fn,
                     backend=req.pdf_backend,
                     metadata_backend=req.metadata_backend,
+                    document_type=req.document_type,
                 )
                 successfully_converted.add(fn)
                 converted += 1
