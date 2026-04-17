@@ -33,8 +33,9 @@ const PipelinePanel = defineComponent({
           body: JSON.stringify({
             dir_name:         props.dirName,
             collection_name:  form.collectionName,
-            pdf_backend:      localStorage.getItem('prag_pdf_backend')  || 'pymupdf',
-            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+            pdf_backend:      localStorage.getItem('prag_pdf_backend')    || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend')  || 'openalex',
+            document_type:    localStorage.getItem('prag_document_type') || 'default',
           }),
         })
         if (!resp.ok) throw new Error(await resp.text())

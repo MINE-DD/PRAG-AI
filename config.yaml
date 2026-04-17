@@ -1,7 +1,7 @@
 models:
   embedding: nomic-embed-text:latest
   llm:
-    type: anthropic
+    type: local
     model: gemma4:e2b
     google_model: gemini-2.5-flash
     anthropic_model: claude-opus-4-6

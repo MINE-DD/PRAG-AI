@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 
 # Ensure backend modules register themselves
 import app.services.docling_service  # noqa: F401
+import app.services.ollama_vlm_converter  # noqa: F401
 import app.services.pymupdf4llm_service  # noqa: F401
-from app.core.config import settings
+from app.core.config import load_config, settings
 from app.services.paper_metadata_api_service import enrich_metadata as _api_enrich
 from app.services.pdf_converter_base import get_converter
 
@@ -97,16 +98,18 @@ class PreprocessingService:
                 "A PromptService is required to use the ollama_vlm backend. "
                 "Pass prompt_service= when creating PreprocessingService."
             )
-        kwargs = (
-            {
+        if backend == "ollama_vlm":
+            cfg = load_config("config.yaml")
+            vlm_model = cfg["models"]["llm"].get("model", "llava-phi3")
+            kwargs = {
                 "prompt_service": self._prompt_service,
                 "extract_prompt_name": document_type,
                 "metadata_prompt_name": document_type,
                 "document_type": document_type,
+                "model": vlm_model,
             }
-            if backend == "ollama_vlm"
-            else {}
-        )
+        else:
+            kwargs = {}
         converter = get_converter(backend, **kwargs)
         # Use convert_and_extract if available (avoids double conversion for Docling)
         if hasattr(converter, "convert_and_extract"):

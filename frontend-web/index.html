@@ -114,6 +114,14 @@
         <select v-model="settingsForm.pdfBackend">
           <option value="pymupdf">PyMuPDF (fast)</option>
           <option value="docling">Docling (thorough, slow)</option>
+          <option value="ollama_vlm">Ollama VLM (vision model)</option>
+        </select>
+      </div>
+      <div class="form-group" v-if="settingsForm.pdfBackend === 'ollama_vlm'">
+        <label>Document type</label>
+        <select v-model="settingsForm.documentType">
+          <option value="default">Default (research paper)</option>
+          <option value="invoice">Invoice</option>
         </select>
       </div>
       <div class="form-group">

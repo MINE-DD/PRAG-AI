@@ -21,11 +21,12 @@ createApp({
       backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
       metaBackend:      localStorage.getItem('prag_meta_backend')      || 'openalex',
       pdfBackend:       localStorage.getItem('prag_pdf_backend')        || 'pymupdf',
+      documentType:     localStorage.getItem('prag_document_type')      || 'default',
       embeddingModel: '',
       llmModel:       '',
       // Cloud LLM
       llmProvider:      'local',
-      anthropicModel:   'claude-opus-4-6',
+      anthropicModel:   'claude-sonnet-4-6',
       googleModel:      'gemini-2.5-flash',
       anthropicKey:     '',
       googleKey:        '',
@@ -109,6 +110,7 @@ createApp({
       loadingModels.value  = true
       settingsForm.metaBackend = localStorage.getItem('prag_meta_backend') || 'openalex'
       settingsForm.pdfBackend  = localStorage.getItem('prag_pdf_backend')  || 'pymupdf'
+      settingsForm.documentType = localStorage.getItem('prag_document_type') || 'default'
       try {
         const [cfg, models, cloudModels] = await Promise.all([
           api.get('/settings'),
@@ -190,6 +192,7 @@ createApp({
       localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
       localStorage.setItem('prag_meta_backend', settingsForm.metaBackend)
       localStorage.setItem('prag_pdf_backend',  settingsForm.pdfBackend)
+      localStorage.setItem('prag_document_type', settingsForm.documentType)
       try {
         await api.get('/health')
         settingsStatus.value = 'ok'

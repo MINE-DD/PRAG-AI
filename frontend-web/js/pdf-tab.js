@@ -97,6 +97,7 @@ const PdfTab = defineComponent({
           filename,
           backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
           metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+          document_type: localStorage.getItem('prag_document_type') || 'default',
         })
         if (fileMetadata[key] !== undefined) delete fileMetadata[key]
         await loadFiles(dirName, true)
@@ -152,6 +153,7 @@ const PdfTab = defineComponent({
             filename: file.filename,
             backend: localStorage.getItem('prag_pdf_backend') || 'pymupdf',
             metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+            document_type: localStorage.getItem('prag_document_type') || 'default',
           })
           const metaKey = `${dirName}/${file.filename}`
           if (metaKey in fileMetadata) delete fileMetadata[metaKey]

@@ -28,7 +28,7 @@ class ScanRequest(BaseModel):
 class ConvertRequest(BaseModel):
     dir_name: str
     filename: str
-    backend: str = "docling"  # "docling" or "pymupdf"
+    backend: str = "pymupdf"  # "docling", "pymupdf", or "ollama_vlm"
     metadata_backend: str = (
         "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
     )
