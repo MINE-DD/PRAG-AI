@@ -88,7 +88,7 @@
     <div class="modal">
       <div class="modal-title">⚙ Settings</div>
 
-      <!-- Connection -->
+      <!-- 1. Connection -->
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Connection</div>
       <div class="form-group">
         <label>Backend URL</label>
@@ -105,78 +105,31 @@
         Could not reach the backend at <strong>{{ settingsForm.backendUrl }}</strong>. Check that the URL is correct and the backend is running.
       </div>
 
+      <hr class="divider" />
+
+      <!-- 2. PDF Processing -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">PDF Processing</div>
       <div class="form-group">
-        <label>Preprocessed files directory (server-side path)</label>
-        <input type="text" v-model="settingsForm.preprocessedBase"
-               placeholder="/data/preprocessed" />
-        <div class="text-muted text-sm" style="margin-top:4px">Default: <code>/data/preprocessed</code></div>
+        <label>PDF conversion backend</label>
+        <select v-model="settingsForm.pdfBackend">
+          <option value="pymupdf">PyMuPDF (fast)</option>
+          <option value="docling">Docling (thorough, slow)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Metadata provider</label>
+        <select v-model="settingsForm.metaBackend">
+          <option value="openalex">OpenAlex (default)</option>
+          <option value="crossref">CrossRef</option>
+          <option value="semantic_scholar">Semantic Scholar</option>
+          <option value="none">None (skip enrichment)</option>
+        </select>
       </div>
 
       <hr class="divider" />
 
-      <!-- Models -->
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Ollama Models</div>
-
-      <div v-if="loadingModels" class="flex items-center gap-8" style="margin-bottom:16px">
-        <span class="spinner"></span>
-        <span class="text-muted text-sm">Loading available models…</span>
-      </div>
-
-      <div v-else-if="modelError" class="alert alert-warning" style="margin-bottom:16px;font-size:12px">
-        Could not reach Ollama: {{ modelError }}
-      </div>
-
-      <template v-else>
-        <div class="form-group">
-          <label>Embedding model</label>
-          <select v-model="settingsForm.embeddingModel">
-            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="form-group" v-if="settingsForm.llmProvider === 'local'">
-          <label>Generation (LLM) model</label>
-          <select v-model="settingsForm.llmModel">
-            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-      </template>
-
-      <!-- Pull recommended models -->
-      <div style="margin-top:16px">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
-          Don't see a model above? Pull a recommended one:
-        </div>
-        <div class="flex items-center gap-8">
-          <select v-model="pullModel" style="flex:1">
-            <optgroup label="Embedding">
-              <option v-for="m in recommendedEmbeddingModels" :key="m" :value="m">{{ m }}</option>
-            </optgroup>
-            <optgroup label="LLM">
-              <option v-for="m in recommendedLlmModels" :key="m" :value="m">{{ m }}</option>
-            </optgroup>
-          </select>
-          <button class="btn btn-secondary btn-sm" @click="pullOllamaModel" :disabled="pulling" style="white-space:nowrap">
-            <span v-if="pulling" class="spinner" style="width:12px;height:12px;margin-right:4px"></span>
-            {{ pulling ? 'Pulling…' : 'Pull' }}
-          </button>
-        </div>
-        <div v-if="pullProgress !== null" style="margin-top:8px">
-          <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
-            <div style="background:var(--accent);height:100%;transition:width .3s" :style="{width: pullProgress + '%'}"></div>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">{{ pullStatus }}</div>
-        </div>
-        <div v-if="pullError" class="alert alert-warning" style="margin-top:8px;font-size:12px">{{ pullError }}</div>
-        <div v-if="pullDone" style="font-size:12px;color:var(--success,#22c55e);margin-top:6px">Model pulled successfully. Reload models to see it.</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
-          For other models visit <a href="https://ollama.com/library" target="_blank" rel="noopener" style="color:var(--accent)">ollama.com/library</a>
-        </div>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Cloud LLM -->
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Generation provider</div>
+      <!-- 3. Generation Provider -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Generation Provider</div>
       <div class="text-muted text-sm" style="margin-bottom:12px">
         Local (Ollama) keeps everything on your machine. Cloud providers send your queries and retrieved passages to remote servers.
       </div>
@@ -189,6 +142,61 @@
         <button :class="['provider-tab', settingsForm.llmProvider === 'google' ? 'active' : '']"
                 @click="settingsForm.llmProvider = 'google'">☁ Google Gemini</button>
       </div>
+
+      <!-- Local: Ollama model selectors -->
+      <template v-if="settingsForm.llmProvider === 'local'">
+        <div v-if="loadingModels" class="flex items-center gap-8" style="margin-bottom:16px">
+          <span class="spinner"></span>
+          <span class="text-muted text-sm">Loading available models…</span>
+        </div>
+        <div v-else-if="modelError" class="alert alert-warning" style="margin-bottom:16px;font-size:12px">
+          Could not reach Ollama: {{ modelError }}
+        </div>
+        <template v-else>
+          <div class="form-group">
+            <label>Embedding model</label>
+            <select v-model="settingsForm.embeddingModel">
+              <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Generation (LLM) model</label>
+            <select v-model="settingsForm.llmModel">
+              <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+            </select>
+          </div>
+        </template>
+        <div style="margin-top:8px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Don't see a model above? Pull a recommended one:
+          </div>
+          <div class="flex items-center gap-8">
+            <select v-model="pullModel" style="flex:1">
+              <optgroup label="Embedding">
+                <option v-for="m in recommendedEmbeddingModels" :key="m" :value="m">{{ m }}</option>
+              </optgroup>
+              <optgroup label="LLM">
+                <option v-for="m in recommendedLlmModels" :key="m" :value="m">{{ m }}</option>
+              </optgroup>
+            </select>
+            <button class="btn btn-secondary btn-sm" @click="pullOllamaModel" :disabled="pulling" style="white-space:nowrap">
+              <span v-if="pulling" class="spinner" style="width:12px;height:12px;margin-right:4px"></span>
+              {{ pulling ? 'Pulling…' : 'Pull' }}
+            </button>
+          </div>
+          <div v-if="pullProgress !== null" style="margin-top:8px">
+            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+              <div style="background:var(--accent);height:100%;transition:width .3s" :style="{width: pullProgress + '%'}"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">{{ pullStatus }}</div>
+          </div>
+          <div v-if="pullError" class="alert alert-warning" style="margin-top:8px;font-size:12px">{{ pullError }}</div>
+          <div v-if="pullDone" style="font-size:12px;color:var(--success,#22c55e);margin-top:6px">Model pulled successfully. Reload models to see it.</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
+            For other models visit <a href="https://ollama.com/library" target="_blank" rel="noopener" style="color:var(--accent)">ollama.com/library</a>
+          </div>
+        </div>
+      </template>
 
       <!-- Anthropic -->
       <template v-if="settingsForm.llmProvider === 'anthropic'">
@@ -238,45 +246,24 @@
         </div>
       </template>
 
-      <!-- Zotero -->
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Zotero</div>
-        <div class="form-group">
-          <label>Zotero User ID</label>
-          <input v-model="settingsForm.zoteroUserId" class="form-control" placeholder="e.g. 1234567" />
-        </div>
-        <div class="form-group">
-          <label>Zotero API Key</label>
-          <div v-if="settingsForm.hasZoteroKey && !settingsForm.clearZoteroKey"
-               class="flex items-center gap-8" style="margin-bottom:8px">
-            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
-            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearZoteroKey = true">Clear key</button>
-          </div>
-          <input v-else type="password" v-model="settingsForm.zoteroKey"
-                 :placeholder="settingsForm.clearZoteroKey ? 'Enter new key…' : 'Paste API key'"
-                 autocomplete="off" />
-        </div>
-      </div>
-
       <hr class="divider" />
 
-      <!-- PDF Processing -->
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">PDF Processing</div>
+      <!-- 4. Zotero -->
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Zotero</div>
       <div class="form-group">
-        <label>Metadata provider</label>
-        <select v-model="settingsForm.metaBackend">
-          <option value="openalex">OpenAlex (default)</option>
-          <option value="crossref">CrossRef</option>
-          <option value="semantic_scholar">Semantic Scholar</option>
-          <option value="none">None (skip enrichment)</option>
-        </select>
+        <label>Zotero User ID</label>
+        <input v-model="settingsForm.zoteroUserId" class="form-control" placeholder="e.g. 1234567" />
       </div>
       <div class="form-group">
-        <label>PDF conversion backend</label>
-        <select v-model="settingsForm.pdfBackend">
-          <option value="pymupdf">PyMuPDF (fast)</option>
-          <option value="docling">Docling (thorough, slow)</option>
-        </select>
+        <label>Zotero API Key</label>
+        <div v-if="settingsForm.hasZoteroKey && !settingsForm.clearZoteroKey"
+             class="flex items-center gap-8" style="margin-bottom:8px">
+          <span style="color:var(--success);font-size:13px">✓ Key saved</span>
+          <button class="btn btn-secondary btn-sm" @click="settingsForm.clearZoteroKey = true">Clear key</button>
+        </div>
+        <input v-else type="password" v-model="settingsForm.zoteroKey"
+               :placeholder="settingsForm.clearZoteroKey ? 'Enter new key…' : 'Paste API key'"
+               autocomplete="off" />
       </div>
 
       <div class="modal-footer">

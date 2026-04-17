@@ -26,7 +26,7 @@ def _get_llm_info(config: dict) -> dict:
     if provider == "anthropic":
         return {
             "provider": "anthropic",
-            "model": llm_cfg.get("anthropic_model", "claude-opus-4-6"),
+            "model": llm_cfg.get("anthropic_model", "claude-sonnet-4-6"),
         }
     if provider == "google":
         return {
@@ -50,7 +50,7 @@ def _get_llm_service(config: dict):
                 status_code=503,
                 detail="Anthropic API key not configured. Set it in Settings.",
             )
-        model = llm_cfg.get("anthropic_model", "claude-opus-4-6")
+        model = llm_cfg.get("anthropic_model", "claude-sonnet-4-6")
         return AnthropicService(api_key=api_key, model=model)
 
     if provider == "google":

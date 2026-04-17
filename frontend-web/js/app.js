@@ -19,7 +19,6 @@ createApp({
 
     const settingsForm = reactive({
       backendUrl:       localStorage.getItem('prag_backend_url')       || 'http://localhost:8000',
-      preprocessedBase: localStorage.getItem('prag_preprocessed_dir') || '/data/preprocessed',
       metaBackend:      localStorage.getItem('prag_meta_backend')      || 'openalex',
       pdfBackend:       localStorage.getItem('prag_pdf_backend')        || 'pymupdf',
       embeddingModel: '',
@@ -40,7 +39,7 @@ createApp({
       clearZoteroKey:  false,
     })
     const settingsStatus  = ref('unknown')
-    const ollamaModels    = ref([])
+    const ollamaModels = ref([])
     const loadingModels   = ref(false)
     const modelError      = ref(null)
     const anthropicModels = ref(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
@@ -189,7 +188,6 @@ createApp({
     async function saveSettings() {
       settingsStatus.value = 'checking'
       localStorage.setItem('prag_backend_url',      settingsForm.backendUrl)
-      localStorage.setItem('prag_preprocessed_dir', settingsForm.preprocessedBase)
       localStorage.setItem('prag_meta_backend', settingsForm.metaBackend)
       localStorage.setItem('prag_pdf_backend',  settingsForm.pdfBackend)
       try {

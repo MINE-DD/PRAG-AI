@@ -74,7 +74,8 @@ const PipelinePanel = defineComponent({
 <div style="border-top:1px solid var(--border);padding-top:12px">
   <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ dirName }}</code></div>
   <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
-    Converts PDFs, creates a collection, and ingests everything in one step.
+    Converts PDFs, creates a collection, and ingests everything in one step.<br>
+    Or click "Done" to return to the collection view and run each step manually.
   </p>
 
   <div v-if="!running && !done" class="form-group" style="margin-bottom:8px">

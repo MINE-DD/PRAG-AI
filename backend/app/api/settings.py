@@ -16,7 +16,7 @@ CONFIG_PATH = Path("config.yaml")
 _api_keys = ApiKeysService()
 
 ANTHROPIC_MODELS = [
-    "claude-opus-4-6",
+    "claude-sonnet-4-6",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
 ]
@@ -30,16 +30,15 @@ RECOMMENDED_EMBEDDING_MODELS = [
     "all-minilm",
     "nomic-embed-text",
     "mxbai-embed-large",
-    "qwen3-embedding:0.6b",
+    "embeddinggemma",
     "qwen3-embedding:4b",
-    "qwen3-embedding:8b",
 ]
 
 RECOMMENDED_LLM_MODELS = [
-    "llama3.2:1bgemma3:1b",
+    "gemma3:1b",
+    "gemma4:e2b",
     "llama3.2",
     "phi3:mini",
-    "gemma3:4b",
     "mistral:7b",
     "qwen3:8b",
 ]

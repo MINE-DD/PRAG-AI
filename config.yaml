@@ -1,9 +1,10 @@
 models:
   embedding: nomic-embed-text:latest
   llm:
-    type: local
-    model: llama3.2:latest
+    type: anthropic
+    model: gemma4:e2b
     google_model: gemini-2.5-flash
+    anthropic_model: claude-opus-4-6
 chunking:
   size: 500
   overlap: 100
