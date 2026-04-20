@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive } from 'vue'
-import { api, downloadBlob } from '../../api.js'
+import { api, downloadBlob } from '../../backend-client.js'
 
 const FileMetadataPanel = defineComponent({
   name: 'FileMetadataPanel',

@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive, onMounted } from 'vue'
-import { api } from '../api.js'
+import { api } from '../backend-client.js'
 import { FileMetadataPanel } from '../components/pdf/file-metadata-panel.js'
 import { UploadPanel }       from '../components/pdf/upload-panel.js'
 import { ZoteroImportPanel } from '../components/pdf/zotero-import-panel.js'

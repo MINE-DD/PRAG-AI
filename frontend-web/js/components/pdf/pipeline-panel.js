@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive } from 'vue'
-import { api } from '../../api.js'
+import { api } from '../../backend-client.js'
 
 const PipelinePanel = defineComponent({
   name: 'PipelinePanel',

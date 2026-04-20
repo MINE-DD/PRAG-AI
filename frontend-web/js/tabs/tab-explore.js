@@ -1,5 +1,5 @@
 import { defineComponent, ref, computed, watch } from 'vue'
-import { api } from '../api.js'
+import { api } from '../backend-client.js'
 
 const ExploreTab = defineComponent({
   name: 'ExploreTab',

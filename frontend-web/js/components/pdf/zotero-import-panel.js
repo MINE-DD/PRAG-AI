@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive, computed, onMounted } from 'vue'
-import { api } from '../../api.js'
+import { api } from '../../backend-client.js'
 import { PipelinePanel } from './pipeline-panel.js'
 
 const ZoteroImportPanel = defineComponent({

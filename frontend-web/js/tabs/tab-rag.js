@@ -1,5 +1,5 @@
 import { defineComponent, ref, computed, watch } from 'vue'
-import { api, downloadBlob } from '../api.js'
+import { api, downloadBlob } from '../backend-client.js'
 import { PromptSelector } from '../components/shared/prompt-selector.js'
 
 const RagTab = defineComponent({

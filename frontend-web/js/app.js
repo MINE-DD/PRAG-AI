@@ -1,5 +1,5 @@
 import { createApp, ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { api } from './api.js'
+import { api } from './backend-client.js'
 import { PdfTab } from './tabs/tab-pdf.js'
 import { CollectionsTab } from './tabs/tab-collections.js'
 import { RagTab } from './tabs/tab-rag.js'

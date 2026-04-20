@@ -1,5 +1,5 @@
 import { defineComponent, ref, onMounted } from 'vue'
-import { api } from '../../api.js'
+import { api } from '../../backend-client.js'
 
 const PromptSelector = defineComponent({
   name: 'PromptSelector',
