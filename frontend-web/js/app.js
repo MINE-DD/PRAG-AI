@@ -26,13 +26,9 @@ createApp({
       llmModel:       '',
       // Cloud LLM
       llmProvider:      'local',
-      anthropicModel:   'claude-sonnet-4-6',
       googleModel:      'gemini-2.5-flash',
-      anthropicKey:     '',
       googleKey:        '',
-      hasAnthropicKey:  false,
       hasGoogleKey:     false,
-      clearAnthropicKey: false,
       clearGoogleKey:    false,
       zoteroUserId:    '',
       zoteroKey:       '',
@@ -43,7 +39,6 @@ createApp({
     const ollamaModels = ref([])
     const loadingModels   = ref(false)
     const modelError      = ref(null)
-    const anthropicModels = ref(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
     const googleModels    = ref(['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'])
     const recommendedEmbeddingModels = ref([])
     const recommendedLlmModels       = ref([])
@@ -119,7 +114,6 @@ createApp({
           api.get('/health'),
         ])
         settingsStatus.value = 'ok'
-        if (cloudModels.anthropic?.length)       anthropicModels.value          = cloudModels.anthropic
         if (cloudModels.google?.length)          googleModels.value             = cloudModels.google
         if (cloudModels.ollama_embedding?.length) recommendedEmbeddingModels.value = cloudModels.ollama_embedding
         if (cloudModels.ollama_llm?.length)       recommendedLlmModels.value       = cloudModels.ollama_llm
@@ -127,13 +121,9 @@ createApp({
         settingsForm.embeddingModel    = cfg.embedding_model
         settingsForm.llmModel          = cfg.llm_model
         settingsForm.llmProvider       = cfg.llm_provider || 'local'
-        settingsForm.anthropicModel    = cfg.anthropic_model || anthropicModels.value[0]
-        settingsForm.googleModel       = cfg.google_model   || googleModels.value[0]
-        settingsForm.hasAnthropicKey   = !!cfg.has_anthropic_key
+        settingsForm.googleModel       = cfg.google_model || googleModels.value[0]
         settingsForm.hasGoogleKey      = !!cfg.has_google_key
-        settingsForm.anthropicKey      = ''
         settingsForm.googleKey         = ''
-        settingsForm.clearAnthropicKey = false
         settingsForm.clearGoogleKey    = false
         settingsForm.zoteroUserId   = cfg.zotero_user_id || ''
         settingsForm.hasZoteroKey   = !!cfg.has_zotero_key
@@ -201,11 +191,6 @@ createApp({
         if (settingsForm.embeddingModel) body.embedding_model = settingsForm.embeddingModel
         if (settingsForm.llmModel)       body.llm_model       = settingsForm.llmModel
         body.llm_provider = settingsForm.llmProvider
-        if (settingsForm.llmProvider === 'anthropic') {
-          body.anthropic_model = settingsForm.anthropicModel
-          if (settingsForm.clearAnthropicKey)        body.clear_anthropic_key = true
-          else if (settingsForm.anthropicKey.trim()) body.anthropic_key = settingsForm.anthropicKey.trim()
-        }
         if (settingsForm.llmProvider === 'google') {
           body.google_model = settingsForm.googleModel
           if (settingsForm.clearGoogleKey)        body.clear_google_key = true
@@ -239,7 +224,7 @@ createApp({
       selectedCollection, collections,
       globalError, showSettings, health,
       settingsForm, settingsStatus, ollamaModels, loadingModels, modelError,
-      anthropicModels, googleModels,
+      googleModels,
       recommendedEmbeddingModels, recommendedLlmModels,
       pullModel, pulling, pullProgress, pullStatus, pullError, pullDone, pullOllamaModel,
       setCollection, saveCollection, openSettings, saveSettings, loadCollections,

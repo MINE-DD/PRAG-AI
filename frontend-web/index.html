@@ -139,14 +139,12 @@
       <!-- 3. Generation Provider -->
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Generation Provider</div>
       <div class="text-muted text-sm" style="margin-bottom:12px">
-        Local (Ollama) keeps everything on your machine. Cloud providers send your queries and retrieved passages to remote servers.
+        Local (Ollama) keeps everything on your machine. Google Gemini sends your queries and retrieved passages to Google's servers.
       </div>
 
       <div class="provider-tabs" style="margin-bottom:16px">
         <button :class="['provider-tab', settingsForm.llmProvider === 'local' ? 'active' : '']"
                 @click="settingsForm.llmProvider = 'local'">🖥 Local (Ollama)</button>
-        <button :class="['provider-tab', settingsForm.llmProvider === 'anthropic' ? 'active' : '']"
-                @click="settingsForm.llmProvider = 'anthropic'">☁ Anthropic</button>
         <button :class="['provider-tab', settingsForm.llmProvider === 'google' ? 'active' : '']"
                 @click="settingsForm.llmProvider = 'google'">☁ Google Gemini</button>
       </div>
@@ -203,30 +201,6 @@
           <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
             For other models visit <a href="https://ollama.com/library" target="_blank" rel="noopener" style="color:var(--accent)">ollama.com/library</a>
           </div>
-        </div>
-      </template>
-
-      <!-- Anthropic -->
-      <template v-if="settingsForm.llmProvider === 'anthropic'">
-        <div class="alert alert-warning" style="margin-bottom:12px;font-size:12px">
-          ⚠️ Queries and retrieved passages will be sent to Anthropic's servers.
-        </div>
-        <div class="form-group">
-          <label>Claude model</label>
-          <select v-model="settingsForm.anthropicModel">
-            <option v-for="m in anthropicModels" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Anthropic API key</label>
-          <div v-if="settingsForm.hasAnthropicKey && !settingsForm.clearAnthropicKey"
-               class="flex items-center gap-8" style="margin-bottom:8px">
-            <span style="color:var(--success);font-size:13px">✓ Key saved</span>
-            <button class="btn btn-secondary btn-sm" @click="settingsForm.clearAnthropicKey = true">Clear key</button>
-          </div>
-          <input v-else type="password" v-model="settingsForm.anthropicKey"
-                 :placeholder="settingsForm.clearAnthropicKey ? 'Enter new key…' : 'sk-ant-…'"
-                 autocomplete="off" />
         </div>
       </template>
 
