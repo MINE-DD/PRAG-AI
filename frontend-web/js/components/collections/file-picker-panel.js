@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive, computed, onMounted } from 'vue'
-import { api } from './api.js'
+import { api } from '../../api.js'
 
 const FilePickerPanel = defineComponent({
   name: 'FilePickerPanel',
@@ -16,7 +16,7 @@ const FilePickerPanel = defineComponent({
     const pickerSearch   = ref('')
     const pickerDir      = ref('all')
     const ingesting      = ref(false)
-    const ingestStatuses = reactive({})   // key → 'pending'|'ok'|'error'
+    const ingestStatuses = reactive({})
     const ingestMsg      = ref(null)
 
     const allDirs = computed(() => [...new Set(allFiles.value.map(f => f.dirName))])
@@ -111,7 +111,6 @@ const FilePickerPanel = defineComponent({
   </div>
 
   <template v-else>
-    <!-- Filters -->
     <div class="picker-filters">
       <select v-model="pickerDir">
         <option value="all">All folders</option>
@@ -120,7 +119,6 @@ const FilePickerPanel = defineComponent({
       <input type="text" v-model="pickerSearch" placeholder="Search files…" />
     </div>
 
-    <!-- Bulk actions -->
     <div class="flex items-center gap-8" style="margin-bottom:8px">
       <button class="btn btn-secondary btn-sm" @click="checkAll"   :disabled="ingesting">Check all</button>
       <button class="btn btn-secondary btn-sm" @click="uncheckAll" :disabled="ingesting">Uncheck all</button>
@@ -129,7 +127,6 @@ const FilePickerPanel = defineComponent({
       </span>
     </div>
 
-    <!-- Scrollable file list -->
     <div class="picker-list">
       <div v-if="filteredFiles.length === 0" class="text-muted text-sm" style="padding:12px 14px">
         No files match the current filter.
@@ -150,7 +147,6 @@ const FilePickerPanel = defineComponent({
       </label>
     </div>
 
-    <!-- Ingest action bar -->
     <div class="flex items-center gap-8" style="margin-top:12px">
       <button class="btn btn-primary btn-sm"
               :disabled="ingesting || checkedCount === 0"

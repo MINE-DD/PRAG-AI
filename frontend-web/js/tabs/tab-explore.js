@@ -1,5 +1,5 @@
 import { defineComponent, ref, computed, watch } from 'vue'
-import { api } from './api.js'
+import { api } from '../api.js'
 
 const ExploreTab = defineComponent({
   name: 'ExploreTab',
@@ -23,7 +23,6 @@ const ExploreTab = defineComponent({
       if (id) {
         try {
           papers.value = await api.get(`/collections/${id}/papers`)
-          // Overlay fresh metadata for each paper in parallel
           await Promise.all(papers.value.map(async (paper, i) => {
             if (!paper.preprocessed_dir || !paper.source_pdf) return
             try {
@@ -44,7 +43,6 @@ const ExploreTab = defineComponent({
       error.value = null
       try {
         const collectionDetail = await api.get(`/collections/${collectionId.value}/papers/${paper.paper_id}`)
-        // Overlay with fresh raw metadata if available (stays in sync with PDF Management edits)
         if (paper.preprocessed_dir && paper.source_pdf) {
           try {
             const encDir  = encodeURIComponent(paper.preprocessed_dir)

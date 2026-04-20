@@ -1,10 +1,10 @@
 import { createApp, ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { api } from './api.js'
-import { PdfTab } from './pdf-tab.js'
-import { CollectionsTab } from './collections-tab.js'
-import { RagTab } from './rag-tab.js'
-import { ExploreTab } from './explore-tab.js'
-import { CompareTab } from './compare-tab.js'
+import { PdfTab } from './tabs/tab-pdf.js'
+import { CollectionsTab } from './tabs/tab-collections.js'
+import { RagTab } from './tabs/tab-rag.js'
+import { ExploreTab } from './tabs/tab-explore.js'
+import { CompareTab } from './tabs/tab-compare.js'
 
 createApp({
   components: { PdfTab, CollectionsTab, RagTab, ExploreTab, CompareTab },

@@ -1,10 +1,10 @@
 import { defineComponent, ref, reactive } from 'vue'
-import { api } from './api.js'
+import { api } from '../../api.js'
 
 const PipelinePanel = defineComponent({
   name: 'PipelinePanel',
   props: {
-    dirName:              { type: String, required: true },
+    dirName:               { type: String, required: true },
     initialCollectionName: { type: String, default: '' },
   },
   emits: ['refresh-collections', 'open-collection', 'dismiss'],
@@ -34,8 +34,8 @@ const PipelinePanel = defineComponent({
             dir_name:         props.dirName,
             collection_name:  form.collectionName,
             pdf_backend:      localStorage.getItem('prag_pdf_backend')    || 'pymupdf',
-            metadata_backend: localStorage.getItem('prag_meta_backend')  || 'openalex',
-            document_type:    localStorage.getItem('prag_document_type') || 'default',
+            metadata_backend: localStorage.getItem('prag_meta_backend')   || 'openalex',
+            document_type:    localStorage.getItem('prag_document_type')  || 'default',
           }),
         })
         if (!resp.ok) throw new Error(await resp.text())

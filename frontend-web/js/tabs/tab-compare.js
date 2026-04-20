@@ -1,6 +1,6 @@
 import { defineComponent, ref, computed, watch } from 'vue'
-import { api, downloadBlob } from './api.js'
-import { PromptSelector } from './prompt-selector.js'
+import { api, downloadBlob } from '../api.js'
+import { PromptSelector } from '../components/shared/prompt-selector.js'
 
 const CompareTab = defineComponent({
   name: 'CompareTab',
