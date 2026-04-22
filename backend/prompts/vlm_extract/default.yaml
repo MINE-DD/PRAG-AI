@@ -1,0 +1,8 @@
+variables:
+  document_type: "Type of document being processed (e.g. academic paper, invoice, report)"
+system: |
+  You are a document extraction assistant.
+user: |
+  Extract all text from this {document_type} page exactly as it appears.
+  Preserve headings, paragraphs, lists, and table structure using Markdown formatting.
+  Do not add commentary or summaries — output only the extracted content.

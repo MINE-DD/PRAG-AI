@@ -15,12 +15,6 @@ router = APIRouter()
 CONFIG_PATH = Path("config.yaml")
 _api_keys = ApiKeysService()
 
-ANTHROPIC_MODELS = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
-]
-
 GOOGLE_MODELS = [
     "gemini-2.5-flash",
     "gemini-3.1-flash-lite-preview",
@@ -30,16 +24,15 @@ RECOMMENDED_EMBEDDING_MODELS = [
     "all-minilm",
     "nomic-embed-text",
     "mxbai-embed-large",
-    "qwen3-embedding:0.6b",
+    "embeddinggemma",
     "qwen3-embedding:4b",
-    "qwen3-embedding:8b",
 ]
 
 RECOMMENDED_LLM_MODELS = [
-    "llama3.2:1bgemma3:1b",
+    "gemma3:1b",
+    "gemma4:e2b",
     "llama3.2",
     "phi3:mini",
-    "gemma3:4b",
     "mistral:7b",
     "qwen3:8b",
 ]
@@ -76,9 +69,7 @@ def get_settings():
         "embedding_model": config["models"]["embedding"],
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
-        "anthropic_model": llm_cfg.get("anthropic_model", ANTHROPIC_MODELS[0]),
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
-        "has_anthropic_key": _api_keys.has_key("anthropic"),
         "has_google_key": _api_keys.has_key("google"),
         "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
         "has_zotero_key": _api_keys.has_key("zotero"),
@@ -95,7 +86,6 @@ def get_settings():
 def get_cloud_models():
     """Return the list of supported cloud model IDs and recommended Ollama models."""
     return {
-        "anthropic": ANTHROPIC_MODELS,
         "google": GOOGLE_MODELS,
         "ollama_embedding": RECOMMENDED_EMBEDDING_MODELS,
         "ollama_llm": RECOMMENDED_LLM_MODELS,
@@ -129,12 +119,9 @@ def pull_ollama_model(request: PullModelRequest):
 class UpdateSettingsRequest(BaseModel):
     embedding_model: str | None = None
     llm_model: str | None = None
-    llm_provider: str | None = None  # "local", "anthropic", "google"
-    anthropic_model: str | None = None
+    llm_provider: str | None = None  # "local", "google"
     google_model: str | None = None
-    anthropic_key: str | None = None  # write-only — never returned
     google_key: str | None = None  # write-only — never returned
-    clear_anthropic_key: bool = False
     clear_google_key: bool = False
     zotero_user_id: str | None = None
     zotero_key: str | None = None  # write-only — never returned
@@ -160,8 +147,6 @@ def update_settings(request: UpdateSettingsRequest):
         config["models"]["llm"]["model"] = request.llm_model
     if request.llm_provider is not None:
         config["models"]["llm"]["type"] = request.llm_provider
-    if request.anthropic_model is not None:
-        config["models"]["llm"]["anthropic_model"] = request.anthropic_model
     if request.google_model is not None:
         config["models"]["llm"]["google_model"] = request.google_model
     if request.chunk_size is not None:
@@ -177,11 +162,6 @@ def update_settings(request: UpdateSettingsRequest):
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     # Handle API keys — write-only, stored in data volume
-    if request.clear_anthropic_key:
-        _api_keys.clear_key("anthropic")
-    elif request.anthropic_key:
-        _api_keys.set_key("anthropic", request.anthropic_key)
-
     if request.clear_google_key:
         _api_keys.clear_key("google")
     elif request.google_key:

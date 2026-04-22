@@ -29,10 +29,12 @@ def temp_data_dir():
 
 @pytest.fixture
 def temp_preprocessed_dir():
-    """Create temporary preprocessed directory."""
+    """Create temporary preprocessed directory with a 'papers' subfolder."""
     temp_dir = tempfile.mkdtemp()
-    (Path(temp_dir) / "paper1.md").write_text("# Paper 1\n\nContent here.")
-    (Path(temp_dir) / "paper1_metadata.json").write_text(
+    sub = Path(temp_dir) / "papers"
+    sub.mkdir()
+    (sub / "paper1.md").write_text("# Paper 1\n\nContent here.")
+    (sub / "paper1_metadata.json").write_text(
         json.dumps(
             {
                 "title": "Test Paper",
@@ -69,8 +71,11 @@ def mock_ollama():
 
 
 @pytest.fixture
-def client(temp_data_dir, mock_qdrant, mock_ollama):
-    return TestClient(app)
+def client(temp_data_dir, temp_preprocessed_dir, mock_qdrant, mock_ollama):
+    original = settings.preprocessed_dir
+    settings.preprocessed_dir = temp_preprocessed_dir
+    yield TestClient(app)
+    settings.preprocessed_dir = original
 
 
 def test_scan_not_found(client):
@@ -81,7 +86,9 @@ def test_scan_not_found(client):
 
 def test_scan_preprocessed(client, temp_preprocessed_dir):
     """Test scanning a preprocessed directory."""
-    response = client.post("/ingest/scan", json={"path": temp_preprocessed_dir})
+    response = client.post(
+        "/ingest/scan", json={"path": str(Path(temp_preprocessed_dir) / "papers")}
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["file_count"] == 1
@@ -94,7 +101,7 @@ def test_create_collection(client, temp_data_dir, temp_preprocessed_dir):
         "/ingest/create",
         json={
             "name": "Test Collection",
-            "preprocessed_path": temp_preprocessed_dir,
+            "preprocessed_path": str(Path(temp_preprocessed_dir) / "papers"),
         },
     )
     assert response.status_code == 200
@@ -111,20 +118,12 @@ def test_create_collection(client, temp_data_dir, temp_preprocessed_dir):
 
 def test_create_collection_duplicate(client, temp_data_dir, temp_preprocessed_dir):
     """Test creating a duplicate collection."""
-    client.post(
-        "/ingest/create",
-        json={
-            "name": "Test Collection",
-            "preprocessed_path": temp_preprocessed_dir,
-        },
-    )
-    response = client.post(
-        "/ingest/create",
-        json={
-            "name": "Test Collection",
-            "preprocessed_path": temp_preprocessed_dir,
-        },
-    )
+    payload = {
+        "name": "Test Collection",
+        "preprocessed_path": str(Path(temp_preprocessed_dir) / "papers"),
+    }
+    client.post("/ingest/create", json=payload)
+    response = client.post("/ingest/create", json=payload)
     assert response.status_code == 409
 
 
@@ -135,16 +134,13 @@ def test_ingest_file(client, temp_data_dir, temp_preprocessed_dir):
         "/ingest/create",
         json={
             "name": "Test Collection",
-            "preprocessed_path": temp_preprocessed_dir,
+            "preprocessed_path": str(Path(temp_preprocessed_dir) / "papers"),
         },
     )
 
     response = client.post(
         "/ingest/test_collection/file",
-        json={
-            "markdown_file": "paper1.md",
-            "preprocessed_path": temp_preprocessed_dir,
-        },
+        json={"markdown_file": "paper1.md", "dir_name": "papers"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -156,9 +152,6 @@ def test_ingest_file_collection_not_found(client, temp_preprocessed_dir):
     """Test ingesting into non-existent collection."""
     response = client.post(
         "/ingest/nonexistent/file",
-        json={
-            "markdown_file": "paper1.md",
-            "preprocessed_path": temp_preprocessed_dir,
-        },
+        json={"markdown_file": "paper1.md", "dir_name": "papers"},
     )
     assert response.status_code == 404

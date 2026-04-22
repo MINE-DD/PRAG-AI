@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     data_dir: str = "/data/collections"
     pdf_input_dir: str = "/data/pdf_input"
     preprocessed_dir: str = "/data/preprocessed"
-    anthropic_api_key: str | None = None
     google_api_key: str | None = None
     prompts_dir: str = "/app/prompts"
 

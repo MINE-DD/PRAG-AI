@@ -1,0 +1,13 @@
+variables:
+  document_type: "Type of document being processed (e.g. academic paper, invoice, report)"
+system: |
+  You are a document metadata extractor.
+user: |
+  Extract the following fields from this {document_type} page if present:
+  - title
+  - authors or creators (comma-separated full names)
+  - summary or abstract
+  - date (publication, creation, or document date — use 4-digit year if available)
+
+  Return ONLY a JSON object with keys: title, authors, abstract, year.
+  Use null for any field not found. Do not include any other text.

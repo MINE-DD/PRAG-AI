@@ -19,7 +19,7 @@ def client():
 
 def test_get_settings_includes_zotero_fields(client):
     with patch("app.api.settings._api_keys") as mock_keys:
-        mock_keys.has_key.side_effect = lambda p: p == "anthropic"
+        mock_keys.has_key.side_effect = lambda p: p == "google"
         mock_keys.get_key.side_effect = lambda p: (
             "12345" if p == "zotero_user_id" else None
         )

@@ -23,11 +23,6 @@ def _get_llm_info(config: dict) -> dict:
     """Return provider/model metadata for display."""
     llm_cfg = config["models"]["llm"]
     provider = llm_cfg.get("type", "local")
-    if provider == "anthropic":
-        return {
-            "provider": "anthropic",
-            "model": llm_cfg.get("anthropic_model", "claude-opus-4-6"),
-        }
     if provider == "google":
         return {
             "provider": "google",
@@ -40,18 +35,6 @@ def _get_llm_service(config: dict):
     """Return the appropriate LLM generation service based on config."""
     llm_cfg = config["models"]["llm"]
     provider = llm_cfg.get("type", "local")
-
-    if provider == "anthropic":
-        from app.services.anthropic_service import AnthropicService
-
-        api_key = _api_keys.get_key("anthropic")
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail="Anthropic API key not configured. Set it in Settings.",
-            )
-        model = llm_cfg.get("anthropic_model", "claude-opus-4-6")
-        return AnthropicService(api_key=api_key, model=model)
 
     if provider == "google":
         from app.services.google_service import GoogleService

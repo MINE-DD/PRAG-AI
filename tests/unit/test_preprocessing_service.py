@@ -188,6 +188,62 @@ def test_history_updated_after_conversion(service, temp_dirs):
     assert history["directories"]["my_papers"]["last_processed"] is not None
 
 
+def test_convert_single_pdf_ollama_vlm_requires_prompt_service(service, temp_dirs):
+    """convert_single_pdf raises ValueError when using ollama_vlm without prompt_service."""
+    pdf_input, _ = temp_dirs
+    dir1 = Path(pdf_input) / "vlm_papers"
+    dir1.mkdir()
+    _create_fake_pdf(str(dir1), "doc.pdf")
+
+    with pytest.raises(ValueError, match="PromptService is required"):
+        service.convert_single_pdf("vlm_papers", "doc.pdf", backend="ollama_vlm")
+
+
+def test_convert_single_pdf_ollama_vlm_success(temp_dirs):
+    """convert_single_pdf passes kwargs to converter when using ollama_vlm backend."""
+    pdf_input, preprocessed = temp_dirs
+    mock_ps = MagicMock()
+    svc = PreprocessingService(
+        pdf_input_dir=pdf_input,
+        preprocessed_dir=preprocessed,
+        prompt_service=mock_ps,
+    )
+
+    dir1 = Path(pdf_input) / "vlm_papers"
+    dir1.mkdir()
+    _create_fake_pdf(str(dir1), "doc.pdf")
+
+    mock_converter = MagicMock()
+    mock_converter.convert_to_markdown.return_value = "# VLM content"
+    mock_converter.extract_metadata.return_value = {
+        "title": "VLM Doc",
+        "authors": [],
+        "abstract": None,
+        "publication_date": None,
+    }
+    del mock_converter.convert_and_extract
+
+    fake_cfg = {"models": {"llm": {"model": "llava-phi3"}}}
+
+    with (
+        patch(
+            "app.services.preprocessing_service.get_converter",
+            return_value=mock_converter,
+        ) as mock_get,
+        patch("app.services.preprocessing_service.load_config", return_value=fake_cfg),
+    ):
+        result = svc.convert_single_pdf(
+            "vlm_papers", "doc.pdf", backend="ollama_vlm", metadata_backend="none"
+        )
+
+    mock_get.assert_called_once()
+    call_kwargs = mock_get.call_args
+    assert call_kwargs[0][0] == "ollama_vlm"
+    assert call_kwargs[1]["prompt_service"] is mock_ps
+    assert call_kwargs[1]["model"] == "llava-phi3"
+    assert result["filename"] == "doc.pdf"
+
+
 def test_convert_skips_enrichment_when_metadata_exists(service, temp_dirs):
     """If _metadata.json exists before convert, enrichment is skipped and file is preserved."""
     pdf_input, preprocessed = temp_dirs

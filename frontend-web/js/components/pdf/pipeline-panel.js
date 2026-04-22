@@ -1,10 +1,10 @@
 import { defineComponent, ref, reactive } from 'vue'
-import { api } from './api.js'
+import { api } from '../../backend-client.js'
 
 const PipelinePanel = defineComponent({
   name: 'PipelinePanel',
   props: {
-    dirName:              { type: String, required: true },
+    dirName:               { type: String, required: true },
     initialCollectionName: { type: String, default: '' },
   },
   emits: ['refresh-collections', 'open-collection', 'dismiss'],
@@ -33,8 +33,9 @@ const PipelinePanel = defineComponent({
           body: JSON.stringify({
             dir_name:         props.dirName,
             collection_name:  form.collectionName,
-            pdf_backend:      localStorage.getItem('prag_pdf_backend')  || 'pymupdf',
-            metadata_backend: localStorage.getItem('prag_meta_backend') || 'openalex',
+            pdf_backend:      localStorage.getItem('prag_pdf_backend')    || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend')   || 'openalex',
+            document_type:    localStorage.getItem('prag_document_type')  || 'default',
           }),
         })
         if (!resp.ok) throw new Error(await resp.text())
@@ -74,7 +75,8 @@ const PipelinePanel = defineComponent({
 <div style="border-top:1px solid var(--border);padding-top:12px">
   <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚡ Run Pipeline for <code>{{ dirName }}</code></div>
   <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
-    Converts PDFs, creates a collection, and ingests everything in one step.
+    Converts PDFs, creates a collection, and ingests everything in one step.<br>
+    Or click "Done" to return to the collection view and run each step manually.
   </p>
 
   <div v-if="!running && !done" class="form-group" style="margin-bottom:8px">

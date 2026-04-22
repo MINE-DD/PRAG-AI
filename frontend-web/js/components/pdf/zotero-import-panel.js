@@ -1,5 +1,5 @@
 import { defineComponent, ref, reactive, computed, onMounted } from 'vue'
-import { api } from './api.js'
+import { api } from '../../backend-client.js'
 import { PipelinePanel } from './pipeline-panel.js'
 
 const ZoteroImportPanel = defineComponent({
@@ -20,7 +20,7 @@ const ZoteroImportPanel = defineComponent({
     const ztProgress      = reactive({})
     const ztDone          = ref(false)
     const ztImportError   = ref(null)
-    const ztPipelineDir   = ref('')   // set after import; holds dirName_zt
+    const ztPipelineDir   = ref('')
 
     const ztCollectionSlug = computed(() =>
       ztDirName.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')

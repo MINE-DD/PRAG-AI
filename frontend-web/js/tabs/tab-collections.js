@@ -1,6 +1,6 @@
 import { defineComponent, ref, reactive, watch, onMounted } from 'vue'
-import { api } from './api.js'
-import { FilePickerPanel } from './file-picker-panel.js'
+import { api } from '../backend-client.js'
+import { FilePickerPanel } from '../components/collections/file-picker-panel.js'
 
 const CollectionsTab = defineComponent({
   name: 'CollectionsTab',

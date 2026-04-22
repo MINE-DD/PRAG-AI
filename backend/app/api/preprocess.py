@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.core.config import load_config, settings
 from app.services.ollama_service import OllamaService
 from app.services.preprocessing_service import PreprocessingService
+from app.services.prompt_service import get_prompt_service
 
 router = APIRouter()
 
@@ -27,14 +28,15 @@ class ScanRequest(BaseModel):
 class ConvertRequest(BaseModel):
     dir_name: str
     filename: str
-    backend: str = "docling"  # "docling" or "pymupdf"
+    backend: str = "pymupdf"  # "docling", "pymupdf", or "ollama_vlm"
     metadata_backend: str = (
         "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
     )
+    document_type: str = "default"  # matches a vlm_extract/vlm_metadata YAML name
 
 
 def get_preprocessing_service() -> PreprocessingService:
-    return PreprocessingService()
+    return PreprocessingService(prompt_service=get_prompt_service())
 
 
 @router.get("/preprocess/directories")
@@ -67,6 +69,7 @@ def convert_pdf(request: ConvertRequest):
             filename,
             backend=request.backend,
             metadata_backend=request.metadata_backend,
+            document_type=request.document_type,
         )
         return result
     except FileNotFoundError as e:

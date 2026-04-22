@@ -24,3 +24,25 @@ def test_parse_authors_filters_affiliations():
 def test_get_converter_unknown_raises():
     with pytest.raises(KeyError):
         get_converter("nonexistent_backend")
+
+
+def test_get_converter_passes_kwargs():
+    """get_converter forwards kwargs to the converter constructor."""
+    from app.services.pdf_converter_base import register_converter
+
+    class _FakeConverter:
+        name = "fake_kwarg_test"
+
+        def __init__(self, foo=None):
+            self.foo = foo
+
+        def convert_to_markdown(self, source_path):
+            return ""
+
+        def extract_metadata(self, source_path, fallback_title):
+            return {}
+
+    register_converter("fake_kwarg_test", _FakeConverter)
+    converter = get_converter("fake_kwarg_test", foo="bar")
+    assert isinstance(converter, _FakeConverter)
+    assert converter.foo == "bar"
