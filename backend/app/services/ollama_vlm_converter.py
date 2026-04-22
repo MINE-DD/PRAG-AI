@@ -92,7 +92,7 @@ class OllamaVLMConverter:
                 len(pages),
                 source_path.name,
             )
-            messages = []
+            messages: list[dict[str, object]] = []
             if rendered.system:
                 messages.append({"role": "system", "content": rendered.system})
             messages.append(
@@ -113,7 +113,7 @@ class OllamaVLMConverter:
             self._metadata_prompt_name,
             document_type=self._document_type,
         )
-        messages = []
+        messages: list[dict[str, object]] = []
         if rendered.system:
             messages.append({"role": "system", "content": rendered.system})
         messages.append(
