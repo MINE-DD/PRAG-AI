@@ -33,7 +33,6 @@ dev = [
     "types-PyYAML>=6.0",
 ]
 api = [
-    "anthropic>=0.18.0",
     "google-genai>=1.64.0",
 ]
 docs = [
