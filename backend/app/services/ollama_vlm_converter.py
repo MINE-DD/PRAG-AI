@@ -160,7 +160,9 @@ class OllamaVLMConverter:
             data = json.loads(cleaned)
             authors_raw = data.get("authors") or ""
             authors = [a.strip() for a in authors_raw.split(",") if a.strip()]
-            extra = {k: v for k, v in data.items() if k not in _KNOWN_KEYS and v is not None}
+            extra = {
+                k: v for k, v in data.items() if k not in _KNOWN_KEYS and v is not None
+            }
             return {
                 "title": data.get("title") or fallback_title,
                 "authors": authors,

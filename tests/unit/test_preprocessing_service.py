@@ -226,7 +226,10 @@ def test_convert_single_pdf_ollama_vlm_success(temp_dirs):
     fake_cfg = {"models": {"llm": {"model": "llava-phi3"}}}
 
     with (
-        patch("app.services.preprocessing_service.get_converter", return_value=mock_converter) as mock_get,
+        patch(
+            "app.services.preprocessing_service.get_converter",
+            return_value=mock_converter,
+        ) as mock_get,
         patch("app.services.preprocessing_service.load_config", return_value=fake_cfg),
     ):
         result = svc.convert_single_pdf(

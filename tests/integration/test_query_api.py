@@ -201,7 +201,6 @@ def test_rag_query_returns_metadata(client, test_collection):
     assert result["chunk_type"] in ["abstract", "body", "table", "figure_caption"]
 
 
-
 def test_rag_query_with_citations(client, test_collection):
     """Test that RAG query results include citation information"""
     response = client.post(

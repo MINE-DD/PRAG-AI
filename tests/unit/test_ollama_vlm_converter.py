@@ -16,7 +16,6 @@ sys.path.insert(0, str(backend_path))
 from app.services.ollama_vlm_converter import OllamaVLMConverter
 from app.services.prompt_service import RenderedPrompt  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -190,7 +189,7 @@ def test_extract_metadata_strips_markdown_fences():
     conv, mock_client, _, _ = _make_converter(pages=1)
     mock_client.chat.return_value = {
         "message": {
-            "content": "```json\n{\"title\": \"Wrapped\", \"authors\": \"Carol\", \"abstract\": null, \"year\": null}\n```"
+            "content": '```json\n{"title": "Wrapped", "authors": "Carol", "abstract": null, "year": null}\n```'
         }
     }
 
