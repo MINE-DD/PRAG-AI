@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRAG-v2</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  { "imports": { "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js" } }
+  </script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ───────────────── SIDEBAR ───────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>PRAG-v2</h1>
+      <p>Portable RAG System</p>
+    </div>
+
+    <!-- Connection status -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Status</div>
+      <div class="status-row">
+        <span class="dot" :class="health.backend ? 'dot-green' : 'dot-red'"></span>
+        <span>Backend</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.qdrant ? 'dot-green' : 'dot-red'"></span>
+        <span>Qdrant</span>
+      </div>
+      <div class="status-row">
+        <span class="dot" :class="health.ollama === true ? 'dot-green' : health.ollama === false ? 'dot-red' : 'dot-yellow'"></span>
+        <span>Ollama</span>
+      </div>
+    </div>
+
+    <!-- Collection picker -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Active collection</div>
+      <select class="sidebar-select" v-model="selectedCollection" @change="saveCollection">
+        <option value="">— none —</option>
+        <option v-for="c in collections" :key="c.collection_id" :value="c.collection_id">
+          {{ c.name || c.collection_id }}
+        </option>
+      </select>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-ghost" @click="showSettings = true">⚙ Settings</button>
+      <a class="btn-ghost" href="https://github.com/MINE-DD/PRAG-AI#readme" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-top:6px;font-size:12px">📖 How do I use this?</a>
+    </div>
+  </aside>
+
+  <!-- ───────────────── MAIN ───────────────── -->
+  <div class="main">
+
+    <!-- Tab bar -->
+    <nav class="tab-bar">
+      <button v-for="tab in tabs" :key="tab.id"
+              class="tab-btn" :class="{active: activeTab === tab.id}"
+              @click="activeTab = tab.id">
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <!-- Tab content -->
+    <div class="content">
+      <!-- Global error banner -->
+      <div v-if="globalError" class="alert alert-error">
+        {{ globalError }}
+        <button class="alert-close" @click="globalError = null">×</button>
+      </div>
+
+      <keep-alive>
+        <component :is="activeComponent"
+                   :selected-collection="selectedCollection"
+                   :collections="collections"
+                   @update:collection="setCollection"
+                   @refresh-collections="loadCollections" />
+      </keep-alive>
+    </div>
+  </div>
+
+  <!-- ───────────────── SETTINGS MODAL ───────────────── -->
+  <settings-panel v-model:visible="showSettings" @saved="onSettingsSaved" />
+
+</div><!-- #app -->
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
