@@ -14,7 +14,7 @@ backend_path = Path(__file__).parent.parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
 
 from app.services.ollama_vlm_converter import OllamaVLMConverter
-from app.services.prompt_service import RenderedPrompt
+from app.services.prompt_service import RenderedPrompt  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
