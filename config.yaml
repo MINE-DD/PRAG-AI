@@ -1,5 +1,5 @@
 models:
-  embedding: nomic-embed-text:latest
+  embedding: mxbai-embed-large:latest
   llm:
     type: local
     model: gemma4:e2b

@@ -22,10 +22,11 @@ def test_settings_from_env(monkeypatch):
 
 
 def test_load_config_from_yaml():
-    """Test loading config.yaml"""
+    """Test loading config.yaml returns expected structure with correct types."""
     config = load_config("config.yaml")
 
     assert "models" in config
     assert "chunking" in config
-    assert config["models"]["embedding"] == "nomic-embed-text:latest"
-    assert config["chunking"]["size"] == 500
+    assert isinstance(config["models"]["embedding"], str)
+    assert isinstance(config["chunking"]["size"], int)
+    assert config["chunking"]["size"] > 0

@@ -21,8 +21,9 @@ const RagTab = defineComponent({
     const showAdvanced   = ref(false)
     const showPassages   = ref(false)
     const showCitations  = ref(false)
-    const selectedPrompt = ref('default')
-    const citationMode = ref('apa')
+    const selectedPrompt    = ref('default')
+    const citationMode      = ref('apa')
+    const includeReferences = ref(false)
     const filterSearch = ref('')
     const filterDir    = ref('all')
 
@@ -68,6 +69,9 @@ const RagTab = defineComponent({
       showPassages.value = false
       showCitations.value = false
       try {
+        const excluded = includeReferences.value
+          ? []
+          : ['references', 'acknowledgements', 'appendix']
         const body = {
           query_text: query.value.trim(),
           limit: topK.value,
@@ -75,6 +79,7 @@ const RagTab = defineComponent({
           include_citations: true,
           use_hybrid: useHybrid.value,
           prompt_name: selectedPrompt.value,
+          exclude_chunk_types: excluded,
         }
         if (selectedIds.value.length) body.paper_ids = selectedIds.value
         result.value = await api.post(`/collections/${collectionId.value}/rag`, body)
@@ -154,7 +159,7 @@ const RagTab = defineComponent({
       checkAll, uncheckAll,
       runQuery, togglePassage, exportMd, exportInteraction, pdfUrl,
       showAdvanced, selectedPrompt, renderMd,
-      showPassages, showCitations,
+      showPassages, showCitations, includeReferences,
     }
   },
 
@@ -245,6 +250,12 @@ const RagTab = defineComponent({
             </div>
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+            <input type="checkbox" v-model="includeReferences" />
+            Include references, acknowledgements &amp; appendices in retrieval
+            <span class="text-muted" style="font-size:11px">(excluded by default)</span>
+          </label>
+          <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />
           <prompt-selector :task-type="'rag'" v-model="selectedPrompt" />
         </div>
       </div>
@@ -282,7 +293,7 @@ const RagTab = defineComponent({
             <span>
               {{ r.unique_id }}
               &nbsp;·&nbsp;p.{{ r.page_number }}
-              &nbsp;·&nbsp;<span class="badge badge-gray">{{ r.chunk_type }}</span>
+              &nbsp;·&nbsp;<span class="badge" :class="'ct-' + r.chunk_type">{{ r.chunk_type }}</span>
             </span>
             <span class="chevron" :class="{open: r._open}">▶</span>
           </div>

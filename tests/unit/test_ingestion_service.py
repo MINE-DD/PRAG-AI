@@ -214,7 +214,7 @@ def markdown_preprocessed_dir(tmp_path):
 
 @pytest.fixture
 def markdown_service(temp_data_dir):
-    chunking = ChunkingService(chunk_size=2000, overlap=0, mode="markdown")
+    chunking = ChunkingService(chunk_size=2000, overlap=0, mode="markdown-academic")
     ollama = Mock()
     ollama.generate_embedding.return_value = [0.1] * 768
     ollama.generate_embeddings_batch.return_value = [[0.1] * 768] * 20

@@ -68,14 +68,14 @@ The results show significant improvement over baselines.
 
 
 def test_markdown_chunk_returns_section_tuples():
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     results = svc.chunk_markdown(SAMPLE_MD)
     assert all(isinstance(r, tuple) and len(r) == 2 for r in results)
 
 
 def test_markdown_chunk_heading_not_in_text():
     """Heading is metadata only — chunk_text must NOT start with the heading."""
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     results = svc.chunk_markdown(SAMPLE_MD)
     for chunk_text, heading in results:
         if heading:
@@ -83,7 +83,7 @@ def test_markdown_chunk_heading_not_in_text():
 
 
 def test_markdown_chunk_heading_stored_separately():
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     results = svc.chunk_markdown(SAMPLE_MD)
     headings = [h for _, h in results]
     # Should have at least one non-empty heading
@@ -91,7 +91,7 @@ def test_markdown_chunk_heading_stored_separately():
 
 
 def test_markdown_chunk_inherits_parent_heading():
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     results = svc.chunk_markdown(SAMPLE_MD)
     heading_paths = [h for _, h in results if h]
     # The ### Dataset chunk should include ## Methods and ### Dataset but NOT the H1
@@ -102,7 +102,7 @@ def test_markdown_chunk_inherits_parent_heading():
 
 
 def test_markdown_chunk_no_headers():
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     text = "Just a plain paragraph.\n\nAnother paragraph here."
     results = svc.chunk_markdown(text)
     assert len(results) >= 1
@@ -111,7 +111,9 @@ def test_markdown_chunk_no_headers():
 
 def test_markdown_overflow_split():
     """Paragraphs exceeding chunk_size are split with overlap."""
-    svc = ChunkingService(chunk_size=50, overlap=10, mode="markdown", min_chunk_size=5)
+    svc = ChunkingService(
+        chunk_size=50, overlap=10, mode="markdown-academic", min_chunk_size=5
+    )
     long_para = "word " * 40  # ~200 chars, well above chunk_size=50
     text = f"# Section\n\n{long_para}"
     results = svc.chunk_markdown(text)
@@ -123,7 +125,7 @@ def test_markdown_overflow_split():
 
 def test_markdown_merge_short_paragraphs():
     """Short paragraphs are merged with the next one."""
-    svc = ChunkingService(chunk_size=2000, mode="markdown", min_chunk_size=100)
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic", min_chunk_size=100)
     text = "# Sec\n\nTiny.\n\nAlso tiny.\n\nA longer paragraph that has more content in it."
     results = svc.chunk_markdown(text)
     # The two tiny paragraphs should be merged together
@@ -132,7 +134,7 @@ def test_markdown_merge_short_paragraphs():
 
 def test_chunk_text_markdown_mode_returns_strings():
     """chunk_text in markdown mode returns plain strings."""
-    svc = ChunkingService(chunk_size=2000, mode="markdown")
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic")
     chunks = svc.chunk_text(SAMPLE_MD)
     assert all(isinstance(c, str) for c in chunks)
 
@@ -180,11 +182,30 @@ def test_classify_heading_strips_bold_and_numbers():
     assert classify_heading("## **5.1 Participating Systems**") == ChunkType.RESULTS
 
 
+def test_chunk_by_paragraphs_legacy():
+    """chunk_by_paragraphs splits on double newlines."""
+    svc = ChunkingService()
+    result = svc.chunk_by_paragraphs("para one\n\npara two\n\npara three")
+    assert result == ["para one", "para two", "para three"]
+
+
+def test_min_chunk_size_token_mode_default():
+    """Token mode defaults min_chunk_size to 100 chars regardless of chunk_size."""
+    svc = ChunkingService(chunk_size=512, mode="tokens")
+    assert svc.min_chunk_size == 100
+
+
+def test_min_chunk_size_explicit_overrides_mode():
+    """Explicit min_chunk_size is always respected."""
+    svc = ChunkingService(chunk_size=500, mode="markdown-academic", min_chunk_size=42)
+    assert svc.min_chunk_size == 42
+
+
 def test_references_chunks_not_merged():
     """Reference entries are emitted one per paragraph, not merged."""
     ref_body = "\n\n".join(f"[{i}] Author{i}, Title{i}." for i in range(10))
     text = f"# Paper\n\n## References\n\n{ref_body}"
-    svc = ChunkingService(chunk_size=2000, mode="markdown", min_chunk_size=500)
+    svc = ChunkingService(chunk_size=2000, mode="markdown-academic", min_chunk_size=500)
     results = svc.chunk_markdown(text)
     ref_chunks = [
         (t, h) for t, h in results if classify_heading(h) == ChunkType.REFERENCES

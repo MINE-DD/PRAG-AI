@@ -2590,7 +2590,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=1.2,<2.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.9" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=2.0" },
-    { name = "ollama", specifier = ">=0.1.0" },
+    { name = "ollama", specifier = ">=0.6.1,<0.7.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },

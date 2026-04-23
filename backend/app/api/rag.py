@@ -164,6 +164,7 @@ def rag_query(
         paper_ids=rag_request.paper_ids,
         sparse_vector=sparse_vector,
         use_hybrid=use_hybrid,
+        exclude_chunk_types=rag_request.exclude_chunk_types or None,
     )
 
     # Format results and build citation key map

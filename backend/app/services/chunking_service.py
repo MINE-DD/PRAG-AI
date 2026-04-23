@@ -76,10 +76,10 @@ class ChunkingService:
     ):
         """
         Args:
-            chunk_size: Max size of each chunk. Characters in "characters"/"markdown" mode,
+            chunk_size: Max size of each chunk. Characters in "characters"/"markdown-academic" mode,
                 tokens in "tokens" mode.
             overlap: Overlap between overflow-split chunks. Same unit as chunk_size.
-            mode: "characters", "tokens", or "markdown".
+            mode: "characters", "tokens", or "markdown-academic".
             min_chunk_size: Minimum paragraph size in **characters** before merging with the
                 next paragraph (markdown mode only). Defaults to chunk_size // 4, which is
                 only a meaningful ratio in character/markdown mode.
@@ -109,7 +109,7 @@ class ChunkingService:
         """Chunk text using the configured strategy."""
         if self.mode == "tokens":
             return self._chunk_by_tokens(text)
-        if self.mode == "markdown":
+        if self.mode == "markdown-academic":
             return [c for c, _ in self.chunk_markdown(text)]
         return self._chunk_by_characters(text)
 

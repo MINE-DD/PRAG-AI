@@ -13,7 +13,7 @@ const CollectionsTab = defineComponent({
     const creating       = ref(false)
     const deleting       = reactive({})
     const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
-                                      chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
+                                      chunkSize: 2000, chunkOverlap: 0, chunkMode: 'markdown-academic' })
     const createMsg             = ref(null)
     const ingestProgress        = reactive({ current: 0, total: 0 })
     const showAdvanced          = ref(false)
@@ -106,7 +106,7 @@ const CollectionsTab = defineComponent({
         }
 
         Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '',
-                                 chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
+                                 chunkSize: 2000, chunkOverlap: 0, chunkMode: 'markdown-academic' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -132,7 +132,7 @@ const CollectionsTab = defineComponent({
     const CHUNK_DEFAULTS = {
       tokens:     { size: 500,  overlap: 100 },
       characters: { size: 2000, overlap: 200 },
-      markdown:   { size: 2000, overlap: 0   },
+      'markdown-academic':   { size: 2000, overlap: 0   },
     }
 
     watch(() => newForm.chunkMode, mode => {
@@ -216,10 +216,10 @@ const CollectionsTab = defineComponent({
         <select v-model="newForm.chunkMode">
           <option value="tokens">Tokens (approx)</option>
           <option value="characters">Characters</option>
-          <option value="markdown">Markdown sections</option>
+          <option value="markdown-academic">Markdown (Academic Papers)</option>
         </select>
       </div>
-      <template v-if="newForm.chunkMode !== 'markdown'">
+      <template v-if="newForm.chunkMode !== 'markdown-academic'">
         <div class="form-group" style="margin:0">
           <label>Chunk size</label>
           <input type="number" v-model.number="newForm.chunkSize" min="50" :max="maxChunkSize" step="50" />

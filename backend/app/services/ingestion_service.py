@@ -148,7 +148,7 @@ class IngestionService:
 
         # Chunk text (body only, no references)
         chunks = []
-        if self.chunking_service.mode == "markdown":
+        if self.chunking_service.mode == "markdown-academic":
             chunk_pairs = self.chunking_service.chunk_markdown(body_text)
             for i, (chunk_text, section_heading) in enumerate(chunk_pairs):
                 chunk = Chunk(
