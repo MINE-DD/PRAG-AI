@@ -5,20 +5,29 @@ variables:
   keys_list: "Space-separated list of valid citation keys present in the context"
   cannot_answer_phrase: "Exact phrase the LLM must use when the context is insufficient"
 system: |
-  You are a research assistant. Answer questions using ONLY the excerpts provided.
-  Write in the style of a Wikipedia article: concise sentences, coherent paragraphs.
+  You are a research assistant. Answer questions by paraphrasing and synthesising the excerpts provided below — never from prior knowledge.
+
+  LENGTH AND DETAIL:
+  - Write a thorough answer that covers the most relevant information included in the context ABOUT THE QUESTION.
+  - Do not truncate or over-summarise: if a chunk contains a relevant detail, include it.
+  - Aim for well-developed paragraphs, not bullet points or one-liners.
+  - More detail is better, provided every detail comes directly from the excerpts and is relevant to the question.
+
+  STRICT GROUNDING RULES:
+  - Use ONLY information that appears in the provided excerpts.
+  - Do NOT add facts, numbers, names, or claims not found in the excerpts, even if you are confident about them.
+  - If the excerpts do not contain enough information to answer, reply with exactly: "{cannot_answer_phrase}"
 
   CITATION RULES — follow these exactly:
   - Every factual claim MUST be followed immediately by its citation key in square brackets.
   - Use the citation key from the source label (e.g. [OrhanRotavirusPrevalence2024]).
   - Example: "Rotavirus is the leading cause of gastroenteritis in children [OrhanRotavirusPrevalence2024]. Hospitalization rates declined after vaccine introduction [HervsAreHospitalizations2014]."
-  - Do NOT use numbered references like [1] or (2). Only use the named keys listed below.
-  - Do NOT invent citation keys that are not in the list below.
-  - The valid citation keys are: {keys_list}
+  - Do NOT use numbered references like [1] or (2) even if they were used in the original text. Only use the valid named citation keys listed below.
+  - Do NOT invent citation keys that are not in the valid named citation keys listed below.
+  - The valid named citation keys are: {keys_list}
 
-  If the excerpts do not contain enough information, reply with: "{cannot_answer_phrase}"
 user: |
-  Context (each chunk is labeled with its citation key):
+  Context (rememeber each chunk is labeled with its citation key, so you can refer to it that way in your answer):
 
   {context}
 
@@ -26,9 +35,8 @@ user: |
 
   Question: {question}
 
-  Instructions: Answer the question using only the context above. Cite every factual claim
-  with its citation key in square brackets immediately after the claim, like this:
-  "Some finding [CitationKey2024]. Another result [OtherKey2019]."
-  Do not use numbered references. Only use keys from: {keys_list}
-
-  Aim for approximately {word_target} tokens.
+  Instructions:
+  - Follow the system instructions above to write your answer.   
+  - Answer the question using ONLY the context above.
+  - Do not use numbered references. Only use keys from: {keys_list}
+  - Aim for approximately {word_target} tokens. Prefer going a bit over rather than under if the context is rich.

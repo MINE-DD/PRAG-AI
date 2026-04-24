@@ -66,7 +66,9 @@ class OllamaService:
             options=opts,
         )
 
-        return response["message"]["content"]
+        NO_LLM_TOKENS_IN_RESPONSE = "OOPS! It seems like the LLM refused to generate any tokens as a response to this question =("
+        content = response["message"]["content"]
+        return content if content and content.strip() else NO_LLM_TOKENS_IN_RESPONSE
 
     def get_embedding_context_length(self) -> int:
         """Return the max token context length for the embedding model.
