@@ -191,6 +191,7 @@ def rag_query(
 
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
+    rendered_prompt: dict = {}
     if results:
         # Build context: each chunk tagged with its citation key
         context_parts = []
@@ -223,6 +224,7 @@ def rag_query(
             temperature=0.3,
             max_tokens=rag_request.max_tokens,
         )
+        rendered_prompt = {"system": rendered.system, "user": rendered.user}
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():
@@ -251,6 +253,7 @@ def rag_query(
         "citations": citations,
         "llm_provider": llm_info["provider"],
         "llm_model": llm_info["model"],
+        "rendered_prompt": rendered_prompt,
     }
 
     return response

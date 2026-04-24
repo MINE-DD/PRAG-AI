@@ -80,6 +80,28 @@ const RagTab = defineComponent({
 
     function togglePassage(r) { r._open = !r._open }
 
+    function exportInteraction() {
+      if (!result.value) return
+      const now = new Date()
+      const ts = now.toISOString().slice(0, 16).replace('T', '-').replace(':', '-')
+      const filename = `rag-${collectionId.value}-${ts}.json`
+      const payload = {
+        timestamp: now.toISOString(),
+        collection_id: collectionId.value,
+        llm_provider: result.value.llm_provider,
+        llm_model: result.value.llm_model,
+        query: query.value,
+        rendered_prompt: result.value.rendered_prompt || {},
+        answer: result.value.answer,
+        retrieved_chunks: result.value.results || [],
+        citations: result.value.citations || {},
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+        filename,
+      )
+    }
+
     function exportMd() {
       if (!result.value) return
       const lines = [
@@ -107,7 +129,7 @@ const RagTab = defineComponent({
       collectionId, useHybrid,
       filterSearch, filterDir, allDirs, filteredPapers,
       checkAll, uncheckAll,
-      runQuery, togglePassage, exportMd,
+      runQuery, togglePassage, exportMd, exportInteraction,
       showAdvanced, selectedPrompt,
     }
   },
@@ -219,6 +241,7 @@ const RagTab = defineComponent({
           <div class="card-title" style="margin:0;flex:1">Answer</div>
           <span v-if="result.llm_model" style="font-size:11px;color:var(--text-muted);margin-right:4px">{{ result.llm_model }}</span>
           <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
+          <button class="btn btn-secondary btn-sm" @click="exportInteraction">⬇ Export Interaction</button>
         </div>
         <div style="line-height:1.75;white-space:pre-wrap">{{ result.answer }}</div>
       </div>
