@@ -2,9 +2,9 @@ models:
   embedding: nomic-embed-text:latest
   llm:
     type: local
-    model: qwen3:8b
+    model: gemma4:e2b
     google_model: gemini-2.5-flash
-    max_allowed_tokens: 8192
+    max_allowed_tokens: 131072
 chunking:
   size: 500
   overlap: 100

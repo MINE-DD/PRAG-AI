@@ -17,8 +17,10 @@ const RagTab = defineComponent({
     const result       = ref(null)
     const papers       = ref([])
     const selectedIds  = ref([])
-    const showFilters  = ref(false)
-    const showAdvanced = ref(false)
+    const showFilters    = ref(false)
+    const showAdvanced   = ref(false)
+    const showPassages   = ref(false)
+    const showCitations  = ref(false)
     const selectedPrompt = ref('default')
     const citationMode = ref('apa')
     const filterSearch = ref('')
@@ -63,6 +65,8 @@ const RagTab = defineComponent({
       loading.value = true
       error.value = null
       result.value = null
+      showPassages.value = false
+      showCitations.value = false
       try {
         const body = {
           query_text: query.value.trim(),
@@ -128,7 +132,19 @@ const RagTab = defineComponent({
       downloadBlob(new Blob([lines.join('\n')], { type: 'text/markdown' }), 'rag-export.md')
     }
 
-    function renderMd(text) { return window.marked ? window.marked.parse(text) : text }
+    function renderMd(text, citations) {
+      let html = window.marked ? window.marked.parse(text) : text
+      if (citations) {
+        html = html.replace(/\[([^\]]+)\]/g, (match, key) => {
+          const cit = citations[key]
+          if (cit?.pdf_url) {
+            return `<a href="${api.url()}${cit.pdf_url}" target="_blank" rel="noopener">${match}</a>`
+          }
+          return match
+        })
+      }
+      return html
+    }
 
     return {
       error, loading, query, topK, maxTokens,
@@ -138,6 +154,7 @@ const RagTab = defineComponent({
       checkAll, uncheckAll,
       runQuery, togglePassage, exportMd, exportInteraction, pdfUrl,
       showAdvanced, selectedPrompt, renderMd,
+      showPassages, showCitations,
     }
   },
 
@@ -246,20 +263,21 @@ const RagTab = defineComponent({
       <div class="card" v-if="result.answer">
         <div class="flex items-center gap-8" style="margin-bottom:12px">
           <div class="card-title" style="margin:0;flex:1">Answer</div>
-          <span v-if="result.llm_model" style="font-size:11px;color:var(--text-muted);margin-right:4px">{{ result.llm_model }}</span>
+          <span v-if="result.llm_model" style="font-size:11px;font-weight:600;color:#fff;background:#22c55e;padding:2px 8px;border-radius:12px;margin-right:4px">{{ result.llm_model }}</span>
           <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
           <button class="btn btn-secondary btn-sm" @click="exportInteraction">⬇ Export Interaction</button>
         </div>
-        <div class="markdown-body" v-html="renderMd(result.answer)"></div>
+        <div class="markdown-body" v-html="renderMd(result.answer, result.citations)"></div>
       </div>
 
       <!-- Retrieved passages -->
       <div class="card" v-if="result.results && result.results.length">
-        <div class="card-title">
+        <div class="card-title" style="cursor:pointer;user-select:none" @click="showPassages=!showPassages">
+          <span class="chevron" :class="{open:showPassages}" style="margin-right:6px">▶</span>
           Retrieved passages
           <span class="badge badge-gray" style="margin-left:6px">{{ result.results.length }}</span>
         </div>
-        <div v-for="(r, i) in result.results" :key="i" class="collapsible">
+        <div v-if="showPassages" v-for="(r, i) in result.results" :key="i" class="collapsible">
           <div class="collapsible-header" @click="togglePassage(r)">
             <span>
               {{ r.unique_id }}
@@ -276,27 +294,32 @@ const RagTab = defineComponent({
 
       <!-- Citations -->
       <div class="card" v-if="result.citations && Object.keys(result.citations).length">
-        <div class="flex items-center gap-8" style="margin-bottom:12px">
+        <div class="flex items-center gap-8" style="margin-bottom:12px;cursor:pointer;user-select:none" @click="showCitations=!showCitations">
           <div class="card-title" style="margin:0;flex:1">
+            <span class="chevron" :class="{open:showCitations}" style="margin-right:6px">▶</span>
             Citations
             <span class="badge badge-gray" style="margin-left:6px">{{ Object.keys(result.citations).length }}</span>
           </div>
-          <button class="btn btn-secondary btn-sm"
-                  :style="citationMode==='apa' ? 'border-color:var(--primary);color:var(--primary)' : ''"
-                  @click="citationMode='apa'">APA</button>
-          <button class="btn btn-secondary btn-sm"
-                  :style="citationMode==='bibtex' ? 'border-color:var(--primary);color:var(--primary)' : ''"
-                  @click="citationMode='bibtex'">BibTeX</button>
+          <template v-if="showCitations">
+            <button class="btn btn-secondary btn-sm"
+                    :style="citationMode==='apa' ? 'border-color:var(--primary);color:var(--primary)' : ''"
+                    @click.stop="citationMode='apa'">APA</button>
+            <button class="btn btn-secondary btn-sm"
+                    :style="citationMode==='bibtex' ? 'border-color:var(--primary);color:var(--primary)' : ''"
+                    @click.stop="citationMode='bibtex'">BibTeX</button>
+          </template>
         </div>
-        <div v-for="(c, key) in result.citations" :key="key" class="citation-box" style="margin-bottom:10px">
-          <div class="flex items-center gap-8" style="margin-bottom:4px">
-            <div style="font-weight:600;font-size:12px;flex:1">{{ c.unique_id }}</div>
-            <a v-if="pdfUrl(c)" :href="pdfUrl(c)" target="_blank" rel="noopener"
-               class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px">📄 PDF</a>
+        <template v-if="showCitations">
+          <div v-for="(c, key) in result.citations" :key="key" class="citation-box" style="margin-bottom:10px">
+            <div class="flex items-center gap-8" style="margin-bottom:4px">
+              <div style="font-weight:600;font-size:12px;flex:1">{{ c.unique_id }}</div>
+              <a v-if="pdfUrl(c)" :href="pdfUrl(c)" target="_blank" rel="noopener"
+                 class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px">📄 PDF</a>
+            </div>
+            <pre v-if="citationMode==='bibtex'" style="font-size:11px">{{ c.bibtex }}</pre>
+            <p v-else style="font-size:13px;line-height:1.5">{{ c.apa }}</p>
           </div>
-          <pre v-if="citationMode==='bibtex'" style="font-size:11px">{{ c.bibtex }}</pre>
-          <p v-else style="font-size:13px;line-height:1.5">{{ c.apa }}</p>
-        </div>
+        </template>
       </div>
     </template>
   </template>
