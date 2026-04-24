@@ -1,4 +1,7 @@
+import json
 import re
+from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -187,10 +190,23 @@ def rag_query(
 
     # Load metadata for all cited papers upfront
     paper_metadata_map = {}  # paper_id → PaperMetadata
+    paper_pdf_url_map = {}  # paper_id → preprocess pdf URL (may be empty)
     for paper_id in paper_citation_keys:
         meta = metadata_service.get_paper_metadata(collection_id, paper_id)
         if meta:
             paper_metadata_map[paper_id] = meta
+        # Build PDF URL from raw collection metadata JSON
+        raw_path = (
+            Path(settings.data_dir) / collection_id / "metadata" / f"{paper_id}.json"
+        )
+        if raw_path.exists():
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            preprocessed_dir = raw.get("preprocessed_dir", "")
+            pdf_name = raw.get("source_pdf") or f"{paper_id}.pdf"
+            paper_pdf_url_map[paper_id] = (
+                f"/preprocess/pdf/{quote(preprocessed_dir, safe='')}"
+                f"/{quote(pdf_name, safe='')}"
+            )
 
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
@@ -266,6 +282,7 @@ def rag_query(
                 "year": meta.year,
                 "apa": citation_service.format_apa(meta),
                 "bibtex": citation_service.format_bibtex(meta),
+                "pdf_url": paper_pdf_url_map.get(paper_id, ""),
             }
 
     response = {

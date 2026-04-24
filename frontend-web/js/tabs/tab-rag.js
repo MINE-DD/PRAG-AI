@@ -80,6 +80,11 @@ const RagTab = defineComponent({
 
     function togglePassage(r) { r._open = !r._open }
 
+    function pdfUrl(citation) {
+      if (!citation.pdf_url) return null
+      return `${api.url()}${citation.pdf_url}`
+    }
+
     function exportInteraction() {
       if (!result.value) return
       const now = new Date()
@@ -123,14 +128,16 @@ const RagTab = defineComponent({
       downloadBlob(new Blob([lines.join('\n')], { type: 'text/markdown' }), 'rag-export.md')
     }
 
+    function renderMd(text) { return window.marked ? window.marked.parse(text) : text }
+
     return {
       error, loading, query, topK, maxTokens,
       result, papers, selectedIds, showFilters, citationMode,
       collectionId, useHybrid,
       filterSearch, filterDir, allDirs, filteredPapers,
       checkAll, uncheckAll,
-      runQuery, togglePassage, exportMd, exportInteraction,
-      showAdvanced, selectedPrompt,
+      runQuery, togglePassage, exportMd, exportInteraction, pdfUrl,
+      showAdvanced, selectedPrompt, renderMd,
     }
   },
 
@@ -243,7 +250,7 @@ const RagTab = defineComponent({
           <button class="btn btn-secondary btn-sm" @click="exportMd">⬇ Export MD</button>
           <button class="btn btn-secondary btn-sm" @click="exportInteraction">⬇ Export Interaction</button>
         </div>
-        <div style="line-height:1.75;white-space:pre-wrap">{{ result.answer }}</div>
+        <div class="markdown-body" v-html="renderMd(result.answer)"></div>
       </div>
 
       <!-- Retrieved passages -->
@@ -282,7 +289,11 @@ const RagTab = defineComponent({
                   @click="citationMode='bibtex'">BibTeX</button>
         </div>
         <div v-for="(c, key) in result.citations" :key="key" class="citation-box" style="margin-bottom:10px">
-          <div style="font-weight:600;font-size:12px;margin-bottom:4px">{{ c.unique_id }}</div>
+          <div class="flex items-center gap-8" style="margin-bottom:4px">
+            <div style="font-weight:600;font-size:12px;flex:1">{{ c.unique_id }}</div>
+            <a v-if="pdfUrl(c)" :href="pdfUrl(c)" target="_blank" rel="noopener"
+               class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 8px">📄 PDF</a>
+          </div>
           <pre v-if="citationMode==='bibtex'" style="font-size:11px">{{ c.bibtex }}</pre>
           <p v-else style="font-size:13px;line-height:1.5">{{ c.apa }}</p>
         </div>

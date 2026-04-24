@@ -64,18 +64,12 @@ class ChunkingService:
             paragraphs = self._split_paragraphs(body)
             paragraphs = self._merge_short(paragraphs)
 
-            prefix_len = (len(heading) + 2) if heading else 0
-            sub_size = max(50, self.chunk_size - prefix_len)
-
             for para in paragraphs:
-                full_text = f"{heading}\n\n{para}".strip() if heading else para
-                if len(full_text) <= self.chunk_size:
-                    results.append((full_text, heading))
+                if len(para) <= self.chunk_size:
+                    results.append((para, heading))
                 else:
-                    # Overflow: split at reduced size so heading + sub ≤ chunk_size
-                    for sub in self._chunk_by_characters(para, chunk_size=sub_size):
-                        sub_text = f"{heading}\n\n{sub}".strip() if heading else sub
-                        results.append((sub_text, heading))
+                    for sub in self._chunk_by_characters(para):
+                        results.append((sub, heading))
 
         return results
 
@@ -86,20 +80,27 @@ class ChunkingService:
     def _split_by_headers(self, text: str) -> list[tuple[str, str]]:
         """Split markdown into (heading_path, body) sections.
 
-        Heading path is the concatenation of the most recent # / ## / ###
-        headings, e.g. "# Introduction > ## Background".  Text before the
-        first header is emitted with an empty heading.
+        Heading path is the concatenation of the most recent ## / ### headings,
+        e.g. "## Background > ### Detail".  The first heading (paper title,
+        regardless of level) is always excluded from heading paths.  Text
+        before the first header is emitted with an empty heading.
         """
         header_re = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
         sections: list[tuple[str, str]] = []
 
         # Track the current heading at each level (h1, h2, h3)
         current_levels: dict[int, str] = {}
+        # The very first heading in the document is the paper title — always excluded
+        title_heading: str | None = None
 
         pos = 0
         preamble_end = None
 
         for m in header_re.finditer(text):
+            heading_text = m.group(0).strip()
+            if title_heading is None:
+                title_heading = heading_text
+
             if preamble_end is None:
                 # Emit preamble (text before first header)
                 preamble = text[: m.start()].strip()
@@ -112,11 +113,13 @@ class ChunkingService:
                 # Remove the header line itself from body
                 body = header_re.sub("", body, count=0).strip()
                 if body:
-                    sections.append((_build_heading_path(current_levels), body))
+                    sections.append(
+                        (_build_heading_path(current_levels, title_heading), body)
+                    )
 
             level = len(m.group(1))
             # Update heading at this level and clear deeper levels
-            current_levels[level] = m.group(0).strip()
+            current_levels[level] = heading_text
             for deeper in list(current_levels):
                 if deeper > level:
                     del current_levels[deeper]
@@ -128,7 +131,9 @@ class ChunkingService:
             body = text[pos:].strip()
             body = header_re.sub("", body, count=0).strip()
             if body:
-                sections.append((_build_heading_path(current_levels), body))
+                sections.append(
+                    (_build_heading_path(current_levels, title_heading), body)
+                )
         elif not sections:
             # No headers at all — treat whole text as one section
             if text.strip():
@@ -202,6 +207,6 @@ class ChunkingService:
         return [p.strip() for p in paragraphs if p.strip()]
 
 
-def _build_heading_path(levels: dict[int, str]) -> str:
-    """Build a heading path string from the active heading levels."""
-    return " > ".join(levels[k] for k in sorted(levels))
+def _build_heading_path(levels: dict[int, str], title: str | None = None) -> str:
+    """Build a heading path string, excluding the paper title (first heading encountered)."""
+    return " > ".join(v for _, v in sorted(levels.items()) if v != title)

@@ -72,12 +72,13 @@ def test_markdown_chunk_returns_section_tuples():
     assert all(isinstance(r, tuple) and len(r) == 2 for r in results)
 
 
-def test_markdown_chunk_heading_prefix_in_text():
+def test_markdown_chunk_heading_not_in_text():
+    """Heading is metadata only — chunk_text must NOT start with the heading."""
     svc = ChunkingService(chunk_size=2000, mode="markdown")
     results = svc.chunk_markdown(SAMPLE_MD)
     for chunk_text, heading in results:
         if heading:
-            assert chunk_text.startswith(heading)
+            assert not chunk_text.startswith(heading)
 
 
 def test_markdown_chunk_heading_stored_separately():
@@ -92,10 +93,11 @@ def test_markdown_chunk_inherits_parent_heading():
     svc = ChunkingService(chunk_size=2000, mode="markdown")
     results = svc.chunk_markdown(SAMPLE_MD)
     heading_paths = [h for _, h in results if h]
-    # The ### Dataset chunk should include both ## Methods and ### Dataset
+    # The ### Dataset chunk should include ## Methods and ### Dataset but NOT the H1
     dataset_headings = [h for h in heading_paths if "Dataset" in h]
     assert dataset_headings, "Expected a chunk under ### Dataset"
     assert "## Methods" in dataset_headings[0]
+    assert not dataset_headings[0].startswith("# ")
 
 
 def test_markdown_chunk_no_headers():
@@ -114,8 +116,8 @@ def test_markdown_overflow_split():
     results = svc.chunk_markdown(text)
     assert len(results) > 1
     for chunk_text, heading in results:
-        assert heading == "# Section"
-        assert len(chunk_text) <= 50 + len("# Section\n\n")
+        assert heading == ""  # H1 is excluded from heading path
+        assert len(chunk_text) <= 50
 
 
 def test_markdown_merge_short_paragraphs():
