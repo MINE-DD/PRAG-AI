@@ -11,20 +11,29 @@ class ChunkingService:
         chunk_size: int = 500,
         overlap: int = 100,
         mode: str = "characters",
-        min_chunk_size: int = 50,
+        min_chunk_size: int | None = None,
     ):
         """
         Args:
-            chunk_size: Max size of each chunk (characters or tokens depending on mode).
-            overlap: Overlap between overflow-split chunks (same unit as chunk_size).
+            chunk_size: Max size of each chunk. Characters in "characters"/"markdown" mode,
+                tokens in "tokens" mode.
+            overlap: Overlap between overflow-split chunks. Same unit as chunk_size.
             mode: "characters", "tokens", or "markdown".
-            min_chunk_size: Minimum chunk size in characters; smaller paragraphs are
-                merged with the next one (markdown mode only).
+            min_chunk_size: Minimum paragraph size in **characters** before merging with the
+                next paragraph (markdown mode only). Defaults to chunk_size // 4, which is
+                only a meaningful ratio in character/markdown mode.
         """
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.mode = mode
-        self.min_chunk_size = min_chunk_size
+        if min_chunk_size is not None:
+            self.min_chunk_size = min_chunk_size
+        elif mode == "tokens":
+            self.min_chunk_size = 100  # characters; tokens mode has no char/token ratio
+        else:
+            self.min_chunk_size = (
+                chunk_size // 4
+            )  # characters, proportional to chunk window
         self._tokenizer = None
 
     @property
@@ -158,7 +167,11 @@ class ChunkingService:
                 merged.append(buf)
                 buf = para
         if buf:
-            merged.append(buf)
+            # If the trailing buf is still small, absorb it into the previous chunk
+            if merged and len(buf) < self.min_chunk_size:
+                merged[-1] = f"{merged[-1]}\n\n{buf}"
+            else:
+                merged.append(buf)
         return merged
 
     def _chunk_by_characters(
