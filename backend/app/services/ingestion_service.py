@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.models.paper import Chunk, ChunkType
-from app.services.chunking_service import ChunkingService
+from app.services.chunking_service import ChunkingService, classify_heading
 from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
@@ -155,7 +155,7 @@ class IngestionService:
                     paper_id=paper_id,
                     unique_id=unique_id,
                     chunk_text=chunk_text,
-                    chunk_type=ChunkType.BODY,
+                    chunk_type=classify_heading(section_heading),
                     page_number=1,
                     metadata={"chunk_index": i, "section_heading": section_heading},
                 )

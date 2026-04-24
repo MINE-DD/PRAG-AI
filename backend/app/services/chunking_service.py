@@ -2,6 +2,67 @@ from __future__ import annotations
 
 import re
 
+from app.models.paper import ChunkType
+
+# Ordered list of (compiled_regex, ChunkType) pairs; first match wins.
+_HEADING_PATTERNS: list[tuple[re.Pattern[str], ChunkType]] = [
+    (re.compile(r"\babstract\b|аннотация"), ChunkType.ABSTRACT),
+    (
+        re.compile(r"\bintro\b|introduction|overview|background|motivation"),
+        ChunkType.INTRODUCTION,
+    ),
+    (
+        re.compile(r"related work|prior work|previous work|literature review"),
+        ChunkType.RELATED_WORK,
+    ),
+    (
+        re.compile(
+            r"\bmethods?\b|methodology|materials and methods|experimental setup"
+            r"|implementation|approach|procedure"
+        ),
+        ChunkType.METHODS,
+    ),
+    (
+        re.compile(
+            r"\bdata\b|datasets?|corpus|corpora|preprocessing|pre-processing"
+            r"|time-varying corpora|data availability"
+        ),
+        ChunkType.DATA,
+    ),
+    (
+        re.compile(
+            r"\bresults?\b|findings?|experiments?|evaluat|scoring"
+            r"|shared task results|participating systems"
+        ),
+        ChunkType.RESULTS,
+    ),
+    (re.compile(r"\bdiscussion\b"), ChunkType.DISCUSSION),
+    (
+        re.compile(r"conclusions?|summary|future work|limitations?"),
+        ChunkType.CONCLUSION,
+    ),
+    (re.compile(r"references?|bibliography|works cited"), ChunkType.REFERENCES),
+    (
+        re.compile(
+            r"acknowledg|funding|author contrib|conflict of interest|ethics?\b|ethical"
+        ),
+        ChunkType.ACKNOWLEDGEMENTS,
+    ),
+    (re.compile(r"appendix|supplementary"), ChunkType.APPENDIX),
+]
+
+# Strips markdown bold/italic, leading section numbers, and surrounding whitespace.
+_HEADING_CLEAN_RE = re.compile(r"\*{1,2}|_|\b\d+(\.\d+)*\s*")
+
+
+def classify_heading(heading: str) -> ChunkType:
+    """Return the ChunkType that best matches a section heading string."""
+    clean = _HEADING_CLEAN_RE.sub(" ", heading).lower().strip()
+    for pattern, chunk_type in _HEADING_PATTERNS:
+        if pattern.search(clean):
+            return chunk_type
+    return ChunkType.BODY
+
 
 class ChunkingService:
     """Service for chunking text into smaller pieces"""
@@ -71,14 +132,19 @@ class ChunkingService:
 
         for heading, body in sections:
             paragraphs = self._split_paragraphs(body)
-            paragraphs = self._merge_short(paragraphs)
 
-            for para in paragraphs:
-                if len(para) <= self.chunk_size:
+            if classify_heading(heading) == ChunkType.REFERENCES:
+                # Emit each reference entry as its own chunk — no merging.
+                for para in paragraphs:
                     results.append((para, heading))
-                else:
-                    for sub in self._chunk_by_characters(para):
-                        results.append((sub, heading))
+            else:
+                paragraphs = self._merge_short(paragraphs)
+                for para in paragraphs:
+                    if len(para) <= self.chunk_size:
+                        results.append((para, heading))
+                    else:
+                        for sub in self._chunk_by_characters(para):
+                            results.append((sub, heading))
 
         return results
 

@@ -1,4 +1,5 @@
-from app.services.chunking_service import ChunkingService
+from app.models.paper import ChunkType
+from app.services.chunking_service import ChunkingService, classify_heading
 
 
 def test_chunk_text_fixed_size():
@@ -134,3 +135,58 @@ def test_chunk_text_markdown_mode_returns_strings():
     svc = ChunkingService(chunk_size=2000, mode="markdown")
     chunks = svc.chunk_text(SAMPLE_MD)
     assert all(isinstance(c, str) for c in chunks)
+
+
+# ---------------------------------------------------------------------------
+# classify_heading
+# ---------------------------------------------------------------------------
+
+
+def test_classify_heading_known_types():
+    cases = [
+        ("## **Abstract**", ChunkType.ABSTRACT),
+        ("## ABSTRACT", ChunkType.ABSTRACT),
+        ("## **1 Introduction**", ChunkType.INTRODUCTION),
+        ("## INTRODUCTION", ChunkType.INTRODUCTION),
+        ("## 2 Related Work", ChunkType.RELATED_WORK),
+        ("## **3 Methods**", ChunkType.METHODS),
+        ("## Materials and Methods", ChunkType.METHODS),
+        ("## **2 Data**", ChunkType.DATA),
+        ("## 5 Datasets", ChunkType.DATA),
+        ("## **4 Results**", ChunkType.RESULTS),
+        ("## 6 Evaluation", ChunkType.RESULTS),
+        ("## **6 Discussion**", ChunkType.DISCUSSION),
+        ("## DISCUSSION", ChunkType.DISCUSSION),
+        ("## 7 Conclusion", ChunkType.CONCLUSION),
+        ("## Limitations", ChunkType.CONCLUSION),
+        ("## REFERENCES", ChunkType.REFERENCES),
+        ("## References", ChunkType.REFERENCES),
+        ("## Acknowledgements", ChunkType.ACKNOWLEDGEMENTS),
+        ("## Funding", ChunkType.ACKNOWLEDGEMENTS),
+        ("## Appendix A", ChunkType.APPENDIX),
+        ("## Supplementary Material", ChunkType.APPENDIX),
+        ("## Some Random Section", ChunkType.BODY),
+        ("", ChunkType.BODY),
+    ]
+    for heading, expected in cases:
+        result = classify_heading(heading)
+        assert (
+            result == expected
+        ), f"classify_heading({heading!r}) = {result!r}, expected {expected!r}"
+
+
+def test_classify_heading_strips_bold_and_numbers():
+    assert classify_heading("## **3.2 Experimental Setup**") == ChunkType.METHODS
+    assert classify_heading("## **5.1 Participating Systems**") == ChunkType.RESULTS
+
+
+def test_references_chunks_not_merged():
+    """Reference entries are emitted one per paragraph, not merged."""
+    ref_body = "\n\n".join(f"[{i}] Author{i}, Title{i}." for i in range(10))
+    text = f"# Paper\n\n## References\n\n{ref_body}"
+    svc = ChunkingService(chunk_size=2000, mode="markdown", min_chunk_size=500)
+    results = svc.chunk_markdown(text)
+    ref_chunks = [
+        (t, h) for t, h in results if classify_heading(h) == ChunkType.REFERENCES
+    ]
+    assert len(ref_chunks) == 10  # one per entry, not merged despite min_chunk_size
