@@ -15,6 +15,7 @@ from app.services.sparse_embedding_service import SparseEmbeddingService
 
 router = APIRouter()
 _api_keys = ApiKeysService()
+_SMALL_MODEL_RE = re.compile(r"[:\-_.]([123]b|e[12]b|mini|tiny)", re.IGNORECASE)
 
 CANNOT_ANSWER_PHRASE = "Sorry, I do not know the answer for this"
 
@@ -102,6 +103,7 @@ def get_services():
         sparse_embedding_service,
         llm_service,
         llm_info,
+        config,
     )
 
 
@@ -127,6 +129,7 @@ def rag_query(
         sparse_embedding_service,
         llm_service,
         llm_info,
+        config,
     ) = services
 
     # Validate query text
@@ -206,10 +209,20 @@ def rag_query(
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_tokens
+
+        # Auto-select small_llm prompt for edge models when default is requested
+        prompt_name = rag_request.prompt_name
+        if prompt_name == "default" and _SMALL_MODEL_RE.search(llm_info["model"]):
+            try:
+                prompt_service.get_raw("rag", "small_llm")
+                prompt_name = "small_llm"
+            except FileNotFoundError:
+                pass
+
         try:
             rendered = prompt_service.render(
                 "rag",
-                rag_request.prompt_name,
+                prompt_name,
                 context=context,
                 question=rag_request.query_text,
                 word_target=word_target,
@@ -218,13 +231,21 @@ def rag_query(
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+
+        llm_max_tokens = config["models"]["llm"].get("max_allowed_tokens", 512)
+        num_predict = min(rag_request.max_tokens * 3, llm_max_tokens)
+
         answer = llm_service.generate(
             prompt=rendered.user,
             system=rendered.system,
             temperature=0.3,
-            max_tokens=rag_request.max_tokens,
+            max_tokens=num_predict,
         )
-        rendered_prompt = {"system": rendered.system, "user": rendered.user}
+        rendered_prompt = {
+            "system": rendered.system,
+            "user": rendered.user,
+            "prompt_name": prompt_name,
+        }
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():

@@ -103,6 +103,7 @@ def get_settings():
         "embedding_context_length": embedding_context_length,
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
+        "llm_max_allowed_tokens": llm_cfg.get("max_allowed_tokens", 8192),
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_google_key": _api_keys.has_key("google"),
         "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
@@ -166,6 +167,20 @@ class UpdateSettingsRequest(BaseModel):
     top_k: int | None = None
 
 
+def _fetch_llm_max_tokens(model: str) -> int:
+    """Return context length for a local Ollama LLM model, fallback 8192."""
+    try:
+        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        info = svc.client.show(model)
+        modelinfo = info.modelinfo or {}
+        for key, value in modelinfo.items():
+            if key.endswith(".context_length"):
+                return int(value)
+    except Exception:
+        pass
+    return 8192
+
+
 @router.post("/settings")
 def update_settings(request: UpdateSettingsRequest):
     """Update application settings. Writes to config.yaml.
@@ -183,6 +198,15 @@ def update_settings(request: UpdateSettingsRequest):
         config["models"]["llm"]["type"] = request.llm_provider
     if request.google_model is not None:
         config["models"]["llm"]["google_model"] = request.google_model
+
+    # Update max_allowed_tokens whenever the LLM model or provider changes
+    provider = request.llm_provider or config["models"]["llm"].get("type", "local")
+    if provider == "google":
+        config["models"]["llm"]["max_allowed_tokens"] = 100000
+    elif request.llm_model is not None:
+        config["models"]["llm"]["max_allowed_tokens"] = _fetch_llm_max_tokens(
+            request.llm_model
+        )
     if request.chunk_size is not None:
         config["chunking"]["size"] = request.chunk_size
     if request.chunk_overlap is not None:
