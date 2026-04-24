@@ -84,6 +84,9 @@ python_version = "3.12"
 ignore_missing_imports = true
 no_error_summary = true
 plugins = ["pydantic.mypy"]
+cache_fine_grained = false
+sqlite_cache = false
+disable_error_code = ["import-untyped"]
 
 [tool.coverage.run]
 source = ["backend"]

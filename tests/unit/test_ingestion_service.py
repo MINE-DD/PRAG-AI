@@ -175,3 +175,119 @@ def test_generate_unique_id_empty(service):
     """Test unique ID generation with empty data."""
     uid = service._generate_unique_id("", [], None)
     assert uid == "UnknownPaper"
+
+
+# ---------------------------------------------------------------------------
+# Markdown chunking mode
+# ---------------------------------------------------------------------------
+
+MARKDOWN_MD = """# Introduction
+
+This is the introduction to our study.
+
+## Methods
+
+We applied several methods to solve the problem.
+
+### Dataset
+
+The dataset contains thousands of annotated samples.
+"""
+
+
+@pytest.fixture
+def markdown_preprocessed_dir(tmp_path):
+    md = tmp_path / "paper_md.md"
+    md.write_text(MARKDOWN_MD)
+    meta = tmp_path / "paper_md_metadata.json"
+    meta.write_text(
+        json.dumps(
+            {
+                "title": "Markdown Paper",
+                "authors": ["Carol White"],
+                "publication_date": "2025",
+            }
+        )
+    )
+    return tmp_path
+
+
+@pytest.fixture
+def markdown_service(temp_data_dir):
+    chunking = ChunkingService(chunk_size=2000, overlap=0, mode="markdown")
+    ollama = Mock()
+    ollama.generate_embedding.return_value = [0.1] * 768
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 768] * 20
+    qdrant = Mock()
+    qdrant.create_collection = Mock()
+    qdrant.upsert_chunks = Mock()
+    return IngestionService(
+        chunking_service=chunking,
+        ollama_service=ollama,
+        qdrant_service=qdrant,
+    )
+
+
+def test_ingest_markdown_mode_creates_chunks(
+    markdown_service, temp_data_dir, markdown_preprocessed_dir
+):
+    """Markdown mode produces at least one chunk per section."""
+    markdown_service.create_collection("md_coll", "MD Test")
+    md_path = str(markdown_preprocessed_dir / "paper_md.md")
+    meta_path = str(markdown_preprocessed_dir / "paper_md_metadata.json")
+
+    result = markdown_service.ingest_file("md_coll", md_path, meta_path)
+
+    assert result["chunks_created"] >= 3  # at least one per section
+
+
+def test_ingest_markdown_mode_section_heading_in_payload(
+    markdown_service, temp_data_dir, markdown_preprocessed_dir
+):
+    """Each chunk's metadata contains a section_heading field."""
+    markdown_service.create_collection("md_coll", "MD Test")
+    md_path = str(markdown_preprocessed_dir / "paper_md.md")
+
+    markdown_service.ingest_file("md_coll", md_path)
+
+    call_args = markdown_service.qdrant_service.upsert_chunks.call_args
+    chunks = call_args[1]["chunks"] if call_args[1] else call_args[0][1]
+    for chunk in chunks:
+        assert "section_heading" in chunk.metadata
+
+
+def test_ingest_markdown_mode_heading_paths(
+    markdown_service, temp_data_dir, markdown_preprocessed_dir
+):
+    """Subsection chunks carry the full heading path including parent headings."""
+    markdown_service.create_collection("md_coll", "MD Test")
+    md_path = str(markdown_preprocessed_dir / "paper_md.md")
+
+    markdown_service.ingest_file("md_coll", md_path)
+
+    call_args = markdown_service.qdrant_service.upsert_chunks.call_args
+    chunks = call_args[1]["chunks"] if call_args[1] else call_args[0][1]
+    headings = [c.metadata["section_heading"] for c in chunks]
+
+    # The ### Dataset chunk must reference its parent ## Methods
+    dataset_headings = [h for h in headings if "Dataset" in h]
+    assert dataset_headings, "Expected a chunk from ### Dataset"
+    assert "## Methods" in dataset_headings[0]
+
+
+def test_ingest_fixed_mode_section_heading_empty(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
+    """Fixed-size modes store an empty section_heading for consistency."""
+    _, ollama, qdrant = mock_services
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+
+    service.create_collection("fixed_coll", "Fixed Test")
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+
+    service.ingest_file("fixed_coll", md_path)
+
+    call_args = qdrant.upsert_chunks.call_args
+    chunks = call_args[1]["chunks"] if call_args[1] else call_args[0][1]
+    for chunk in chunks:
+        assert chunk.metadata.get("section_heading") == ""

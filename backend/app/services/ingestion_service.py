@@ -147,20 +147,30 @@ class IngestionService:
         body_text, references = self._split_references(text_content)
 
         # Chunk text (body only, no references)
-        text_chunks = self.chunking_service.chunk_text(body_text)
-
-        # Create Chunk objects
         chunks = []
-        for i, chunk_text in enumerate(text_chunks):
-            chunk = Chunk(
-                paper_id=paper_id,
-                unique_id=unique_id,
-                chunk_text=chunk_text,
-                chunk_type=ChunkType.BODY,
-                page_number=1,
-                metadata={"chunk_index": i},
-            )
-            chunks.append(chunk)
+        if self.chunking_service.mode == "markdown":
+            chunk_pairs = self.chunking_service.chunk_markdown(body_text)
+            for i, (chunk_text, section_heading) in enumerate(chunk_pairs):
+                chunk = Chunk(
+                    paper_id=paper_id,
+                    unique_id=unique_id,
+                    chunk_text=chunk_text,
+                    chunk_type=ChunkType.BODY,
+                    page_number=1,
+                    metadata={"chunk_index": i, "section_heading": section_heading},
+                )
+                chunks.append(chunk)
+        else:
+            for i, chunk_text in enumerate(self.chunking_service.chunk_text(body_text)):
+                chunk = Chunk(
+                    paper_id=paper_id,
+                    unique_id=unique_id,
+                    chunk_text=chunk_text,
+                    chunk_type=ChunkType.BODY,
+                    page_number=1,
+                    metadata={"chunk_index": i, "section_heading": ""},
+                )
+                chunks.append(chunk)
 
         # Generate embeddings
         chunk_texts = [c.chunk_text for c in chunks]
@@ -245,7 +255,7 @@ class IngestionService:
         Returns (body_text, references_text).
         """
         pattern = re.compile(
-            r"^(?:#{1,3}\s+|\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
+            r"^(?:#{1,3}\s+)?(?:\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
             re.IGNORECASE | re.MULTILINE,
         )
         match = pattern.search(text)

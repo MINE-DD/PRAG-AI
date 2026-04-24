@@ -81,9 +81,9 @@ class QdrantService:
         config = self.client.get_collection(collection_name).config.params.vectors
         if isinstance(config, dict):
             return config["dense"].size
-        assert config is not None, (
-            f"No vector config for collection '{collection_name}'"
-        )
+        assert (
+            config is not None
+        ), f"No vector config for collection '{collection_name}'"
         return config.size
 
     def upsert_chunks(
@@ -92,6 +92,7 @@ class QdrantService:
         chunks: list,
         vectors: list,
         sparse_vectors: list[dict] | None = None,
+        batch_size: int = 100,
     ):
         """Upsert chunks with embeddings to Qdrant.
 
@@ -100,6 +101,7 @@ class QdrantService:
             chunks: List of Chunk objects.
             vectors: List of dense embedding vectors.
             sparse_vectors: Optional list of {"indices": [...], "values": [...]} for hybrid.
+            batch_size: Max points per upsert call to avoid oversized payloads.
         """
         named = self._collection_uses_named_vectors(collection_name)
 
@@ -129,7 +131,11 @@ class QdrantService:
             )
             points.append(point)
 
-        self.client.upsert(collection_name=collection_name, points=points)
+        for start in range(0, len(points), batch_size):
+            self.client.upsert(
+                collection_name=collection_name,
+                points=points[start : start + batch_size],
+            )
 
     def search(
         self,
