@@ -26,4 +26,6 @@ class GoogleService:
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
-        return response.text
+        NO_LLM_TOKENS_IN_RESPONSE = "OOPS! It seems like the LLM refused to generate any tokens as a response to this question =("
+        text = response.text
+        return text if text and text.strip() else NO_LLM_TOKENS_IN_RESPONSE

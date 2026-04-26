@@ -28,18 +28,22 @@ class SparseEmbeddingService:
             "values": embedding.values.tolist(),
         }
 
-    def generate_sparse_embeddings_batch(self, texts: list[str]) -> list[dict]:
+    def generate_sparse_embeddings_batch(
+        self, texts: list[str], batch_size: int = 100
+    ) -> list[dict]:
         """Generate sparse embeddings for a batch of texts.
 
         Returns:
             List of {"indices": [...], "values": [...]}
         """
         model = self._get_model()
-        results = list(model.embed(texts))
-        return [
-            {
-                "indices": embedding.indices.tolist(),
-                "values": embedding.values.tolist(),
-            }
-            for embedding in results
-        ]
+        output = []
+        for start in range(0, len(texts), batch_size):
+            for embedding in model.embed(texts[start : start + batch_size]):
+                output.append(
+                    {
+                        "indices": embedding.indices.tolist(),
+                        "values": embedding.values.tolist(),
+                    }
+                )
+        return output

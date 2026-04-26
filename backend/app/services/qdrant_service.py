@@ -92,6 +92,7 @@ class QdrantService:
         chunks: list,
         vectors: list,
         sparse_vectors: list[dict] | None = None,
+        batch_size: int = 100,
     ):
         """Upsert chunks with embeddings to Qdrant.
 
@@ -100,6 +101,7 @@ class QdrantService:
             chunks: List of Chunk objects.
             vectors: List of dense embedding vectors.
             sparse_vectors: Optional list of {"indices": [...], "values": [...]} for hybrid.
+            batch_size: Max points per upsert call to avoid oversized payloads.
         """
         named = self._collection_uses_named_vectors(collection_name)
 
@@ -129,7 +131,11 @@ class QdrantService:
             )
             points.append(point)
 
-        self.client.upsert(collection_name=collection_name, points=points)
+        for start in range(0, len(points), batch_size):
+            self.client.upsert(
+                collection_name=collection_name,
+                points=points[start : start + batch_size],
+            )
 
     def search(
         self,
@@ -139,6 +145,7 @@ class QdrantService:
         paper_ids: list[str] | None = None,
         sparse_vector: dict | None = None,
         use_hybrid: bool = False,
+        exclude_chunk_types: list[str] | None = None,
     ) -> list:
         """Search for similar chunks.
 
@@ -149,13 +156,27 @@ class QdrantService:
             paper_ids: Optional paper ID filter.
             sparse_vector: Optional {"indices": [...], "values": [...]} for hybrid.
             use_hybrid: If True and collection supports it, use RRF fusion.
+            exclude_chunk_types: Chunk type values to exclude (must_not filter).
         """
-        from qdrant_client.models import FieldCondition, Filter, MatchAny
+        from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+
+        must_clauses: list[FieldCondition] = []
+        must_not_clauses: list[FieldCondition] = []
+
+        if paper_ids:
+            must_clauses.append(
+                FieldCondition(key="paper_id", match=MatchAny(any=paper_ids))
+            )
+        if exclude_chunk_types:
+            must_not_clauses.extend(
+                FieldCondition(key="chunk_type", match=MatchValue(value=ct))
+                for ct in exclude_chunk_types
+            )
 
         query_filter = None
-        if paper_ids:
+        if must_clauses or must_not_clauses:
             query_filter = Filter(
-                must=[FieldCondition(key="paper_id", match=MatchAny(any=paper_ids))]
+                must=must_clauses or None, must_not=must_not_clauses or None
             )
 
         named = self._collection_uses_named_vectors(collection_name)

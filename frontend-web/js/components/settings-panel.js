@@ -1,4 +1,4 @@
-import { defineComponent, ref, reactive, watch } from 'vue'
+import { defineComponent, ref, reactive, computed, watch } from 'vue'
 import { api } from '../backend-client.js'
 
 const SettingsPanel = defineComponent({
@@ -15,6 +15,8 @@ const SettingsPanel = defineComponent({
       pdfBackend:     localStorage.getItem('prag_pdf_backend')  || 'pymupdf',
       documentType:   localStorage.getItem('prag_document_type') || 'default',
       embeddingModel: '',
+      embeddingContextLength: null,
+      embeddingModelWarning: null,
       llmModel:       '',
       llmProvider:    'local',
       googleModel:    'gemini-2.5-flash',
@@ -31,10 +33,22 @@ const SettingsPanel = defineComponent({
     const modelError = ref(null)
     const loading    = ref(false)
 
-    const ollamaModels               = ref([])
+    const ollamaModels               = ref([])  // [{name, capabilities}]
     const googleModels               = ref(['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'])
     const recommendedEmbeddingModels = ref([])
     const recommendedLlmModels       = ref([])
+
+    // Models filtered by capability; fall back to full list if Ollama returned no capability data
+    const embeddingModels = computed(() => {
+      const tagged = ollamaModels.value.filter(m => m.capabilities.includes('embedding'))
+      return tagged.length ? tagged : ollamaModels.value
+    })
+    const llmModels = computed(() => {
+      const tagged = ollamaModels.value.filter(
+        m => m.capabilities.includes('completion') || m.capabilities.includes('tools')
+      )
+      return tagged.length ? tagged : ollamaModels.value
+    })
 
     const pullModel    = ref('')
     const pulling      = ref(false)
@@ -62,8 +76,11 @@ const SettingsPanel = defineComponent({
         if (cloudModels.ollama_embedding?.length) recommendedEmbeddingModels.value = cloudModels.ollama_embedding
         if (cloudModels.ollama_llm?.length)       recommendedLlmModels.value       = cloudModels.ollama_llm
         if (!pullModel.value && cloudModels.ollama_embedding?.length) pullModel.value = cloudModels.ollama_embedding[0]
-        ollamaModels.value   = models.map(m => m.name)
-        form.embeddingModel  = cfg.embedding_model
+        ollamaModels.value   = models.map(m => ({ name: m.name, capabilities: m.capabilities || [] }))
+        form.embeddingModel         = cfg.embedding_model
+        form.embeddingContextLength = cfg.embedding_context_length ?? null
+        form.embeddingModelWarning  = null
+        fetchEmbeddingInfo(cfg.embedding_model)
         form.llmModel        = cfg.llm_model
         form.llmProvider     = cfg.llm_provider || 'local'
         form.googleModel     = cfg.google_model || googleModels.value[0]
@@ -83,6 +100,22 @@ const SettingsPanel = defineComponent({
     }
 
     watch(() => props.visible, v => { if (v) load() })
+
+    async function fetchEmbeddingInfo(model) {
+      if (!model) return
+      form.embeddingModelWarning = null
+      try {
+        const res = await api.get(`/ollama/models/${encodeURIComponent(model)}/context-length`)
+        form.embeddingContextLength = res.context_length ?? null
+        if (res.is_embedding_model === false) {
+          form.embeddingModelWarning =
+            `"${model}" is a generative model, not an embedding model. ` +
+            `It will not produce valid embeddings. Choose a model with embedding capability (e.g. mxbai-embed-large, nomic-embed-text).`
+        }
+      } catch {
+        form.embeddingContextLength = null
+      }
+    }
 
     async function pullOllamaModel() {
       if (!pullModel.value) return
@@ -160,9 +193,10 @@ const SettingsPanel = defineComponent({
 
     return {
       form, status, modelError, loading,
-      ollamaModels, googleModels, recommendedEmbeddingModels, recommendedLlmModels,
+      ollamaModels, embeddingModels, llmModels,
+      googleModels, recommendedEmbeddingModels, recommendedLlmModels,
       pullModel, pulling, pullProgress, pullStatus, pullError, pullDone,
-      pullOllamaModel, save, close,
+      fetchEmbeddingInfo, pullOllamaModel, save, close,
     }
   },
 
@@ -243,14 +277,25 @@ const SettingsPanel = defineComponent({
       <template v-else>
         <div class="form-group">
           <label>Embedding model</label>
-          <select v-model="form.embeddingModel">
-            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+          <select v-model="form.embeddingModel" @change="fetchEmbeddingInfo(form.embeddingModel)">
+            <option v-for="m in embeddingModels" :key="m.name" :value="m.name">
+              {{ m.name }}{{ m.capabilities.length ? ' (' + m.capabilities.join(', ') + ')' : '' }}
+            </option>
           </select>
+          <div v-if="form.embeddingContextLength" class="text-sm text-muted" style="margin-top:3px">
+            Context window: {{ form.embeddingContextLength }} tokens
+            (~{{ Math.floor(form.embeddingContextLength * 4) }} chars max per chunk)
+          </div>
+          <div v-if="form.embeddingModelWarning" class="text-sm" style="color:var(--danger,#dc2626);margin-top:4px">
+            ⚠ {{ form.embeddingModelWarning }}
+          </div>
         </div>
         <div class="form-group">
           <label>Generation (LLM) model</label>
           <select v-model="form.llmModel">
-            <option v-for="m in ollamaModels" :key="m" :value="m">{{ m }}</option>
+            <option v-for="m in llmModels" :key="m.name" :value="m.name">
+              {{ m.name }}{{ m.capabilities.length ? ' (' + m.capabilities.join(', ') + ')' : '' }}
+            </option>
           </select>
         </div>
       </template>

@@ -13,16 +13,28 @@ class OllamaService:
         self.client = ollama.Client(host=url)
 
     def generate_embedding(self, text: str) -> list[float]:
-        """Generate embedding for a single text"""
-        response = self.client.embeddings(model=self.embedding_model, prompt=text)
-        return response["embedding"]
+        """Generate embedding for a single text."""
+        response = self.client.embed(
+            model=self.embedding_model, input=text, truncate=True
+        )
+        return list(response.embeddings[0])
 
-    def generate_embeddings_batch(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings for multiple texts"""
-        embeddings = []
-        for text in texts:
-            embedding = self.generate_embedding(text)
-            embeddings.append(embedding)
+    def generate_embeddings_batch(
+        self, texts: list[str], batch_size: int = 32
+    ) -> list[list[float]]:
+        """Generate embeddings for multiple texts.
+
+        Uses the embed() batch API so the server handles all texts in one
+        round-trip per batch, with truncate=True to avoid context-length errors.
+        """
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            response = self.client.embed(
+                model=self.embedding_model,
+                input=texts[start : start + batch_size],
+                truncate=True,
+            )
+            embeddings.extend(list(e) for e in response.embeddings)
         return embeddings
 
     def generate(
@@ -54,7 +66,26 @@ class OllamaService:
             options=opts,
         )
 
-        return response["message"]["content"]
+        NO_LLM_TOKENS_IN_RESPONSE = "OOPS! It seems like the LLM refused to generate any tokens as a response to this question =("
+        content = response["message"]["content"]
+        return content if content and content.strip() else NO_LLM_TOKENS_IN_RESPONSE
+
+    def get_embedding_context_length(self) -> int:
+        """Return the max token context length for the embedding model.
+
+        Queries Ollama's model metadata and looks for any key ending in
+        '.context_length' (e.g. 'bert.context_length', 'llama.context_length').
+        Falls back to 512 if the information is unavailable.
+        """
+        try:
+            info = self.client.show(self.embedding_model)
+            modelinfo = info.modelinfo or {}
+            for key, value in modelinfo.items():
+                if key.endswith(".context_length"):
+                    return int(value)
+        except Exception:
+            pass
+        return 512
 
     def check_health(self) -> bool:
         """Check if Ollama is accessible"""

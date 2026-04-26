@@ -40,19 +40,43 @@ RECOMMENDED_LLM_MODELS = [
 
 @router.get("/ollama/models")
 def list_ollama_models():
-    """List models available in Ollama."""
+    """List models available in Ollama, including their capabilities."""
     try:
         client = OllamaService(url=settings.ollama_url)
         response = client.client.list()
         result = []
         for m in response.models:
+            try:
+                info = client.client.show(m.model)
+                capabilities = list(info.capabilities or [])
+            except Exception:
+                capabilities = []
             result.append(
                 {
                     "name": m.model,
                     "size": m.size,
+                    "capabilities": capabilities,
                 }
             )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
+
+
+@router.get("/ollama/models/{model:path}/context-length")
+def get_model_context_length(model: str):
+    """Return context length and capability info for a specific Ollama model."""
+    try:
+        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        info = svc.client.show(model)
+        capabilities = info.capabilities or []
+        context_length = svc.get_embedding_context_length()
+        return {
+            "model": model,
+            "context_length": context_length,
+            "capabilities": capabilities,
+            "is_embedding_model": "embedding" in capabilities,
+        }
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
 
@@ -65,10 +89,21 @@ def get_settings():
     """
     config = load_config(str(CONFIG_PATH))
     llm_cfg = config["models"]["llm"]
+
+    from app.services.ollama_service import OllamaService
+
+    ollama = OllamaService(
+        url=settings.ollama_url,
+        embedding_model=config["models"]["embedding"],
+    )
+    embedding_context_length = ollama.get_embedding_context_length()
+
     return {
         "embedding_model": config["models"]["embedding"],
+        "embedding_context_length": embedding_context_length,
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
+        "llm_max_allowed_tokens": llm_cfg.get("max_allowed_tokens", 8192),
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_google_key": _api_keys.has_key("google"),
         "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
@@ -132,6 +167,20 @@ class UpdateSettingsRequest(BaseModel):
     top_k: int | None = None
 
 
+def _fetch_llm_max_tokens(model: str) -> int:
+    """Return context length for a local Ollama LLM model, fallback 8192."""
+    try:
+        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        info = svc.client.show(model)
+        modelinfo = info.modelinfo or {}
+        for key, value in modelinfo.items():
+            if key.endswith(".context_length"):
+                return int(value)
+    except Exception:
+        pass
+    return 8192
+
+
 @router.post("/settings")
 def update_settings(request: UpdateSettingsRequest):
     """Update application settings. Writes to config.yaml.
@@ -149,6 +198,15 @@ def update_settings(request: UpdateSettingsRequest):
         config["models"]["llm"]["type"] = request.llm_provider
     if request.google_model is not None:
         config["models"]["llm"]["google_model"] = request.google_model
+
+    # Update max_allowed_tokens whenever the LLM model or provider changes
+    provider = request.llm_provider or config["models"]["llm"].get("type", "local")
+    if provider == "google":
+        config["models"]["llm"]["max_allowed_tokens"] = 100000
+    elif request.llm_model is not None:
+        config["models"]["llm"]["max_allowed_tokens"] = _fetch_llm_max_tokens(
+            request.llm_model
+        )
     if request.chunk_size is not None:
         config["chunking"]["size"] = request.chunk_size
     if request.chunk_overlap is not None:

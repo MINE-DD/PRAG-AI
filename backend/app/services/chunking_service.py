@@ -1,18 +1,100 @@
+from __future__ import annotations
+
+import re
+
+from app.models.paper import ChunkType
+
+# Ordered list of (compiled_regex, ChunkType) pairs; first match wins.
+_HEADING_PATTERNS: list[tuple[re.Pattern[str], ChunkType]] = [
+    (re.compile(r"\babstract\b|аннотация"), ChunkType.ABSTRACT),
+    (
+        re.compile(r"\bintro\b|introduction|overview|background|motivation"),
+        ChunkType.INTRODUCTION,
+    ),
+    (
+        re.compile(r"related work|prior work|previous work|literature review"),
+        ChunkType.RELATED_WORK,
+    ),
+    (
+        re.compile(
+            r"\bmethods?\b|methodology|materials and methods|experimental setup"
+            r"|implementation|approach|procedure"
+        ),
+        ChunkType.METHODS,
+    ),
+    (
+        re.compile(
+            r"\bdata\b|datasets?|corpus|corpora|preprocessing|pre-processing"
+            r"|time-varying corpora|data availability"
+        ),
+        ChunkType.DATA,
+    ),
+    (
+        re.compile(
+            r"\bresults?\b|findings?|experiments?|evaluat|scoring"
+            r"|shared task results|participating systems"
+        ),
+        ChunkType.RESULTS,
+    ),
+    (re.compile(r"\bdiscussion\b"), ChunkType.DISCUSSION),
+    (
+        re.compile(r"conclusions?|summary|future work|limitations?"),
+        ChunkType.CONCLUSION,
+    ),
+    (re.compile(r"references?|bibliography|works cited"), ChunkType.REFERENCES),
+    (
+        re.compile(
+            r"acknowledg|funding|author contrib|conflict of interest|ethics?\b|ethical"
+        ),
+        ChunkType.ACKNOWLEDGEMENTS,
+    ),
+    (re.compile(r"appendix|supplementary"), ChunkType.APPENDIX),
+]
+
+# Strips markdown bold/italic, leading section numbers, and surrounding whitespace.
+_HEADING_CLEAN_RE = re.compile(r"\*{1,2}|_|\b\d+(\.\d+)*\s*")
+
+
+def classify_heading(heading: str) -> ChunkType:
+    """Return the ChunkType that best matches a section heading string."""
+    clean = _HEADING_CLEAN_RE.sub(" ", heading).lower().strip()
+    for pattern, chunk_type in _HEADING_PATTERNS:
+        if pattern.search(clean):
+            return chunk_type
+    return ChunkType.BODY
+
+
 class ChunkingService:
     """Service for chunking text into smaller pieces"""
 
     def __init__(
-        self, chunk_size: int = 500, overlap: int = 100, mode: str = "characters"
+        self,
+        chunk_size: int = 500,
+        overlap: int = 100,
+        mode: str = "characters",
+        min_chunk_size: int | None = None,
     ):
         """
         Args:
-            chunk_size: Size of each chunk (in characters or tokens depending on mode)
-            overlap: Overlap between chunks (in characters or tokens depending on mode)
-            mode: "characters" or "tokens"
+            chunk_size: Max size of each chunk. Characters in "characters"/"markdown-academic" mode,
+                tokens in "tokens" mode.
+            overlap: Overlap between overflow-split chunks. Same unit as chunk_size.
+            mode: "characters", "tokens", or "markdown-academic".
+            min_chunk_size: Minimum paragraph size in **characters** before merging with the
+                next paragraph (markdown mode only). Defaults to chunk_size // 4, which is
+                only a meaningful ratio in character/markdown mode.
         """
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.mode = mode
+        if min_chunk_size is not None:
+            self.min_chunk_size = min_chunk_size
+        elif mode == "tokens":
+            self.min_chunk_size = 100  # characters; tokens mode has no char/token ratio
+        else:
+            self.min_chunk_size = (
+                chunk_size // 4
+            )  # characters, proportional to chunk window
         self._tokenizer = None
 
     @property
@@ -24,33 +106,156 @@ class ChunkingService:
         return self._tokenizer
 
     def chunk_text(self, text: str) -> list[str]:
-        """
-        Chunk text using fixed-size strategy with overlap.
-
-        Uses character-based or token-based chunking depending on self.mode.
-        """
+        """Chunk text using the configured strategy."""
         if self.mode == "tokens":
             return self._chunk_by_tokens(text)
+        if self.mode == "markdown-academic":
+            return [c for c, _ in self.chunk_markdown(text)]
         return self._chunk_by_characters(text)
 
-    def _chunk_by_characters(self, text: str) -> list[str]:
+    def chunk_markdown(self, text: str) -> list[tuple[str, str]]:
+        """Markdown-aware hierarchical chunking.
+
+        Returns a list of (chunk_text, section_heading) pairs. chunk_text always
+        starts with the section heading so it is self-contained for retrieval.
+        section_heading is stored separately as Qdrant payload for filtering.
+
+        Strategy:
+        1. Split on # / ## / ### headers → sections with inherited heading path.
+        2. Within each section split on blank lines → paragraphs.
+        3. Merge consecutive paragraphs that are below min_chunk_size.
+        4. Overflow-split paragraphs that still exceed chunk_size using the
+           character-based splitter (with overlap).
+        """
+        sections = self._split_by_headers(text)
+        results: list[tuple[str, str]] = []
+
+        for heading, body in sections:
+            paragraphs = self._split_paragraphs(body)
+
+            if classify_heading(heading) == ChunkType.REFERENCES:
+                # Emit each reference entry as its own chunk — no merging.
+                for para in paragraphs:
+                    results.append((para, heading))
+            else:
+                paragraphs = self._merge_short(paragraphs)
+                for para in paragraphs:
+                    if len(para) <= self.chunk_size:
+                        results.append((para, heading))
+                    else:
+                        for sub in self._chunk_by_characters(para):
+                            results.append((sub, heading))
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _split_by_headers(self, text: str) -> list[tuple[str, str]]:
+        """Split markdown into (heading_path, body) sections.
+
+        Heading path is the concatenation of the most recent ## / ### headings,
+        e.g. "## Background > ### Detail".  The first heading (paper title,
+        regardless of level) is always excluded from heading paths.  Text
+        before the first header is emitted with an empty heading.
+        """
+        header_re = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
+        sections: list[tuple[str, str]] = []
+
+        # Track the current heading at each level (h1, h2, h3)
+        current_levels: dict[int, str] = {}
+        # The very first heading in the document is the paper title — always excluded
+        title_heading: str | None = None
+
+        pos = 0
+        preamble_end = None
+
+        for m in header_re.finditer(text):
+            heading_text = m.group(0).strip()
+            if title_heading is None:
+                title_heading = heading_text
+
+            if preamble_end is None:
+                # Emit preamble (text before first header)
+                preamble = text[: m.start()].strip()
+                if preamble:
+                    sections.append(("", preamble))
+                preamble_end = m.start()
+            else:
+                # Emit the previous section's body
+                body = text[pos : m.start()].strip()
+                # Remove the header line itself from body
+                body = header_re.sub("", body, count=0).strip()
+                if body:
+                    sections.append(
+                        (_build_heading_path(current_levels, title_heading), body)
+                    )
+
+            level = len(m.group(1))
+            # Update heading at this level and clear deeper levels
+            current_levels[level] = heading_text
+            for deeper in list(current_levels):
+                if deeper > level:
+                    del current_levels[deeper]
+
+            pos = m.end()
+
+        # Emit the last section
+        if preamble_end is not None:
+            body = text[pos:].strip()
+            body = header_re.sub("", body, count=0).strip()
+            if body:
+                sections.append(
+                    (_build_heading_path(current_levels, title_heading), body)
+                )
+        elif not sections:
+            # No headers at all — treat whole text as one section
+            if text.strip():
+                sections.append(("", text.strip()))
+
+        return sections
+
+    def _split_paragraphs(self, text: str) -> list[str]:
+        """Split on blank lines, strip each paragraph."""
+        return [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+
+    def _merge_short(self, paragraphs: list[str]) -> list[str]:
+        """Merge consecutive paragraphs that are below min_chunk_size."""
+        merged: list[str] = []
+        buf = ""
+        for para in paragraphs:
+            if not buf:
+                buf = para
+            elif len(buf) < self.min_chunk_size:
+                buf = f"{buf}\n\n{para}"
+            else:
+                merged.append(buf)
+                buf = para
+        if buf:
+            # If the trailing buf is still small, absorb it into the previous chunk
+            if merged and len(buf) < self.min_chunk_size:
+                merged[-1] = f"{merged[-1]}\n\n{buf}"
+            else:
+                merged.append(buf)
+        return merged
+
+    def _chunk_by_characters(
+        self, text: str, chunk_size: int | None = None
+    ) -> list[str]:
         """Chunk text by character count with overlap."""
-        if len(text) <= self.chunk_size:
+        size = chunk_size if chunk_size is not None else self.chunk_size
+        if len(text) <= size:
             return [text]
 
         chunks = []
         start = 0
-
         while start < len(text):
-            end = start + self.chunk_size
-            chunk = text[start:end]
-            chunks.append(chunk)
-
-            start += self.chunk_size - self.overlap
-
+            end = start + size
+            chunks.append(text[start:end])
             if end >= len(text):
                 break
-
+            start += size - self.overlap
         return chunks
 
     def _chunk_by_tokens(self, text: str) -> list[str]:
@@ -69,7 +274,6 @@ class ChunkingService:
             chunk_ids = token_ids[start:end]
             chunk_text = self.tokenizer.decode(chunk_ids, skip_special_tokens=True)
             chunks.append(chunk_text)
-
             if end >= len(token_ids):
                 break
             start += step
@@ -77,8 +281,11 @@ class ChunkingService:
         return chunks
 
     def chunk_by_paragraphs(self, text: str) -> list[str]:
-        """
-        Chunk text by paragraph boundaries (for future use).
-        """
+        """Simple paragraph splitting (kept for backwards compatibility)."""
         paragraphs = text.split("\n\n")
         return [p.strip() for p in paragraphs if p.strip()]
+
+
+def _build_heading_path(levels: dict[int, str], title: str | None = None) -> str:
+    """Build a heading path string, excluding the paper title (first heading encountered)."""
+    return " > ".join(v for _, v in sorted(levels.items()) if v != title)
