@@ -172,9 +172,9 @@ def test_classify_heading_known_types():
     ]
     for heading, expected in cases:
         result = classify_heading(heading)
-        assert (
-            result == expected
-        ), f"classify_heading({heading!r}) = {result!r}, expected {expected!r}"
+        assert result == expected, (
+            f"classify_heading({heading!r}) = {result!r}, expected {expected!r}"
+        )
 
 
 def test_classify_heading_strips_bold_and_numbers():

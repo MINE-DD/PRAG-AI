@@ -81,9 +81,9 @@ class QdrantService:
         config = self.client.get_collection(collection_name).config.params.vectors
         if isinstance(config, dict):
             return config["dense"].size
-        assert (
-            config is not None
-        ), f"No vector config for collection '{collection_name}'"
+        assert config is not None, (
+            f"No vector config for collection '{collection_name}'"
+        )
         return config.size
 
     def upsert_chunks(
