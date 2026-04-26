@@ -2577,6 +2577,11 @@ publishing = [
     { name = "twine" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pre-commit" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'publishing'", specifier = ">=1.0" },
@@ -2609,6 +2614,9 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
 provides-extras = ["dev", "api", "docs", "publishing"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pre-commit", specifier = ">=4.5.1" }]
 
 [[package]]
 name = "pre-commit"
