@@ -102,7 +102,7 @@ class ChunkingService:
         if self._tokenizer is None:
             from transformers import AutoTokenizer
 
-            self._tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+            self._tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
         return self._tokenizer
 
     def chunk_text(self, text: str) -> list[str]:
@@ -279,6 +279,21 @@ class ChunkingService:
             start += step
 
         return chunks
+
+    def truncate_to_tokens(self, text: str, max_tokens: int) -> str:
+        """Truncate text to fit within max_tokens using the BERT tokenizer.
+
+        Fast path: if len(text) <= max_tokens, the text cannot exceed the token
+        limit for any tokenizer (1 char/token is the absolute floor). Using
+        max_tokens * 3 is unsafe for Cyrillic/CJK text where BPE produces
+        2-3 tokens per character cluster, not the Latin average of 3-6 chars/token.
+        """
+        if len(text) <= max_tokens:
+            return text
+        token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+        if len(token_ids) <= max_tokens:
+            return text
+        return self.tokenizer.decode(token_ids[:max_tokens], skip_special_tokens=True)
 
     def chunk_by_paragraphs(self, text: str) -> list[str]:
         """Simple paragraph splitting (kept for backwards compatibility)."""

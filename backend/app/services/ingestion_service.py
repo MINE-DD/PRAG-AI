@@ -20,11 +20,13 @@ class IngestionService:
         ollama_service: OllamaService,
         qdrant_service: QdrantService,
         sparse_embedding_service: SparseEmbeddingService | None = None,
+        max_tokens: int | None = None,
     ):
         self.chunking_service = chunking_service
         self.ollama_service = ollama_service
         self.qdrant_service = qdrant_service
         self.sparse_embedding_service = sparse_embedding_service
+        self.max_tokens = max_tokens
         self.data_dir = Path(settings.data_dir)
 
     def scan_preprocessed(self, path: str) -> dict:
@@ -171,6 +173,21 @@ class IngestionService:
                     metadata={"chunk_index": i, "section_heading": ""},
                 )
                 chunks.append(chunk)
+
+        # Safety-cap for character/markdown modes: truncate any chunk that exceeds
+        # the embedding context window. Skipped for token mode because chunk_size
+        # is already capped to safe_max at service-creation time.
+        if self.max_tokens is not None and self.chunking_service.mode != "tokens":
+            chunks = [
+                chunk.model_copy(
+                    update={
+                        "chunk_text": self.chunking_service.truncate_to_tokens(
+                            chunk.chunk_text, self.max_tokens
+                        )
+                    }
+                )
+                for chunk in chunks
+            ]
 
         # Generate embeddings
         chunk_texts = [c.chunk_text for c in chunks]

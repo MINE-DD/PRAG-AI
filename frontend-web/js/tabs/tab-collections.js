@@ -15,6 +15,7 @@ const CollectionsTab = defineComponent({
     const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
                                       chunkSize: 2000, chunkOverlap: 0, chunkMode: 'markdown-academic' })
     const createMsg             = ref(null)
+    const ingestErrors          = ref([])
     const ingestProgress        = reactive({ current: 0, total: 0 })
     const showAdvanced          = ref(false)
     const pickerCollId          = ref(null)
@@ -62,11 +63,19 @@ const CollectionsTab = defineComponent({
       finally { loadingDirs.value = false }
     }
 
+    function extractDetail(msg) {
+      try {
+        const j = msg.slice(msg.indexOf('{'))
+        return JSON.parse(j).detail || msg
+      } catch { return msg }
+    }
+
     async function createCollection() {
       if (!newForm.name.trim()) { error.value = 'Collection name is required.'; return }
-      creating.value  = true
-      error.value     = null
-      createMsg.value = null
+      creating.value   = true
+      error.value      = null
+      createMsg.value  = null
+      ingestErrors.value = []
       try {
         const coll = await api.post('/collections', {
           name:        newForm.name.trim(),
@@ -91,15 +100,14 @@ const CollectionsTab = defineComponent({
                 chunk_mode:    newForm.chunkMode,
               })
               ok++
-            } catch (e) { errors.push(`${f.mdName}: ${e.message}`) }
+            } catch (e) { errors.push({ file: f.mdName, message: extractDetail(e.message) }) }
             ingestProgress.current++
           }
           if (errors.length === 0) {
             createMsg.value = `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
           } else {
-            createMsg.value = `Ingested ${ok}/${ok + errors.length} file(s) — ${errors.length} failed.`
-            console.error('Ingest failures:\n' + errors.join('\n'))
-            error.value = `${errors.length} file(s) failed. First error: ${errors[0]}`
+            createMsg.value = `Ingested ${ok}/${ok + errors.length} file(s).`
+            ingestErrors.value = errors
           }
         } else {
           createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
@@ -129,15 +137,29 @@ const CollectionsTab = defineComponent({
       pickerCollId.value = pickerCollId.value === collId ? null : collId
     }
 
-    const CHUNK_DEFAULTS = {
-      tokens:     { size: 500,  overlap: 100 },
-      characters: { size: 2000, overlap: 200 },
-      'markdown-academic':   { size: 2000, overlap: 0   },
-    }
+    // Default char/markdown chunk size scales with the embedder's context window:
+    // 2 chars/token (conservative floor), rounded to 100, capped at 2000.
+    // Examples: 512 → 1000, 768 → 1500, 1024+ → 2000.
+    const defaultCharSize = computed(() => {
+      if (!embeddingContextLen.value) return 2000
+      return Math.min(2000, Math.floor(embeddingContextLen.value * 2 / 100) * 100)
+    })
+
+    const CHUNK_DEFAULTS = computed(() => ({
+      tokens:              { size: 500,                   overlap: 100 },
+      characters:          { size: defaultCharSize.value, overlap: 200 },
+      'markdown-academic': { size: defaultCharSize.value, overlap: 0   },
+    }))
 
     watch(() => newForm.chunkMode, mode => {
-      const d = CHUNK_DEFAULTS[mode]
+      const d = CHUNK_DEFAULTS.value[mode]
       if (d) { newForm.chunkSize = d.size; newForm.chunkOverlap = d.overlap }
+    })
+
+    // When the embedder context length loads, update the form to the appropriate default.
+    watch(embeddingContextLen, () => {
+      const d = CHUNK_DEFAULTS.value[newForm.chunkMode]
+      if (d) newForm.chunkSize = d.size
     })
 
     watch(() => newForm.chunkSize, size => {
@@ -157,9 +179,9 @@ const CollectionsTab = defineComponent({
     onMounted(() => { loadConvertedDirs(); loadEmbeddingInfo() })
 
     return {
-      error, creating, deleting, newForm, createMsg, ingestProgress, showAdvanced, pickerCollId,
-      convertedDirs, loadingDirs, embeddingContextLen, maxChunkSize, chunkSizeWarning,
-      createCollection, deleteCollection, togglePicker,
+      error, creating, deleting, newForm, createMsg, ingestErrors, ingestProgress,
+      showAdvanced, pickerCollId, convertedDirs, loadingDirs, embeddingContextLen,
+      maxChunkSize, chunkSizeWarning, createCollection, deleteCollection, togglePicker,
     }
   },
 
@@ -249,12 +271,28 @@ const CollectionsTab = defineComponent({
     </div>
 
     <div class="mt-16">
+      <div v-if="newForm.ingestDir && embeddingContextLen && newForm.chunkMode !== 'tokens'"
+           style="margin-bottom:8px;padding:6px 10px;background:var(--info-bg,#eff6ff);border:1px solid var(--info-border,#bfdbfe);border-radius:4px;font-size:12px;color:var(--info-text,#1d4ed8)">
+        ℹ The current embedder model max length is {{ embeddingContextLen }} tokens.
+        Chunks exceeding this will be automatically truncated.
+        Use the advanced settings to select <strong>Tokens mode</strong> and control the limit.
+      </div>
       <div class="flex gap-8 items-center">
         <button class="btn btn-primary" :disabled="creating" @click="createCollection">
           <span v-if="creating" class="spinner"></span>
           <span>{{ creating ? (newForm.ingestDir ? 'Creating & ingesting…' : 'Creating…') : (newForm.ingestDir ? 'Create & Ingest' : 'Create') }}</span>
         </button>
-        <span v-if="createMsg" class="text-sm" style="color:var(--success)">{{ createMsg }}</span>
+        <span v-if="createMsg" class="text-sm" :style="ingestErrors.length ? 'color:var(--warning,#b45309)' : 'color:var(--success)'">{{ createMsg }}</span>
+      </div>
+      <div v-if="ingestErrors.length > 0" style="margin-top:10px;border:1px solid var(--warning,#b45309);border-radius:4px;overflow:hidden">
+        <div style="background:var(--warning-bg,#fffbeb);padding:6px 10px;font-size:12px;font-weight:600;color:var(--warning,#b45309)">
+          {{ ingestErrors.length }} file{{ ingestErrors.length !== 1 ? 's' : '' }} failed to ingest
+        </div>
+        <div v-for="e in ingestErrors" :key="e.file"
+             style="padding:5px 10px;font-size:12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:baseline">
+          <span style="font-family:monospace;color:var(--text-muted);flex-shrink:0">{{ e.file }}</span>
+          <span style="color:var(--error,#dc2626)">{{ e.message }}</span>
+        </div>
       </div>
       <div v-if="creating && ingestProgress.total > 0" style="margin-top:10px">
         <div class="text-sm text-muted" style="margin-bottom:4px">

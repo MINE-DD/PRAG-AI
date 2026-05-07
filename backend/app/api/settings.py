@@ -90,17 +90,9 @@ def get_settings():
     config = load_config(str(CONFIG_PATH))
     llm_cfg = config["models"]["llm"]
 
-    from app.services.ollama_service import OllamaService
-
-    ollama = OllamaService(
-        url=settings.ollama_url,
-        embedding_model=config["models"]["embedding"],
-    )
-    embedding_context_length = ollama.get_embedding_context_length()
-
     return {
         "embedding_model": config["models"]["embedding"],
-        "embedding_context_length": embedding_context_length,
+        "embedding_context_length": config["models"].get("max_embedder_tokens", 512),
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
         "llm_max_allowed_tokens": llm_cfg.get("max_allowed_tokens", 8192),
@@ -181,6 +173,16 @@ def _fetch_llm_max_tokens(model: str) -> int:
     return 8192
 
 
+def _fetch_embedding_max_tokens(model: str) -> int:
+    """Return context length for an Ollama embedding model, fallback 512."""
+    try:
+        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        return svc.get_embedding_context_length()
+    except Exception:
+        pass
+    return 512
+
+
 @router.post("/settings")
 def update_settings(request: UpdateSettingsRequest):
     """Update application settings. Writes to config.yaml.
@@ -192,6 +194,9 @@ def update_settings(request: UpdateSettingsRequest):
 
     if request.embedding_model is not None:
         config["models"]["embedding"] = request.embedding_model
+        config["models"]["max_embedder_tokens"] = _fetch_embedding_max_tokens(
+            request.embedding_model
+        )
     if request.llm_model is not None:
         config["models"]["llm"]["model"] = request.llm_model
     if request.llm_provider is not None:
