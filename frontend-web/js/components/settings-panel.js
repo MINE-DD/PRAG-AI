@@ -33,6 +33,8 @@ const SettingsPanel = defineComponent({
     const modelError = ref(null)
     const loading    = ref(false)
 
+    const defaultEmbeddingModel = ref('')
+    const defaultLlmModel       = ref('')
     const ollamaModels               = ref([])  // [{name, capabilities}]
     const googleModels               = ref(['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'])
     const recommendedEmbeddingModels = ref([])
@@ -50,12 +52,25 @@ const SettingsPanel = defineComponent({
       return tagged.length ? tagged : ollamaModels.value
     })
 
-    const pullModel    = ref('')
-    const pulling      = ref(false)
-    const pullProgress = ref(null)
-    const pullStatus   = ref('')
-    const pullError    = ref(null)
-    const pullDone     = ref(false)
+    const pullModel       = ref('')
+    const pulling         = ref(false)
+    const pullingDefaults = ref(false)
+    const pullProgress    = ref(null)
+    const pullStatus      = ref('')
+    const pullError       = ref(null)
+    const pullDone        = ref(false)
+
+    // Ollama appends :latest when no tag is specified, so normalize both sides.
+    const normalizeModel = name => (name && !name.includes(':') ? name + ':latest' : name)
+
+    // True only when both default models are confirmed in the pulled list.
+    const defaultsPulled = computed(() => {
+      if (!defaultEmbeddingModel.value && !defaultLlmModel.value) return true
+      const names = new Set(ollamaModels.value.map(m => normalizeModel(m.name)))
+      const embOk = !defaultEmbeddingModel.value || names.has(normalizeModel(defaultEmbeddingModel.value))
+      const llmOk = !defaultLlmModel.value       || names.has(normalizeModel(defaultLlmModel.value))
+      return embOk && llmOk
+    })
 
     async function load() {
       status.value     = 'checking'
@@ -77,6 +92,8 @@ const SettingsPanel = defineComponent({
         if (cloudModels.ollama_llm?.length)       recommendedLlmModels.value       = cloudModels.ollama_llm
         if (!pullModel.value && cloudModels.ollama_embedding?.length) pullModel.value = cloudModels.ollama_embedding[0]
         ollamaModels.value   = models.map(m => ({ name: m.name, capabilities: m.capabilities || [] }))
+        defaultEmbeddingModel.value = cfg.default_embedder_model
+        defaultLlmModel.value       = cfg.default_llm_model
         form.embeddingModel         = cfg.embedding_model
         form.embeddingContextLength = cfg.embedding_context_length ?? null
         form.embeddingModelWarning  = null
@@ -143,7 +160,7 @@ const SettingsPanel = defineComponent({
             if (!line.startsWith('data: ')) continue
             const data = JSON.parse(line.slice(6))
             if (data.error) { pullError.value = data.error; break }
-            if (data.done)  { pullDone.value  = true; break }
+            if (data.done)  { pullDone.value  = true; load(); break }
             pullStatus.value = data.status || ''
             if (data.completed && data.total)
               pullProgress.value = Math.round(data.completed / data.total * 100)
@@ -153,6 +170,27 @@ const SettingsPanel = defineComponent({
         pullError.value = e.message
       } finally {
         pulling.value = false
+      }
+    }
+
+    async function pullDefaults() {
+      pullingDefaults.value = true
+      try {
+        for (const model of [defaultEmbeddingModel.value, defaultLlmModel.value]) {
+          if (!model) continue
+          pullModel.value = model
+          await pullOllamaModel()
+          if (pullError.value) break
+        }
+        if (!pullError.value) {
+          await load()
+          // Pre-select the downloaded defaults so the dropdowns aren't empty.
+          // The user still clicks Save to persist them to config.
+          form.embeddingModel = defaultEmbeddingModel.value
+          form.llmModel       = defaultLlmModel.value
+        }
+      } finally {
+        pullingDefaults.value = false
       }
     }
 
@@ -195,8 +233,9 @@ const SettingsPanel = defineComponent({
       form, status, modelError, loading,
       ollamaModels, embeddingModels, llmModels,
       googleModels, recommendedEmbeddingModels, recommendedLlmModels,
-      pullModel, pulling, pullProgress, pullStatus, pullError, pullDone,
-      fetchEmbeddingInfo, pullOllamaModel, save, close,
+      defaultEmbeddingModel, defaultLlmModel, defaultsPulled,
+      pullModel, pulling, pullingDefaults, pullProgress, pullStatus, pullError, pullDone,
+      fetchEmbeddingInfo, pullOllamaModel, pullDefaults, save, close,
     }
   },
 
@@ -274,6 +313,44 @@ const SettingsPanel = defineComponent({
       <div v-else-if="modelError" class="alert alert-warning" style="margin-bottom:16px;font-size:12px">
         Could not reach Ollama: {{ modelError }}
       </div>
+      <div v-else-if="pullingDefaults"
+           style="margin-bottom:16px;padding:14px;background:var(--info-bg,#eff6ff);border:1px solid var(--info-border,#bfdbfe);border-radius:6px">
+        <div style="font-size:13px;font-weight:600;color:var(--info-text,#1d4ed8);margin-bottom:10px">
+          Downloading <code>{{ pullModel }}</code>…
+        </div>
+        <!-- spinner + status while manifest is being fetched (no byte progress yet) -->
+        <div v-if="!pullProgress" class="flex items-center gap-8" style="margin-bottom:4px">
+          <span class="spinner" style="width:14px;height:14px;flex-shrink:0"></span>
+          <span style="font-size:12px;color:var(--info-text,#1d4ed8)">{{ pullStatus || 'Connecting…' }}</span>
+        </div>
+        <!-- determinate bar once layer data starts flowing -->
+        <template v-else>
+          <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+            <div style="background:var(--accent,#2563eb);height:100%;transition:width .2s" :style="{width: pullProgress + '%'}"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted)">{{ pullStatus }} — {{ pullProgress }}%</div>
+        </template>
+        <div v-if="pullError" class="alert alert-warning" style="margin-top:8px;font-size:12px">{{ pullError }}</div>
+      </div>
+      <div v-else-if="!defaultsPulled"
+           style="margin-bottom:16px;padding:14px;background:var(--warning-bg,#fffbeb);border:1px solid var(--warning,#b45309);border-radius:6px">
+        <div style="font-size:13px;font-weight:600;color:var(--warning,#b45309);margin-bottom:6px">No models downloaded yet</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+          This app needs two AI models to work: one for understanding text (embeddings) and one for generating answers.
+          Click below to download the recommended defaults — this may take a few minutes depending on your connection.
+        </div>
+        <div style="font-size:12px;margin-bottom:8px">
+          <span style="font-weight:600">Embedding:</span>
+          <code style="margin-left:4px">{{ defaultEmbeddingModel }}</code>
+        </div>
+        <div style="font-size:12px;margin-bottom:12px">
+          <span style="font-weight:600">Generation (LLM):</span>
+          <code style="margin-left:4px">{{ defaultLlmModel }}</code>
+        </div>
+        <button class="btn btn-primary btn-sm" @click="pullDefaults" :disabled="pulling">
+          Download both models
+        </button>
+      </div>
       <template v-else>
         <div class="form-group">
           <label>Embedding model</label>
@@ -299,7 +376,7 @@ const SettingsPanel = defineComponent({
           </select>
         </div>
       </template>
-      <div style="margin-top:8px">
+      <div v-if="defaultsPulled" style="margin-top:8px">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
           Don't see a model above? Pull a recommended one:
         </div>
@@ -317,11 +394,17 @@ const SettingsPanel = defineComponent({
             {{ pulling ? 'Pulling…' : 'Pull' }}
           </button>
         </div>
-        <div v-if="pullProgress !== null" style="margin-top:8px">
-          <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
-            <div style="background:var(--accent);height:100%;transition:width .3s" :style="{width: pullProgress + '%'}"></div>
+        <div v-if="pulling || pullProgress !== null" style="margin-top:8px">
+          <div v-if="!pullProgress" class="flex items-center gap-8" style="margin-bottom:4px">
+            <span class="spinner" style="width:14px;height:14px;flex-shrink:0"></span>
+            <span style="font-size:12px;color:var(--text-muted)">{{ pullStatus || 'Connecting…' }}</span>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">{{ pullStatus }}</div>
+          <template v-else>
+            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+              <div style="background:var(--accent,#2563eb);height:100%;transition:width .2s" :style="{width: pullProgress + '%'}"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted)">{{ pullStatus }} — {{ pullProgress }}%</div>
+          </template>
         </div>
         <div v-if="pullError" class="alert alert-warning" style="margin-top:8px;font-size:12px">{{ pullError }}</div>
         <div v-if="pullDone" style="font-size:12px;color:var(--success,#22c55e);margin-top:6px">Model pulled successfully. Reload models to see it.</div>

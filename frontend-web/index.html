@@ -74,6 +74,14 @@
         <button class="alert-close" @click="globalError = null">×</button>
       </div>
 
+      <!-- No models banner: Ollama is up but required models are not pulled -->
+      <div v-if="health.ollama && health.modelsReady === false"
+           style="display:flex;align-items:center;gap:12px;padding:10px 16px;margin-bottom:12px;background:var(--warning-bg,#fffbeb);border:1px solid var(--warning,#b45309);border-radius:6px;font-size:13px;color:var(--warning,#b45309)">
+        <span style="font-size:16px">⚠</span>
+        <span>The AI models required by this app are not downloaded yet. Open <strong>Settings</strong> to pull them — it only takes a minute.</span>
+        <button class="btn btn-secondary btn-sm" style="margin-left:auto;white-space:nowrap" @click="showSettings = true">Open Settings</button>
+      </div>
+
       <keep-alive>
         <component :is="activeComponent"
                    :selected-collection="selectedCollection"
