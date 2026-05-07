@@ -34,6 +34,7 @@ def health_check():
             config = load_config("config.yaml")
             embedding_model = config["models"]["embedding"]
             llm_model = config["models"]["llm"]["model"]
+
             def _norm(name: str) -> str:
                 return name if ":" in name else name + ":latest"
 

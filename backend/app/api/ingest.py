@@ -42,7 +42,9 @@ def get_ingestion_service(
 ) -> IngestionService:
     config = load_config("config.yaml")
     effective_mode = chunk_mode or config["chunking"].get("mode", "characters")
-    effective_size = chunk_size if chunk_size is not None else config["chunking"]["size"]
+    effective_size = (
+        chunk_size if chunk_size is not None else config["chunking"]["size"]
+    )
     effective_overlap = (
         chunk_overlap if chunk_overlap is not None else config["chunking"]["overlap"]
     )

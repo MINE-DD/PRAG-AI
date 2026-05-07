@@ -93,7 +93,9 @@ def get_settings():
     return {
         "embedding_model": config["models"]["embedding"],
         "embedding_context_length": config["models"].get("max_embedder_tokens", 512),
-        "default_embedder_model": config["models"].get("default_embedder", config["models"]["embedding"]),
+        "default_embedder_model": config["models"].get(
+            "default_embedder", config["models"]["embedding"]
+        ),
         "default_llm_model": config["models"].get("default_llm", llm_cfg["model"]),
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),

@@ -102,7 +102,9 @@ class ChunkingService:
         if self._tokenizer is None:
             from transformers import AutoTokenizer
 
-            self._tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                "bert-base-multilingual-cased"
+            )
         return self._tokenizer
 
     def chunk_text(self, text: str) -> list[str]:
