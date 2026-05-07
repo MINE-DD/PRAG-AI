@@ -275,7 +275,7 @@ const CollectionsTab = defineComponent({
            style="margin-bottom:8px;padding:6px 10px;background:var(--info-bg,#eff6ff);border:1px solid var(--info-border,#bfdbfe);border-radius:4px;font-size:12px;color:var(--info-text,#1d4ed8)">
         ℹ The current embedder model max length is {{ embeddingContextLen }} tokens.
         Chunks exceeding this will be automatically truncated.
-        Use the advanced settings to select <strong>Tokens mode</strong> and control the limit.
+        Use the advanced settings to select smaller chunks, or change to a bigger model.
       </div>
       <div class="flex gap-8 items-center">
         <button class="btn btn-primary" :disabled="creating" @click="createCollection">

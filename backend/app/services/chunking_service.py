@@ -134,9 +134,14 @@ class ChunkingService:
             paragraphs = self._split_paragraphs(body)
 
             if classify_heading(heading) == ChunkType.REFERENCES:
-                # Emit each reference entry as its own chunk — no merging.
+                # Emit each reference entry as its own chunk — no merging,
+                # but still overflow-split entries that exceed chunk_size.
                 for para in paragraphs:
-                    results.append((para, heading))
+                    if len(para) <= self.chunk_size:
+                        results.append((para, heading))
+                    else:
+                        for sub in self._chunk_by_characters(para):
+                            results.append((sub, heading))
             else:
                 paragraphs = self._merge_short(paragraphs)
                 for para in paragraphs:
@@ -281,15 +286,7 @@ class ChunkingService:
         return chunks
 
     def truncate_to_tokens(self, text: str, max_tokens: int) -> str:
-        """Truncate text to fit within max_tokens using the BERT tokenizer.
-
-        Fast path: if len(text) <= max_tokens, the text cannot exceed the token
-        limit for any tokenizer (1 char/token is the absolute floor). Using
-        max_tokens * 3 is unsafe for Cyrillic/CJK text where BPE produces
-        2-3 tokens per character cluster, not the Latin average of 3-6 chars/token.
-        """
-        if len(text) <= max_tokens:
-            return text
+        """Truncate text to fit within max_tokens using the BERT tokenizer."""
         token_ids = self.tokenizer.encode(text, add_special_tokens=False)
         if len(token_ids) <= max_tokens:
             return text
