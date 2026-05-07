@@ -211,3 +211,51 @@ def test_references_chunks_not_merged():
         (t, h) for t, h in results if classify_heading(h) == ChunkType.REFERENCES
     ]
     assert len(ref_chunks) == 10  # one per entry, not merged despite min_chunk_size
+
+
+def test_references_long_entry_is_overflow_split():
+    """A reference entry longer than chunk_size is split, not emitted whole."""
+    long_entry = "Word " * 60  # ~300 chars, above chunk_size=50
+    text = f"# Paper\n\n## References\n\n{long_entry}"
+    svc = ChunkingService(chunk_size=50, overlap=10, mode="markdown-academic")
+    results = svc.chunk_markdown(text)
+    ref_chunks = [
+        (t, h) for t, h in results if classify_heading(h) == ChunkType.REFERENCES
+    ]
+    assert len(ref_chunks) > 1
+    for chunk_text, _ in ref_chunks:
+        assert len(chunk_text) <= 50
+
+
+# ---------------------------------------------------------------------------
+# truncate_to_tokens
+# ---------------------------------------------------------------------------
+
+
+def test_truncate_to_tokens_short_text_unchanged():
+    """Text that already fits within max_tokens is returned as-is."""
+    svc = ChunkingService()
+    text = "Hello world, this is a short sentence."
+    result = svc.truncate_to_tokens(text, max_tokens=512)
+    assert result == text
+
+
+def test_truncate_to_tokens_truncates_long_text():
+    """Text exceeding max_tokens is truncated to fit."""
+    svc = ChunkingService()
+    long_text = "token " * 600  # well over 512 tokens
+    result = svc.truncate_to_tokens(long_text, max_tokens=50)
+    assert len(result) < len(long_text)
+    token_count = len(svc.tokenizer.encode(result, add_special_tokens=False))
+    assert token_count <= 50
+
+
+def test_truncate_to_tokens_cyrillic_not_skipped():
+    """Cyrillic text is always tokenized — the char-count fast path must not apply."""
+    svc = ChunkingService()
+    # 80 Cyrillic chars can easily tokenize to >100 tokens with byte-level BPE.
+    cyrillic = "Привет мир это тест на русском языке слова " * 3  # ~130 chars
+    # Verify that truncating at 30 tokens actually shortens the text.
+    result = svc.truncate_to_tokens(cyrillic, max_tokens=30)
+    token_count = len(svc.tokenizer.encode(result, add_special_tokens=False))
+    assert token_count <= 30

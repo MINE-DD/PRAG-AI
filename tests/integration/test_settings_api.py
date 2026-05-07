@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -80,3 +80,193 @@ def test_post_settings_saves_zotero_key(client, tmp_path):
         resp = client.post("/settings", json={"zotero_key": "secret_key_123"})
     assert resp.status_code == 200
     mock_keys.set_key.assert_called_once_with("zotero", "secret_key_123")
+
+
+# ---------------------------------------------------------------------------
+# GET /settings — new fields
+# ---------------------------------------------------------------------------
+
+_BASE_CONFIG = {
+    "models": {
+        "default_embedder": "nomic-embed-text",
+        "default_llm": "gemma3:1b",
+        "embedding": "mxbai-embed-large:latest",
+        "max_embedder_tokens": 512,
+        "llm": {"type": "local", "model": "gemma4:e2b", "max_allowed_tokens": 8192},
+    },
+    "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+    "retrieval": {"top_k": 10},
+}
+
+
+def test_get_settings_includes_default_model_fields(client, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(_BASE_CONFIG))
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys"),
+    ):
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["default_embedder_model"] == "nomic-embed-text"
+    assert data["default_llm_model"] == "gemma3:1b"
+    assert data["embedding_context_length"] == 512
+    assert data["llm_max_allowed_tokens"] == 8192
+
+
+def test_get_settings_default_model_falls_back_to_active(client, tmp_path):
+    """When default_embedder/default_llm are absent, active model names are returned."""
+    cfg = {
+        "models": {
+            "embedding": "mxbai-embed-large:latest",
+            "llm": {"type": "local", "model": "gemma4:e2b"},
+        },
+        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+        "retrieval": {"top_k": 10},
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(cfg))
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys"),
+    ):
+        resp = client.get("/settings")
+    data = resp.json()
+    assert data["default_embedder_model"] == "mxbai-embed-large:latest"
+    assert data["default_llm_model"] == "gemma4:e2b"
+
+
+# ---------------------------------------------------------------------------
+# GET /ollama/models/{model}/context-length
+# ---------------------------------------------------------------------------
+
+
+def test_get_model_context_length_success(client):
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_svc = Mock()
+        mock_svc.client.show.return_value = Mock(capabilities=["embedding"])
+        mock_svc.get_embedding_context_length.return_value = 768
+        mock_cls.return_value = mock_svc
+        resp = client.get("/ollama/models/nomic-embed-text/context-length")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["context_length"] == 768
+    assert data["is_embedding_model"] is True
+
+
+def test_get_model_context_length_generative_model(client):
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_svc = Mock()
+        mock_svc.client.show.return_value = Mock(capabilities=["completion"])
+        mock_svc.get_embedding_context_length.return_value = 4096
+        mock_cls.return_value = mock_svc
+        resp = client.get("/ollama/models/gemma3:1b/context-length")
+    assert resp.status_code == 200
+    assert resp.json()["is_embedding_model"] is False
+
+
+def test_get_model_context_length_ollama_unreachable(client):
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_cls.side_effect = Exception("connection refused")
+        resp = client.get("/ollama/models/nomic-embed-text/context-length")
+    assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# _fetch_embedding_max_tokens / _fetch_llm_max_tokens
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_embedding_max_tokens_success():
+    from app.api.settings import _fetch_embedding_max_tokens
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_svc = Mock()
+        mock_svc.get_embedding_context_length.return_value = 768
+        mock_cls.return_value = mock_svc
+        assert _fetch_embedding_max_tokens("nomic-embed-text") == 768
+
+
+def test_fetch_embedding_max_tokens_fallback():
+    from app.api.settings import _fetch_embedding_max_tokens
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_cls.side_effect = Exception("timeout")
+        assert _fetch_embedding_max_tokens("nomic-embed-text") == 512
+
+
+def test_fetch_llm_max_tokens_success():
+    from app.api.settings import _fetch_llm_max_tokens
+
+    mock_info = Mock()
+    mock_info.modelinfo = {"llama.context_length": 4096}
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_svc = Mock()
+        mock_svc.client.show.return_value = mock_info
+        mock_cls.return_value = mock_svc
+        assert _fetch_llm_max_tokens("llama3.2") == 4096
+
+
+def test_fetch_llm_max_tokens_fallback():
+    from app.api.settings import _fetch_llm_max_tokens
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_cls.side_effect = Exception("timeout")
+        assert _fetch_llm_max_tokens("llama3.2") == 8192
+
+
+# ---------------------------------------------------------------------------
+# POST /settings — model-related writes
+# ---------------------------------------------------------------------------
+
+
+def _write_config(path, extra=None):
+    cfg = {
+        "models": {"embedding": "nomic", "llm": {"type": "local", "model": "llama3"}},
+        "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+        "retrieval": {"top_k": 10},
+    }
+    if extra:
+        cfg["models"].update(extra)
+    path.write_text(yaml.dump(cfg))
+    return path
+
+
+def test_post_settings_writes_max_embedder_tokens(client, tmp_path):
+    config_path = _write_config(tmp_path / "config.yaml")
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys"),
+        patch("app.api.settings._fetch_embedding_max_tokens", return_value=768),
+    ):
+        resp = client.post("/settings", json={"embedding_model": "nomic-embed-text"})
+    assert resp.status_code == 200
+    assert (
+        yaml.safe_load(config_path.read_text())["models"]["max_embedder_tokens"] == 768
+    )
+
+
+def test_post_settings_google_provider_sets_max_tokens(client, tmp_path):
+    config_path = _write_config(tmp_path / "config.yaml")
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys"),
+    ):
+        resp = client.post("/settings", json={"llm_provider": "google"})
+    assert resp.status_code == 200
+    saved = yaml.safe_load(config_path.read_text())
+    assert saved["models"]["llm"]["max_allowed_tokens"] == 100000
+
+
+def test_post_settings_local_llm_fetches_max_tokens(client, tmp_path):
+    config_path = _write_config(tmp_path / "config.yaml")
+    with (
+        patch("app.api.settings.CONFIG_PATH", config_path),
+        patch("app.api.settings._api_keys"),
+        patch("app.api.settings._fetch_llm_max_tokens", return_value=4096),
+    ):
+        resp = client.post("/settings", json={"llm_model": "llama3.2"})
+    assert resp.status_code == 200
+    saved = yaml.safe_load(config_path.read_text())
+    assert saved["models"]["llm"]["max_allowed_tokens"] == 4096
