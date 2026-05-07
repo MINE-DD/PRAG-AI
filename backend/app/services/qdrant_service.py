@@ -215,6 +215,32 @@ class QdrantService:
 
         return response.points
 
+    def get_chunks_for_paper(
+        self, collection_name: str, paper_id: str, limit: int = 10
+    ) -> list:
+        """Fetch up to `limit` chunks for a paper, sorted by chunk_index ascending."""
+        query_filter = Filter(
+            must=[FieldCondition(key="paper_id", match=MatchValue(value=paper_id))]
+        )
+        results: list = []
+        offset = None
+        while len(results) < limit:
+            batch, offset = self.client.scroll(
+                collection_name=collection_name,
+                scroll_filter=query_filter,
+                limit=min(100, limit - len(results)),
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            results.extend(batch)
+            if offset is None:
+                break
+        results.sort(
+            key=lambda p: (p.payload or {}).get("metadata", {}).get("chunk_index", 0)
+        )
+        return results[:limit]
+
     def delete_by_paper_id(self, collection_name: str, paper_id: str):
         """Delete all chunks for a specific paper"""
         self.client.delete(

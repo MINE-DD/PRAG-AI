@@ -135,15 +135,23 @@ class IngestionService:
             if meta_file.exists():
                 metadata = json.loads(meta_file.read_text(encoding="utf-8"))
 
-        # Derive paper_id from filename stem
-        paper_id = md_file.stem
-
         # Build unique_id from metadata
         unique_id = self._generate_unique_id(
-            title=metadata.get("title", paper_id),
+            title=metadata.get("title", md_file.stem),
             authors=metadata.get("authors", []),
             year=self._extract_year(metadata.get("publication_date")),
         )
+
+        # Use unique_id as paper_id; handle collisions by appending _2, _3, …
+        collection_meta_dir = self.data_dir / collection_id / "metadata"
+        collection_meta_dir.mkdir(parents=True, exist_ok=True)
+        paper_id = unique_id
+        _candidate = collection_meta_dir / f"{paper_id}.json"
+        _counter = 2
+        while _candidate.exists():
+            paper_id = f"{unique_id}_{_counter}"
+            _candidate = collection_meta_dir / f"{paper_id}.json"
+            _counter += 1
 
         # Strip references section before chunking
         body_text, references = self._split_references(text_content)
@@ -210,21 +218,18 @@ class IngestionService:
             sparse_vectors=sparse_vectors,
         )
 
-        # Copy metadata JSON to collection's metadata/ dir
-        collection_meta_dir = self.data_dir / collection_id / "metadata"
-        collection_meta_dir.mkdir(parents=True, exist_ok=True)
-
+        # Copy metadata JSON to collection's metadata/ dir (_candidate already resolved above)
         paper_meta = {
             **metadata,
             "paper_id": paper_id,
             "unique_id": unique_id,
             "preprocessed_dir": md_file.parent.name,
+            "source_pdf": md_file.name,
             "chunks_created": len(chunks),
             "references": references,
             "ingested_at": datetime.now(UTC).isoformat(),
         }
-        dest = collection_meta_dir / f"{paper_id}.json"
-        dest.write_text(json.dumps(paper_meta, indent=2), encoding="utf-8")
+        _candidate.write_text(json.dumps(paper_meta, indent=2), encoding="utf-8")
 
         return {
             "paper_id": paper_id,

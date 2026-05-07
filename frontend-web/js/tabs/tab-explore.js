@@ -7,11 +7,15 @@ const ExploreTab = defineComponent({
   emits: ['update:collection'],
 
   setup(props) {
-    const error    = ref(null)
-    const papers   = ref([])
-    const selected = ref(null)
-    const detail   = ref(null)
-    const loading  = ref(false)
+    const error         = ref(null)
+    const papers        = ref([])
+    const selected      = ref(null)
+    const detail        = ref(null)
+    const loading       = ref(false)
+    const summarizing   = ref(false)
+    const summaryResult = ref(null)
+    const summaryError  = ref(null)
+    const summaryMethod = ref(null)
 
     const collectionId = computed(() => props.selectedCollection)
 
@@ -36,11 +40,34 @@ const ExploreTab = defineComponent({
       }
     }, { immediate: true })
 
+    async function generateSummary() {
+      if (!detail.value) return
+      summarizing.value = true
+      summaryResult.value = null
+      summaryError.value = null
+      summaryMethod.value = null
+      try {
+        const res = await api.get(
+          `/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize`
+        )
+        summaryResult.value = res.summary
+        summaryMethod.value = res.method
+      } catch (e) {
+        summaryError.value = e.message
+      } finally {
+        summarizing.value = false
+      }
+    }
+
     async function selectPaper(paper) {
       selected.value = paper
       loading.value = true
       detail.value = null
       error.value = null
+      summarizing.value = false
+      summaryResult.value = null
+      summaryError.value = null
+      summaryMethod.value = null
       try {
         const collectionDetail = await api.get(`/collections/${collectionId.value}/papers/${paper.paper_id}`)
         if (paper.preprocessed_dir && paper.source_pdf) {
@@ -59,7 +86,8 @@ const ExploreTab = defineComponent({
       finally { loading.value = false }
     }
 
-    return { error, papers, selected, detail, loading, collectionId, selectPaper }
+    return { error, papers, selected, detail, loading, collectionId, selectPaper,
+             summarizing, summaryResult, summaryError, summaryMethod, generateSummary }
   },
 
   template: `
@@ -154,6 +182,33 @@ const ExploreTab = defineComponent({
                 <p style="line-height:1.7">{{ detail.abstract }}</p>
               </div>
             </div>
+          </div>
+
+          <!-- Summarize card -->
+          <div class="card" style="margin-top:16px">
+            <div style="font-weight:600;font-size:14px;margin-bottom:10px">
+              Summary
+              <span v-if="summaryMethod" class="badge badge-blue" style="margin-left:6px;font-weight:400">
+                {{ summaryMethod }}
+              </span>
+            </div>
+
+            <div v-if="summaryError" class="alert alert-error" style="margin-bottom:8px">
+              {{ summaryError }}
+            </div>
+
+            <div v-if="summarizing" class="flex items-center gap-8" style="margin-bottom:8px">
+              <span class="spinner"></span>
+              <span class="text-muted text-sm">Generating summary…</span>
+            </div>
+
+            <div v-if="summaryResult" style="line-height:1.7;font-size:14px;margin-bottom:12px;white-space:pre-wrap">
+              {{ summaryResult }}
+            </div>
+
+            <button class="btn btn-primary btn-sm" @click="generateSummary" :disabled="summarizing">
+              {{ summaryResult ? 'Regenerate' : 'Generate summary' }}
+            </button>
           </div>
         </template>
 

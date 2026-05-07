@@ -123,17 +123,18 @@ def test_ingest_file(service, temp_data_dir, temp_preprocessed_dir, mock_service
 
     result = service.ingest_file("test_coll", md_path, meta_path)
 
-    assert result["paper_id"] == "paper1"
+    # paper_id must now equal the unique_id slug (not the filename stem)
+    assert result["paper_id"] == result["unique_id"]
+    assert result["paper_id"] == "SmithTestPaper2024"
     assert result["chunks_created"] > 0
     assert result["embeddings_generated"] > 0
-    assert "unique_id" in result
 
-    # Check metadata was copied to collection
-    meta_dest = Path(temp_data_dir) / "test_coll" / "metadata" / "paper1.json"
+    # Check metadata was copied to collection under the slug name
+    meta_dest = Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
     assert meta_dest.exists()
     stored_meta = json.loads(meta_dest.read_text())
     assert stored_meta["title"] == "Test Paper One"
-    assert stored_meta["paper_id"] == "paper1"
+    assert stored_meta["paper_id"] == "SmithTestPaper2024"
 
     # Check Qdrant was called
     qdrant.upsert_chunks.assert_called_once()
@@ -152,7 +153,9 @@ def test_ingest_file_without_metadata(
 
     result = service.ingest_file("test_coll", md_path, metadata_path=None)
 
-    assert result["paper_id"] == "paper2"
+    # Without metadata, unique_id is derived from the filename stem
+    assert result["paper_id"] == result["unique_id"]
+    assert result["paper_id"] != "paper2"  # no longer uses raw stem
     assert result["chunks_created"] > 0
 
 

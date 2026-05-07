@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -130,3 +133,63 @@ def summarize_papers(
     return SummarizeResponse(
         summary=summary, paper_ids=request.paper_ids, papers=papers_metadata
     )
+
+
+class SinglePaperSummaryResponse(BaseModel):
+    summary: str
+    method: str  # "markdown" or "rag"
+
+
+@router.get(
+    "/collections/{collection_id}/papers/{paper_id}/summarize",
+    response_model=SinglePaperSummaryResponse,
+)
+def summarize_single_paper(
+    collection_id: str,
+    paper_id: str,
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
+):
+    """Summarize a single paper by reading its markdown or falling back to Qdrant chunks."""
+    collection_service, qdrant, metadata_service, llm_service, llm_info = services
+
+    collection = collection_service.get_collection(collection_id)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    data_dir = Path(settings.data_dir)
+    meta_path = data_dir / collection_id / "metadata" / f"{paper_id}.json"
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Paper not found")
+    paper_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    config = load_config("config.yaml")
+    max_allowed = config.get("models", {}).get("max_allowed_tokens", 8192)
+    char_budget = int(max_allowed * 4 * 0.8)
+
+    context: str | None = None
+    method = "rag"
+
+    preprocessed_dir = paper_meta.get("preprocessed_dir")
+    source_pdf = paper_meta.get("source_pdf")
+    if preprocessed_dir and source_pdf:
+        stem = Path(source_pdf).stem
+        md_path = Path(settings.preprocessed_dir) / preprocessed_dir / f"{stem}.md"
+        if md_path.exists():
+            context = md_path.read_text(encoding="utf-8")[:char_budget]
+            method = "markdown"
+
+    if context is None:
+        chunks = qdrant.get_chunks_for_paper(collection_id, paper_id, limit=10)
+        if not chunks:
+            raise HTTPException(status_code=404, detail="No content found for paper")
+        context = "\n\n".join(c.payload["chunk_text"] for c in chunks)[:char_budget]
+
+    rendered = prompt_service.render("summarize", "academic_paper", context=context)
+    summary = llm_service.generate(
+        prompt=rendered.user,
+        system=rendered.system,
+        temperature=0.3,
+    )
+
+    return SinglePaperSummaryResponse(summary=summary, method=method)
