@@ -24,6 +24,10 @@ class RAGRequest(BaseModel):
         default=False, description="Use hybrid search (dense + sparse)"
     )
     prompt_name: str = Field(default="default", description="Prompt variant to use")
+    exclude_chunk_types: list[str] = Field(
+        default_factory=lambda: ["references", "acknowledgements", "appendix"],
+        description="Chunk types to exclude from retrieval",
+    )
 
 
 class Source(BaseModel):

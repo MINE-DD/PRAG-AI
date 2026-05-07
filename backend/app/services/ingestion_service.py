@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.models.paper import Chunk, ChunkType
-from app.services.chunking_service import ChunkingService
+from app.services.chunking_service import ChunkingService, classify_heading
 from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
@@ -20,11 +20,13 @@ class IngestionService:
         ollama_service: OllamaService,
         qdrant_service: QdrantService,
         sparse_embedding_service: SparseEmbeddingService | None = None,
+        max_tokens: int | None = None,
     ):
         self.chunking_service = chunking_service
         self.ollama_service = ollama_service
         self.qdrant_service = qdrant_service
         self.sparse_embedding_service = sparse_embedding_service
+        self.max_tokens = max_tokens
         self.data_dir = Path(settings.data_dir)
 
     def scan_preprocessed(self, path: str) -> dict:
@@ -147,20 +149,45 @@ class IngestionService:
         body_text, references = self._split_references(text_content)
 
         # Chunk text (body only, no references)
-        text_chunks = self.chunking_service.chunk_text(body_text)
-
-        # Create Chunk objects
         chunks = []
-        for i, chunk_text in enumerate(text_chunks):
-            chunk = Chunk(
-                paper_id=paper_id,
-                unique_id=unique_id,
-                chunk_text=chunk_text,
-                chunk_type=ChunkType.BODY,
-                page_number=1,
-                metadata={"chunk_index": i},
-            )
-            chunks.append(chunk)
+        if self.chunking_service.mode == "markdown-academic":
+            chunk_pairs = self.chunking_service.chunk_markdown(body_text)
+            for i, (chunk_text, section_heading) in enumerate(chunk_pairs):
+                chunk = Chunk(
+                    paper_id=paper_id,
+                    unique_id=unique_id,
+                    chunk_text=chunk_text,
+                    chunk_type=classify_heading(section_heading),
+                    page_number=1,
+                    metadata={"chunk_index": i, "section_heading": section_heading},
+                )
+                chunks.append(chunk)
+        else:
+            for i, chunk_text in enumerate(self.chunking_service.chunk_text(body_text)):
+                chunk = Chunk(
+                    paper_id=paper_id,
+                    unique_id=unique_id,
+                    chunk_text=chunk_text,
+                    chunk_type=ChunkType.BODY,
+                    page_number=1,
+                    metadata={"chunk_index": i, "section_heading": ""},
+                )
+                chunks.append(chunk)
+
+        # Safety-cap for character/markdown modes: truncate any chunk that exceeds
+        # the embedding context window. Skipped for token mode because chunk_size
+        # is already capped to safe_max at service-creation time.
+        if self.max_tokens is not None and self.chunking_service.mode != "tokens":
+            chunks = [
+                chunk.model_copy(
+                    update={
+                        "chunk_text": self.chunking_service.truncate_to_tokens(
+                            chunk.chunk_text, self.max_tokens
+                        )
+                    }
+                )
+                for chunk in chunks
+            ]
 
         # Generate embeddings
         chunk_texts = [c.chunk_text for c in chunks]
@@ -245,7 +272,7 @@ class IngestionService:
         Returns (body_text, references_text).
         """
         pattern = re.compile(
-            r"^(?:#{1,3}\s+|\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
+            r"^(?:#{1,3}\s+)?(?:\*\*)?(?:References|Bibliography|Works Cited|Literature Cited)(?:\*\*)?\s*$",
             re.IGNORECASE | re.MULTILINE,
         )
         match = pattern.search(text)

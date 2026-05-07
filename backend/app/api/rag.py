@@ -1,4 +1,7 @@
+import json
 import re
+from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -15,6 +18,7 @@ from app.services.sparse_embedding_service import SparseEmbeddingService
 
 router = APIRouter()
 _api_keys = ApiKeysService()
+_SMALL_MODEL_RE = re.compile(r"[:\-_.]([123]b|e[12]b|mini|tiny)", re.IGNORECASE)
 
 CANNOT_ANSWER_PHRASE = "Sorry, I do not know the answer for this"
 
@@ -102,6 +106,7 @@ def get_services():
         sparse_embedding_service,
         llm_service,
         llm_info,
+        config,
     )
 
 
@@ -127,6 +132,7 @@ def rag_query(
         sparse_embedding_service,
         llm_service,
         llm_info,
+        config,
     ) = services
 
     # Validate query text
@@ -158,6 +164,7 @@ def rag_query(
         paper_ids=rag_request.paper_ids,
         sparse_vector=sparse_vector,
         use_hybrid=use_hybrid,
+        exclude_chunk_types=rag_request.exclude_chunk_types or None,
     )
 
     # Format results and build citation key map
@@ -184,13 +191,27 @@ def rag_query(
 
     # Load metadata for all cited papers upfront
     paper_metadata_map = {}  # paper_id → PaperMetadata
+    paper_pdf_url_map = {}  # paper_id → preprocess pdf URL (may be empty)
     for paper_id in paper_citation_keys:
         meta = metadata_service.get_paper_metadata(collection_id, paper_id)
         if meta:
             paper_metadata_map[paper_id] = meta
+        # Build PDF URL from raw collection metadata JSON
+        raw_path = (
+            Path(settings.data_dir) / collection_id / "metadata" / f"{paper_id}.json"
+        )
+        if raw_path.exists():
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            preprocessed_dir = raw.get("preprocessed_dir", "")
+            pdf_name = raw.get("source_pdf") or f"{paper_id}.pdf"
+            paper_pdf_url_map[paper_id] = (
+                f"/preprocess/pdf/{quote(preprocessed_dir, safe='')}"
+                f"/{quote(pdf_name, safe='')}"
+            )
 
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
+    rendered_prompt: dict = {}
     if results:
         # Build context: each chunk tagged with its citation key
         context_parts = []
@@ -205,10 +226,20 @@ def rag_query(
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_tokens
+
+        # Auto-select small_llm prompt for edge models when default is requested
+        prompt_name = rag_request.prompt_name
+        if prompt_name == "default" and _SMALL_MODEL_RE.search(llm_info["model"]):
+            try:
+                prompt_service.get_raw("rag", "small_llm")
+                prompt_name = "small_llm"
+            except FileNotFoundError:
+                pass
+
         try:
             rendered = prompt_service.render(
                 "rag",
-                rag_request.prompt_name,
+                prompt_name,
                 context=context,
                 question=rag_request.query_text,
                 word_target=word_target,
@@ -217,12 +248,21 @@ def rag_query(
             )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
+
+        llm_max_tokens = config["models"]["llm"].get("max_allowed_tokens", 512)
+        num_predict = min(rag_request.max_tokens * 3, llm_max_tokens)
+
         answer = llm_service.generate(
             prompt=rendered.user,
             system=rendered.system,
             temperature=0.3,
-            max_tokens=rag_request.max_tokens,
+            max_tokens=num_predict,
         )
+        rendered_prompt = {
+            "system": rendered.system,
+            "user": rendered.user,
+            "prompt_name": prompt_name,
+        }
 
         # Detect cannot-answer response
         if CANNOT_ANSWER_PHRASE.lower() in answer.lower():
@@ -243,6 +283,7 @@ def rag_query(
                 "year": meta.year,
                 "apa": citation_service.format_apa(meta),
                 "bibtex": citation_service.format_bibtex(meta),
+                "pdf_url": paper_pdf_url_map.get(paper_id, ""),
             }
 
     response = {
@@ -251,6 +292,7 @@ def rag_query(
         "citations": citations,
         "llm_provider": llm_info["provider"],
         "llm_model": llm_info["model"],
+        "rendered_prompt": rendered_prompt,
     }
 
     return response

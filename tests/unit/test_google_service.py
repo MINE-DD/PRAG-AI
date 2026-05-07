@@ -49,3 +49,24 @@ def test_generate_returns_text(service):
     service._mock_client.models.generate_content.return_value = mock_response
 
     assert service.generate(prompt="hi") == "hello"
+
+
+def test_generate_empty_response_returns_fallback(service):
+    """Empty text from Google returns the hardcoded fallback message."""
+    mock_response = Mock()
+    mock_response.text = ""
+    service._mock_client.models.generate_content.return_value = mock_response
+
+    result = service.generate(prompt="test")
+
+    assert "OOPS" in result
+
+
+def test_generate_whitespace_response_returns_fallback(service):
+    mock_response = Mock()
+    mock_response.text = "   "
+    service._mock_client.models.generate_content.return_value = mock_response
+
+    result = service.generate(prompt="test")
+
+    assert "OOPS" in result

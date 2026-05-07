@@ -16,7 +16,7 @@ createApp({
     const collections = ref([])
     const globalError = ref(null)
     const showSettings = ref(false)
-    const health = ref({ backend: false, qdrant: false, ollama: null })
+    const health = ref({ backend: false, qdrant: false, ollama: null, modelsReady: null })
 
     const tabs = [
       { id: 'pdf',         label: 'PDF Management' },
@@ -39,7 +39,7 @@ createApp({
     async function checkHealth() {
       try {
         const data = await api.get('/health')
-        health.value = { backend: true, qdrant: data.qdrant === 'ok', ollama: data.ollama === 'ok' }
+        health.value = { backend: true, qdrant: data.qdrant === 'ok', ollama: data.ollama === 'ok', modelsReady: data.models_ready === true }
       } catch {
         health.value = { backend: false, qdrant: false, ollama: null }
       }

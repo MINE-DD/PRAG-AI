@@ -224,3 +224,85 @@ def test_rag_query_with_citations(client, test_collection):
         assert "apa" in citation_info
         assert "bibtex" in citation_info
         assert "unique_id" in citation_info
+
+
+def test_rag_citations_include_pdf_url_when_metadata_present(
+    client, test_collection, temp_data_dir
+):
+    """pdf_url in citations is built from the collection metadata JSON when it exists."""
+    import json as _json
+
+    meta_dir = Path(temp_data_dir) / test_collection / "metadata"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (meta_dir / "paper-123.json").write_text(
+        _json.dumps({"preprocessed_dir": "papers", "source_pdf": "paper-123.pdf"})
+    )
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "natural language processing"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # pdf_url lives inside citations, keyed by unique_id
+    assert data["citations"], "Expected at least one citation entry"
+    citation = next(iter(data["citations"].values()))
+    assert "pdf_url" in citation
+    assert "papers" in citation["pdf_url"]
+    assert "paper-123.pdf" in citation["pdf_url"]
+
+
+def test_rag_citations_pdf_url_empty_without_metadata(client, test_collection):
+    """pdf_url is an empty string in citations when no metadata JSON is found."""
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "natural language processing"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    if data["citations"]:
+        citation = next(iter(data["citations"].values()))
+        assert citation.get("pdf_url", "") == ""
+
+
+def test_rag_small_model_regex_matches_expected_names():
+    """_SMALL_MODEL_RE matches edge model naming conventions."""
+    from app.api.rag import _SMALL_MODEL_RE
+
+    should_match = ["gemma4:e2b", "gemma3:1b", "phi3:mini", "llama3.2:3b", "qwen:tiny"]
+    should_not_match = ["gemma4:27b", "llama3.1:70b", "mistral:7b", "gemini-2.5-flash"]
+
+    for name in should_match:
+        assert _SMALL_MODEL_RE.search(name), f"Expected match for {name!r}"
+    for name in should_not_match:
+        assert not _SMALL_MODEL_RE.search(name), f"Expected no match for {name!r}"
+
+
+def test_rag_small_model_prompt_fallback_when_not_found(client, test_collection):
+    """When small_llm prompt is missing, endpoint still succeeds with default prompt."""
+    from unittest.mock import patch
+
+    from app.services.prompt_service import RenderedPrompt
+
+    mock_ps = Mock()
+    mock_ps.get_raw.side_effect = FileNotFoundError("small_llm not found")
+    mock_ps.render.return_value = RenderedPrompt(system="sys", user="usr")
+
+    with patch("app.api.rag.load_config") as mock_cfg:
+        mock_cfg.return_value = {
+            "models": {
+                "llm": {
+                    "type": "local",
+                    "model": "gemma4:e2b",
+                    "max_allowed_tokens": 512,
+                },
+                "embedding": "nomic-embed-text",
+            },
+            "retrieval": {"top_k": 5},
+        }
+        with patch("app.api.rag.get_prompt_service", return_value=mock_ps):
+            response = client.post(
+                f"/collections/{test_collection}/rag",
+                json={"query_text": "test query", "prompt_name": "default"},
+            )
+    assert response.status_code == 200
+    assert "rendered_prompt" in response.json()

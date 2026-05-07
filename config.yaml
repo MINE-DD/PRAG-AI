@@ -1,9 +1,13 @@
 models:
-  embedding: nomic-embed-text:latest
+  default_embedder: nomic-embed-text:latest
+  default_llm: gemma3:1b
+  embedding: mxbai-embed-large:latest
+  max_embedder_tokens: 512
   llm:
     type: local
-    model: gemma4:e2b
+    model: phi3:mini
     google_model: gemini-2.5-flash
+    max_allowed_tokens: 131072
 chunking:
   size: 500
   overlap: 100
@@ -11,5 +15,4 @@ chunking:
   strategy: fixed
 retrieval:
   top_k: 10
-citations:
-  unique_id_format: '{author}{title_words}{year}'
+citations: null

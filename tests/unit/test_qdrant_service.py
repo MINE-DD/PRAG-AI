@@ -54,17 +54,19 @@ def test_upsert_chunks(qdrant_service):
     qdrant_service.client.upsert.assert_called_once()
 
 
-def test_search_chunks(qdrant_service):
-    """Test searching for chunks"""
+def _mock_collection(qdrant_service, sparse=False):
+    mock_info = Mock()
+    mock_info.config.params.vectors = {"dense": Mock(size=768)}
+    mock_info.config.params.sparse_vectors = {"sparse": Mock()} if sparse else None
+    qdrant_service.client.get_collection = Mock(return_value=mock_info)
     mock_response = Mock()
     mock_response.points = []
     qdrant_service.client.query_points = Mock(return_value=mock_response)
 
-    # Mock get_collection for _collection_uses_named_vectors and _collection_has_sparse
-    mock_collection_info = Mock()
-    mock_collection_info.config.params.vectors = {"dense": Mock(size=768)}
-    mock_collection_info.config.params.sparse_vectors = None
-    qdrant_service.client.get_collection = Mock(return_value=mock_collection_info)
+
+def test_search_chunks(qdrant_service):
+    """Test searching for chunks"""
+    _mock_collection(qdrant_service)
 
     results = qdrant_service.search(
         collection_name="test-collection", query_vector=[0.1] * 768, limit=10
@@ -72,3 +74,47 @@ def test_search_chunks(qdrant_service):
 
     assert isinstance(results, list)
     qdrant_service.client.query_points.assert_called_once()
+
+
+def test_search_with_paper_id_filter(qdrant_service):
+    """paper_ids builds a must filter."""
+    _mock_collection(qdrant_service)
+
+    qdrant_service.search(
+        collection_name="test-collection",
+        query_vector=[0.1] * 768,
+        paper_ids=["paper-1", "paper-2"],
+    )
+
+    call_kwargs = qdrant_service.client.query_points.call_args[1]
+    assert call_kwargs["query_filter"] is not None
+
+
+def test_search_with_exclude_chunk_types(qdrant_service):
+    """exclude_chunk_types builds a must_not filter."""
+    _mock_collection(qdrant_service)
+
+    qdrant_service.search(
+        collection_name="test-collection",
+        query_vector=[0.1] * 768,
+        exclude_chunk_types=["references", "acknowledgements"],
+    )
+
+    call_kwargs = qdrant_service.client.query_points.call_args[1]
+    q_filter = call_kwargs["query_filter"]
+    assert q_filter is not None
+    assert q_filter.must_not is not None
+    assert len(q_filter.must_not) == 2
+
+
+def test_search_no_filter_when_no_constraints(qdrant_service):
+    """No filter is built when neither paper_ids nor exclude_chunk_types given."""
+    _mock_collection(qdrant_service)
+
+    qdrant_service.search(
+        collection_name="test-collection",
+        query_vector=[0.1] * 768,
+    )
+
+    call_kwargs = qdrant_service.client.query_points.call_args[1]
+    assert call_kwargs["query_filter"] is None

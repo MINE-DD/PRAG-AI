@@ -1,4 +1,4 @@
-import { defineComponent, ref, reactive, watch, onMounted } from 'vue'
+import { defineComponent, ref, reactive, computed, watch, onMounted } from 'vue'
 import { api } from '../backend-client.js'
 import { FilePickerPanel } from '../components/collections/file-picker-panel.js'
 
@@ -13,12 +13,35 @@ const CollectionsTab = defineComponent({
     const creating       = ref(false)
     const deleting       = reactive({})
     const newForm        = reactive({ name: '', search_type: 'hybrid', ingestDir: '',
-                                      chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
-    const createMsg      = ref(null)
-    const showAdvanced   = ref(false)
-    const pickerCollId   = ref(null)
-    const convertedDirs  = ref([])   // [{name, files:[{mdName}]}]
-    const loadingDirs    = ref(false)
+                                      chunkSize: 2000, chunkOverlap: 0, chunkMode: 'markdown-academic' })
+    const createMsg             = ref(null)
+    const ingestErrors          = ref([])
+    const ingestProgress        = reactive({ current: 0, total: 0 })
+    const showAdvanced          = ref(false)
+    const pickerCollId          = ref(null)
+    const convertedDirs         = ref([])   // [{name, files:[{mdName}]}]
+    const loadingDirs           = ref(false)
+    const embeddingModel        = ref('')
+    const embeddingContextLen   = ref(null)  // tokens; null = unknown
+    const chunkSizeWarning      = ref(null)
+
+    async function loadEmbeddingInfo() {
+      try {
+        const cfg = await api.get('/settings')
+        embeddingModel.value      = cfg.embedding_model      || ''
+        embeddingContextLen.value = cfg.embedding_context_length ?? null
+      } catch { /* non-critical */ }
+    }
+
+    // Max chunk size in the units used by the current mode:
+    //   tokens mode  → context window in tokens
+    //   chars/markdown → context window × 4 chars/token (conservative estimate)
+    const maxChunkSize = computed(() => {
+      if (!embeddingContextLen.value) return 4000
+      return newForm.chunkMode === 'tokens'
+        ? embeddingContextLen.value
+        : embeddingContextLen.value * 4
+    })
 
     async function loadConvertedDirs() {
       loadingDirs.value = true
@@ -40,11 +63,19 @@ const CollectionsTab = defineComponent({
       finally { loadingDirs.value = false }
     }
 
+    function extractDetail(msg) {
+      try {
+        const j = msg.slice(msg.indexOf('{'))
+        return JSON.parse(j).detail || msg
+      } catch { return msg }
+    }
+
     async function createCollection() {
       if (!newForm.name.trim()) { error.value = 'Collection name is required.'; return }
-      creating.value  = true
-      error.value     = null
-      createMsg.value = null
+      creating.value   = true
+      error.value      = null
+      createMsg.value  = null
+      ingestErrors.value = []
       try {
         const coll = await api.post('/collections', {
           name:        newForm.name.trim(),
@@ -54,8 +85,12 @@ const CollectionsTab = defineComponent({
 
         if (newForm.ingestDir) {
           const dir = convertedDirs.value.find(d => d.name === newForm.ingestDir)
-          let ok = 0, fail = 0
-          for (const f of (dir?.files ?? [])) {
+          const files = dir?.files ?? []
+          let ok = 0
+          const errors = []
+          ingestProgress.current = 0
+          ingestProgress.total   = files.length
+          for (const f of files) {
             try {
               await api.post(`/ingest/${collId}/file`, {
                 markdown_file: f.mdName,
@@ -65,17 +100,21 @@ const CollectionsTab = defineComponent({
                 chunk_mode:    newForm.chunkMode,
               })
               ok++
-            } catch { fail++ }
+            } catch (e) { errors.push({ file: f.mdName, message: extractDetail(e.message) }) }
+            ingestProgress.current++
           }
-          createMsg.value = fail === 0
-            ? `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
-            : `Ingested ${ok}/${ok + fail} file(s) — ${fail} failed.`
+          if (errors.length === 0) {
+            createMsg.value = `Created and ingested ${ok} file(s) from "${newForm.ingestDir}".`
+          } else {
+            createMsg.value = `Ingested ${ok}/${ok + errors.length} file(s).`
+            ingestErrors.value = errors
+          }
         } else {
           createMsg.value = 'Collection created. Use "+ Add files" to ingest papers.'
         }
 
         Object.assign(newForm, { name: '', search_type: 'hybrid', ingestDir: '',
-                                 chunkSize: 500, chunkOverlap: 100, chunkMode: 'tokens' })
+                                 chunkSize: 2000, chunkOverlap: 0, chunkMode: 'markdown-academic' })
         emit('refresh-collections')
       } catch (e) { error.value = e.message }
       finally { creating.value = false }
@@ -98,19 +137,51 @@ const CollectionsTab = defineComponent({
       pickerCollId.value = pickerCollId.value === collId ? null : collId
     }
 
-    const CHUNK_DEFAULTS = { tokens: { size: 500, overlap: 100 }, characters: { size: 2000, overlap: 200 } }
+    // Default char/markdown chunk size scales with the embedder's context window:
+    // 2 chars/token (conservative floor), rounded to 100, capped at 2000.
+    // Examples: 512 → 1000, 768 → 1500, 1024+ → 2000.
+    const defaultCharSize = computed(() => {
+      if (!embeddingContextLen.value) return 2000
+      return Math.min(2000, Math.floor(embeddingContextLen.value * 2 / 100) * 100)
+    })
+
+    const CHUNK_DEFAULTS = computed(() => ({
+      tokens:              { size: 500,                   overlap: 100 },
+      characters:          { size: defaultCharSize.value, overlap: 200 },
+      'markdown-academic': { size: defaultCharSize.value, overlap: 0   },
+    }))
 
     watch(() => newForm.chunkMode, mode => {
-      const d = CHUNK_DEFAULTS[mode]
+      const d = CHUNK_DEFAULTS.value[mode]
       if (d) { newForm.chunkSize = d.size; newForm.chunkOverlap = d.overlap }
     })
 
-    onMounted(loadConvertedDirs)
+    // When the embedder context length loads, update the form to the appropriate default.
+    watch(embeddingContextLen, () => {
+      const d = CHUNK_DEFAULTS.value[newForm.chunkMode]
+      if (d) newForm.chunkSize = d.size
+    })
+
+    watch(() => newForm.chunkSize, size => {
+      const max = maxChunkSize.value
+      if (!embeddingContextLen.value || size <= max) {
+        chunkSizeWarning.value = null
+        return
+      }
+      const unit = newForm.chunkMode === 'tokens' ? 'tokens' : 'chars'
+      chunkSizeWarning.value =
+        `Exceeds ${embeddingModel.value || 'embedder'} context window ` +
+        `(${embeddingContextLen.value} tokens ≈ ${embeddingContextLen.value * 4} chars). ` +
+        `Clamped to ${max} ${unit}.`
+      newForm.chunkSize = max
+    })
+
+    onMounted(() => { loadConvertedDirs(); loadEmbeddingInfo() })
 
     return {
-      error, creating, deleting, newForm, createMsg, showAdvanced, pickerCollId,
-      convertedDirs, loadingDirs,
-      createCollection, deleteCollection, togglePicker,
+      error, creating, deleting, newForm, createMsg, ingestErrors, ingestProgress,
+      showAdvanced, pickerCollId, convertedDirs, loadingDirs, embeddingContextLen,
+      maxChunkSize, chunkSizeWarning, createCollection, deleteCollection, togglePicker,
     }
   },
 
@@ -167,15 +238,28 @@ const CollectionsTab = defineComponent({
         <select v-model="newForm.chunkMode">
           <option value="tokens">Tokens (approx)</option>
           <option value="characters">Characters</option>
+          <option value="markdown-academic">Markdown (Academic Papers)</option>
         </select>
       </div>
-      <div class="form-group" style="margin:0">
-        <label>Chunk size</label>
-        <input type="number" v-model.number="newForm.chunkSize" min="50" max="4000" step="50" />
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Chunk overlap</label>
-        <input type="number" v-model.number="newForm.chunkOverlap" min="0" max="500" step="10" />
+      <template v-if="newForm.chunkMode !== 'markdown-academic'">
+        <div class="form-group" style="margin:0">
+          <label>Chunk size</label>
+          <input type="number" v-model.number="newForm.chunkSize" min="50" :max="maxChunkSize" step="50" />
+          <div v-if="chunkSizeWarning" class="text-sm" style="color:var(--warning,#b45309);margin-top:3px">
+            ⚠ {{ chunkSizeWarning }}
+          </div>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Chunk overlap</label>
+          <input type="number" v-model.number="newForm.chunkOverlap" min="0" max="500" step="10" />
+        </div>
+      </template>
+      <div v-else class="form-group" style="margin:0">
+        <label>Max paragraph size (chars)</label>
+        <input type="number" v-model.number="newForm.chunkSize" min="100" :max="maxChunkSize" step="100" />
+        <div v-if="chunkSizeWarning" class="text-sm" style="color:var(--warning,#b45309);margin-top:3px">
+          ⚠ {{ chunkSizeWarning }}
+        </div>
       </div>
       <div class="form-group" style="margin:0">
         <label>Search type</label>
@@ -186,12 +270,43 @@ const CollectionsTab = defineComponent({
       </div>
     </div>
 
-    <div class="mt-16 flex gap-8 items-center">
-      <button class="btn btn-primary" :disabled="creating" @click="createCollection">
-        <span v-if="creating" class="spinner"></span>
-        <span>{{ creating ? (newForm.ingestDir ? 'Creating & ingesting…' : 'Creating…') : (newForm.ingestDir ? 'Create & Ingest' : 'Create') }}</span>
-      </button>
-      <span v-if="createMsg" class="text-sm" style="color:var(--success)">{{ createMsg }}</span>
+    <div class="mt-16">
+      <div v-if="newForm.ingestDir && embeddingContextLen && newForm.chunkMode !== 'tokens'"
+           style="margin-bottom:8px;padding:6px 10px;background:var(--info-bg,#eff6ff);border:1px solid var(--info-border,#bfdbfe);border-radius:4px;font-size:12px;color:var(--info-text,#1d4ed8)">
+        ℹ The current embedder model max length is {{ embeddingContextLen }} tokens.
+        Chunks exceeding this will be automatically truncated.
+        Use the advanced settings to select smaller chunks, or change to a bigger model.
+      </div>
+      <div class="flex gap-8 items-center">
+        <button class="btn btn-primary" :disabled="creating" @click="createCollection">
+          <span v-if="creating" class="spinner"></span>
+          <span>{{ creating ? (newForm.ingestDir ? 'Creating & ingesting…' : 'Creating…') : (newForm.ingestDir ? 'Create & Ingest' : 'Create') }}</span>
+        </button>
+        <span v-if="createMsg" class="text-sm" :style="ingestErrors.length ? 'color:var(--warning,#b45309)' : 'color:var(--success)'">{{ createMsg }}</span>
+      </div>
+      <div v-if="ingestErrors.length > 0" style="margin-top:10px;border:1px solid var(--warning,#b45309);border-radius:4px;overflow:hidden">
+        <div style="background:var(--warning-bg,#fffbeb);padding:6px 10px;font-size:12px;font-weight:600;color:var(--warning,#b45309)">
+          {{ ingestErrors.length }} file{{ ingestErrors.length !== 1 ? 's' : '' }} failed to ingest
+        </div>
+        <div v-for="e in ingestErrors" :key="e.file"
+             style="padding:5px 10px;font-size:12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:baseline">
+          <span style="font-family:monospace;color:var(--text-muted);flex-shrink:0">{{ e.file }}</span>
+          <span style="color:var(--error,#dc2626)">{{ e.message }}</span>
+        </div>
+      </div>
+      <div v-if="creating && ingestProgress.total > 0" style="margin-top:10px">
+        <div class="text-sm text-muted" style="margin-bottom:4px">
+          Ingesting {{ ingestProgress.current }} / {{ ingestProgress.total }} files…
+        </div>
+        <div style="background:var(--border,#e5e7eb);border-radius:4px;height:6px;overflow:hidden">
+          <div :style="{
+            width: (ingestProgress.current / ingestProgress.total * 100) + '%',
+            background: 'var(--primary,#2563eb)',
+            height: '100%',
+            transition: 'width 0.3s ease',
+          }"></div>
+        </div>
+      </div>
     </div>
   </div>
 

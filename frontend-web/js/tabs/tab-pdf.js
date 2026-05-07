@@ -291,7 +291,7 @@ const PdfTab = defineComponent({
               <span :style="expandedFiles[dir.name+'/'+file.filename] ? 'display:inline-block;transform:rotate(90deg)' : ''">▶</span>
             </button>
             <div>
-              <div class="file-name">{{ (fileMetadata[dir.name+'/'+file.filename]?.title || file.filename).split(' ').slice(0,5).join(' ') }}</div>
+              <div class="file-name">{{ (fileMetadata[dir.name+'/'+file.filename]?.title || file.filename).split(' ').slice(0,5).join(' ') }}...</div>
               <div class="file-meta">
                 <span v-if="file.processed" class="badge badge-green">
                   Converted{{ fileMetadata[dir.name+'/'+file.filename]?.backend ? ' with ' + fileMetadata[dir.name+'/'+file.filename].backend : '' }}

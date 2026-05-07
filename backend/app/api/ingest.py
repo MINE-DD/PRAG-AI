@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -9,6 +10,8 @@ from app.services.ingestion_service import IngestionService
 from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -38,14 +41,31 @@ def get_ingestion_service(
     chunk_mode: str | None = None,
 ) -> IngestionService:
     config = load_config("config.yaml")
-    chunking_service = ChunkingService(
-        chunk_size=chunk_size or config["chunking"]["size"],
-        overlap=chunk_overlap or config["chunking"]["overlap"],
-        mode=chunk_mode or config["chunking"].get("mode", "characters"),
+    effective_mode = chunk_mode or config["chunking"].get("mode", "characters")
+    effective_size = (
+        chunk_size if chunk_size is not None else config["chunking"]["size"]
     )
+    effective_overlap = (
+        chunk_overlap if chunk_overlap is not None else config["chunking"]["overlap"]
+    )
+
     ollama_service = OllamaService(
         url=settings.ollama_url,
         embedding_model=config["models"]["embedding"],
+    )
+
+    # Read the embedding context window from config (written when the model is
+    # selected in settings, same pattern as llm.max_allowed_tokens).
+    context_length = config["models"].get("max_embedder_tokens", 512)
+    # Reserve 10 tokens for model special tokens ([CLS], [SEP], etc.)
+    safe_max = max(context_length - 10, 50)
+    if effective_mode == "tokens":
+        effective_size = min(effective_size, safe_max)
+
+    chunking_service = ChunkingService(
+        chunk_size=effective_size,
+        overlap=effective_overlap,
+        mode=effective_mode,
     )
     qdrant_service = QdrantService(url=settings.qdrant_url)
     sparse_embedding_service = SparseEmbeddingService()
@@ -54,6 +74,7 @@ def get_ingestion_service(
         ollama_service=ollama_service,
         qdrant_service=qdrant_service,
         sparse_embedding_service=sparse_embedding_service,
+        max_tokens=safe_max,
     )
 
 
@@ -137,4 +158,5 @@ def ingest_file(collection_id: str, request: IngestFileRequest):
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.exception("Ingestion failed for %s", request.markdown_file)
         raise HTTPException(status_code=500, detail=f"Ingestion error: {str(e)}")

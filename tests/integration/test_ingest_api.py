@@ -155,3 +155,30 @@ def test_ingest_file_collection_not_found(client, temp_preprocessed_dir):
         json={"markdown_file": "paper1.md", "dir_name": "papers"},
     )
     assert response.status_code == 404
+
+
+def test_ingest_file_unexpected_error_returns_500(
+    client, temp_data_dir, temp_preprocessed_dir, mock_ollama
+):
+    """An unexpected exception during ingestion is logged and returns HTTP 500."""
+    from unittest.mock import patch
+
+    # Create collection first so the 404 branch is not hit.
+    client.post(
+        "/ingest/create",
+        json={
+            "name": "Test Collection",
+            "preprocessed_path": str(Path(temp_preprocessed_dir) / "papers"),
+        },
+    )
+
+    with patch(
+        "app.api.ingest.IngestionService.ingest_file",
+        side_effect=RuntimeError("unexpected boom"),
+    ):
+        response = client.post(
+            "/ingest/test_collection/file",
+            json={"markdown_file": "paper1.md", "dir_name": "papers"},
+        )
+    assert response.status_code == 500
+    assert "unexpected boom" in response.json()["detail"]

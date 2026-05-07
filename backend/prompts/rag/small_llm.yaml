@@ -1,0 +1,24 @@
+variables:
+  context: "Retrieved text chunks from matching papers, labeled with citation keys"
+  question: "The user's research question"
+  word_target: "Approximate desired response length in tokens"
+  keys_list: "Comma-separated list of valid citation keys present in the context"
+  cannot_answer_phrase: "Exact phrase the LLM must use when the context is insufficient"
+system: |
+  You are a research assistant. Answer using only the sources provided. Cite every fact.
+user: |
+  Here are research excerpts. Each one starts with its citation key in brackets.
+
+  {context}
+
+  ----
+
+  Question: {question}
+
+  Instructions:
+  1. Read every excerpt above carefully.
+  2. Write a detailed answer to the question using ONLY what the excerpts say. Do not add outside knowledge.
+  3. After every fact you write, add the citation key in square brackets, like: "Finding X [AuthorTitle2023]."
+  4. Only use citation keys from this list: {keys_list}
+  5. If the excerpts do not answer the question, write exactly: "{cannot_answer_phrase}"
+  6. Write at least {word_target} tokens. Cover everything the excerpts say about the question. Do not stop early.

@@ -135,6 +135,22 @@
     .badge-gray   { background: #f1f5f9; color: var(--muted); }
     .badge-yellow { background: #fef9c3; color: #854d0e; }
 
+    /* ── Chunk-type badges ──────────────────────────────── */
+    .ct-abstract        { background: #ede9fe; color: #5b21b6; }
+    .ct-introduction    { background: #dbeafe; color: #1e40af; }
+    .ct-related_work    { background: #ccfbf1; color: #0f766e; }
+    .ct-methods         { background: #fed7aa; color: #c2410c; }
+    .ct-data            { background: #cffafe; color: #0e7490; }
+    .ct-results         { background: #dcfce7; color: #166534; }
+    .ct-discussion      { background: #e0e7ff; color: #3730a3; }
+    .ct-conclusion      { background: #fef9c3; color: #854d0e; }
+    .ct-references      { background: #f1f5f9; color: #64748b; }
+    .ct-acknowledgements{ background: #f1f5f9; color: #94a3b8; }
+    .ct-appendix        { background: #f8fafc; color: #94a3b8; }
+    .ct-body            { background: #f1f5f9; color: #64748b; }
+    .ct-table           { background: #e0f2fe; color: #0369a1; }
+    .ct-figure_caption  { background: #fce7f3; color: #9d174d; }
+
     /* ── Spinner ─────────────────────────────────────── */
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
                border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
@@ -254,6 +270,22 @@
     .picker-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .picker-dir-tag  { font-size: 11px; color: var(--muted); }
     .picker-status   { font-size: 12px; min-width: 16px; text-align: right; flex-shrink: 0; }
+
+    /* ── Markdown answer rendering ─────────────────────── */
+    .markdown-body { line-height: 1.75; font-size: 14px; }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 1em 0 0.4em; font-weight: 600; }
+    .markdown-body h1 { font-size: 1.2em; }
+    .markdown-body h2 { font-size: 1.1em; }
+    .markdown-body h3 { font-size: 1em; }
+    .markdown-body p  { margin-bottom: 0.75em; }
+    .markdown-body ul, .markdown-body ol { margin: 0.5em 0 0.75em 1.5em; }
+    .markdown-body li { margin-bottom: 0.25em; }
+    .markdown-body code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .markdown-body pre  { background: var(--bg); padding: 10px; border-radius: 6px; overflow-x: auto; margin-bottom: 0.75em; }
+    .markdown-body pre code { background: none; padding: 0; }
+    .markdown-body strong { font-weight: 600; }
+    .markdown-body em { font-style: italic; }
+    .markdown-body blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--text-muted); margin-bottom: 0.75em; }
 
     @media (max-width: 768px) {
       .sidebar { width: 100%; position: relative; height: auto; }
