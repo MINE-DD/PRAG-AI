@@ -1,7 +1,9 @@
 import json
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.rag import _get_llm_info, _get_llm_service
@@ -165,7 +167,9 @@ def summarize_single_paper(
 
     config = load_config("config.yaml")
     max_allowed = config.get("models", {}).get("max_allowed_tokens", 8192)
-    char_budget = int(max_allowed * 4 * 0.8)
+    # Cap at 6000 tokens worth of chars — local models choke on larger contexts
+    practical_limit = max(int(max_allowed * 0.6), 6000)
+    char_budget = int(practical_limit * 4 * 0.8)
 
     context: str | None = None
     method = "rag"
@@ -193,3 +197,94 @@ def summarize_single_paper(
     )
 
     return SinglePaperSummaryResponse(summary=summary, method=method)
+
+
+def _parse_sections(
+    text: str, max_sections: int = 12, min_body_chars: int = 150
+) -> list[tuple[str, str]]:
+    """Split markdown into [(heading, body)] pairs by H1/H2 headings."""
+    pattern = re.compile(r"^(#{1,2} .+)$", re.MULTILINE)
+    parts = pattern.split(text)
+
+    sections: list[tuple[str, str]] = []
+    preamble = parts[0].strip()
+    if len(preamble) >= min_body_chars:
+        sections.append(("Overview", preamble))
+
+    for i in range(1, len(parts), 2):
+        heading = re.sub(r"^#+\s*", "", parts[i]).strip()
+        body = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        if len(body) >= min_body_chars:
+            sections.append((heading, body))
+
+    return sections[:max_sections]
+
+
+@router.get("/collections/{collection_id}/papers/{paper_id}/summarize/stream")
+def summarize_single_paper_stream(
+    collection_id: str,
+    paper_id: str,
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
+):
+    """Stream section-by-section summaries of a paper as SSE."""
+    collection_service, qdrant, metadata_service, llm_service, llm_info = services
+
+    collection = collection_service.get_collection(collection_id)
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    data_dir = Path(settings.data_dir)
+    meta_path = data_dir / collection_id / "metadata" / f"{paper_id}.json"
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail="Paper not found")
+    paper_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    sections: list[tuple[str, str]] = []
+    method = "rag"
+
+    preprocessed_dir = paper_meta.get("preprocessed_dir")
+    source_pdf = paper_meta.get("source_pdf")
+    if preprocessed_dir and source_pdf:
+        stem = Path(source_pdf).stem
+        md_path = Path(settings.preprocessed_dir) / preprocessed_dir / f"{stem}.md"
+        if md_path.exists():
+            sections = _parse_sections(md_path.read_text(encoding="utf-8"))
+            method = "markdown"
+
+    if not sections:
+        chunks = qdrant.get_chunks_for_paper(collection_id, paper_id, limit=10)
+        if not chunks:
+            raise HTTPException(status_code=404, detail="No content found for paper")
+        sections = [
+            (f"Chunk {i + 1}", c.payload["chunk_text"]) for i, c in enumerate(chunks)
+        ]
+        method = "rag"
+
+    # 2000 tokens ≈ 8000 chars — safe for any local model per section
+    section_char_limit = 8000
+
+    def generate():
+        headings = [h for h, _ in sections]
+        yield f"data: {json.dumps({'type': 'toc', 'headings': headings, 'count': len(sections), 'method': method})}\n\n"
+
+        for i, (heading, body) in enumerate(sections):
+            try:
+                rendered = prompt_service.render(
+                    "summarize",
+                    "section",
+                    heading=heading,
+                    context=body[:section_char_limit],
+                )
+                content = llm_service.generate(
+                    prompt=rendered.user,
+                    system=rendered.system,
+                    temperature=0.3,
+                )
+                yield f"data: {json.dumps({'type': 'section', 'heading': heading, 'index': i + 1, 'total': len(sections), 'content': content})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

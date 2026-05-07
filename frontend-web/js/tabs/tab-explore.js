@@ -12,10 +12,16 @@ const ExploreTab = defineComponent({
     const selected      = ref(null)
     const detail        = ref(null)
     const loading       = ref(false)
-    const summarizing   = ref(false)
-    const summaryResult = ref(null)
-    const summaryError  = ref(null)
-    const summaryMethod = ref(null)
+    const summarizing     = ref(false)
+    const summaryToc      = ref([])
+    const summarySections = ref([])
+    const summaryProgress = ref('')
+    const summaryError    = ref(null)
+    const summaryMethod   = ref(null)
+
+    function renderMd(text) {
+      return window.marked ? window.marked.parse(text) : text
+    }
 
     const collectionId = computed(() => props.selectedCollection)
 
@@ -43,15 +49,42 @@ const ExploreTab = defineComponent({
     async function generateSummary() {
       if (!detail.value) return
       summarizing.value = true
-      summaryResult.value = null
+      summaryToc.value = []
+      summarySections.value = []
+      summaryProgress.value = ''
       summaryError.value = null
       summaryMethod.value = null
       try {
-        const res = await api.get(
-          `/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize`
+        const resp = await fetch(
+          `${api.url()}/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize/stream`
         )
-        summaryResult.value = res.summary
-        summaryMethod.value = res.method
+        if (!resp.ok) throw new Error(await resp.text())
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop()
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            let data
+            try { data = JSON.parse(line.slice(6)) } catch { continue }
+            if (data.type === 'toc') {
+              summaryToc.value = data.headings
+              summaryMethod.value = data.method
+            } else if (data.type === 'section') {
+              summarySections.value = [...summarySections.value, { heading: data.heading, content: data.content }]
+              summaryProgress.value = data.index + ' / ' + data.total
+            } else if (data.type === 'done') {
+              summarizing.value = false
+            } else if (data.type === 'error') {
+              summaryError.value = data.message
+            }
+          }
+        }
       } catch (e) {
         summaryError.value = e.message
       } finally {
@@ -65,7 +98,9 @@ const ExploreTab = defineComponent({
       detail.value = null
       error.value = null
       summarizing.value = false
-      summaryResult.value = null
+      summaryToc.value = []
+      summarySections.value = []
+      summaryProgress.value = ''
       summaryError.value = null
       summaryMethod.value = null
       try {
@@ -86,8 +121,11 @@ const ExploreTab = defineComponent({
       finally { loading.value = false }
     }
 
+    const apiBase = api.url()
+
     return { error, papers, selected, detail, loading, collectionId, selectPaper,
-             summarizing, summaryResult, summaryError, summaryMethod, generateSummary }
+             summarizing, summaryToc, summarySections, summaryProgress,
+             summaryError, summaryMethod, generateSummary, renderMd, apiBase }
   },
 
   template: `
@@ -153,6 +191,12 @@ const ExploreTab = defineComponent({
               <span v-if="detail.journal"> · <em>{{ detail.journal }}</em></span>
             </div>
 
+            <div v-if="detail.preprocessed_dir && detail.source_pdf" style="margin-bottom:10px">
+              <a :href="apiBase + '/preprocess/pdf/' + encodeURIComponent(detail.preprocessed_dir) + '/' + encodeURIComponent(detail.source_pdf)"
+                 target="_blank" rel="noopener"
+                 style="color:var(--primary);font-size:13px">Open PDF ↗</a>
+            </div>
+
             <div v-if="detail.doi" style="margin-bottom:10px">
               <span class="text-sm text-muted">DOI: </span>
               <a :href="detail.doi.startsWith('http') ? detail.doi : 'https://doi.org/' + detail.doi"
@@ -197,17 +241,28 @@ const ExploreTab = defineComponent({
               {{ summaryError }}
             </div>
 
-            <div v-if="summarizing" class="flex items-center gap-8" style="margin-bottom:8px">
-              <span class="spinner"></span>
-              <span class="text-muted text-sm">Generating summary…</span>
+            <!-- TOC -->
+            <div v-if="summaryToc.length" class="markdown-body" style="margin-bottom:16px"
+                 v-html="renderMd('**This paper has ' + summaryToc.length + ' sections:**\n\n' + summaryToc.map(h => '- ' + h).join('\n') + '\n\n---\n\n**Section summaries:**')">
             </div>
 
-            <div v-if="summaryResult" style="line-height:1.7;font-size:14px;margin-bottom:12px;white-space:pre-wrap">
-              {{ summaryResult }}
+            <!-- Section summaries streaming in -->
+            <div v-for="s in summarySections" :key="s.heading" style="margin-bottom:16px">
+              <div class="markdown-body" v-html="renderMd('#### ' + s.heading + '\n\n' + s.content)"></div>
+            </div>
+
+            <!-- Progress -->
+            <div v-if="summarizing && summaryToc.length" class="flex items-center gap-8" style="margin-bottom:10px">
+              <span class="spinner"></span>
+              <span class="text-muted text-sm">{{ summaryProgress || '0 / ' + summaryToc.length }} sections summarised</span>
+            </div>
+            <div v-else-if="summarizing" class="flex items-center gap-8" style="margin-bottom:10px">
+              <span class="spinner"></span>
+              <span class="text-muted text-sm">Parsing sections…</span>
             </div>
 
             <button class="btn btn-primary btn-sm" @click="generateSummary" :disabled="summarizing">
-              {{ summaryResult ? 'Regenerate' : 'Generate summary' }}
+              {{ summarySections.length ? 'Regenerate' : 'Generate summary' }}
             </button>
           </div>
         </template>

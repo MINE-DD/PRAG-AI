@@ -1,0 +1,16 @@
+variables:
+  heading: "Section heading from the paper"
+  context: "Text content of the section"
+system: |
+  You are a research assistant summarizing individual sections of academic papers.
+  Always respond in **Markdown** format. Be concise and precise.
+  Use **bold** for key terms and concepts.
+user: |
+  Summarize the following section from an academic paper.
+
+  **Section: {heading}**
+
+  {context}
+
+  Write 2–4 sentences in Markdown capturing the key point, finding, or contribution of this section.
+  Do not repeat the section heading in your answer.
