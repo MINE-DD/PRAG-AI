@@ -18,9 +18,16 @@ const ExploreTab = defineComponent({
     const summaryProgress = ref('')
     const summaryError    = ref(null)
     const summaryMethod   = ref(null)
+    let   _summaryAbort   = null
 
     function renderMd(text) {
       return window.marked ? window.marked.parse(text) : text
+    }
+
+    function summaryTocMd() {
+      if (!summaryToc.value.length) return ''
+      const lines = summaryToc.value.map(h => '- ' + h).join('\n')
+      return '**This paper has ' + summaryToc.value.length + ' sections:**\n\n' + lines + '\n\n---\n\n**Section summaries:**'
     }
 
     const collectionId = computed(() => props.selectedCollection)
@@ -48,6 +55,9 @@ const ExploreTab = defineComponent({
 
     async function generateSummary() {
       if (!detail.value) return
+      if (_summaryAbort) { _summaryAbort.abort(); _summaryAbort = null }
+      const ac = new AbortController()
+      _summaryAbort = ac
       summarizing.value = true
       summaryToc.value = []
       summarySections.value = []
@@ -56,7 +66,8 @@ const ExploreTab = defineComponent({
       summaryMethod.value = null
       try {
         const resp = await fetch(
-          `${api.url()}/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize/stream`
+          `${api.url()}/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize/stream`,
+          { signal: ac.signal }
         )
         if (!resp.ok) throw new Error(await resp.text())
         const reader = resp.body.getReader()
@@ -76,7 +87,7 @@ const ExploreTab = defineComponent({
               summaryToc.value = data.headings
               summaryMethod.value = data.method
             } else if (data.type === 'section') {
-              summarySections.value = [...summarySections.value, { heading: data.heading, content: data.content }]
+              summarySections.value.push({ heading: data.heading, content: data.content })
               summaryProgress.value = data.index + ' / ' + data.total
             } else if (data.type === 'done') {
               summarizing.value = false
@@ -86,13 +97,15 @@ const ExploreTab = defineComponent({
           }
         }
       } catch (e) {
-        summaryError.value = e.message
+        if (e.name !== 'AbortError') summaryError.value = e.message
       } finally {
         summarizing.value = false
+        _summaryAbort = null
       }
     }
 
     async function selectPaper(paper) {
+      if (_summaryAbort) { _summaryAbort.abort(); _summaryAbort = null }
       selected.value = paper
       loading.value = true
       detail.value = null
@@ -125,7 +138,7 @@ const ExploreTab = defineComponent({
 
     return { error, papers, selected, detail, loading, collectionId, selectPaper,
              summarizing, summaryToc, summarySections, summaryProgress,
-             summaryError, summaryMethod, generateSummary, renderMd, apiBase }
+             summaryError, summaryMethod, generateSummary, renderMd, summaryTocMd, apiBase }
   },
 
   template: `
@@ -243,11 +256,11 @@ const ExploreTab = defineComponent({
 
             <!-- TOC -->
             <div v-if="summaryToc.length" class="markdown-body" style="margin-bottom:16px"
-                 v-html="renderMd('**This paper has ' + summaryToc.length + ' sections:**\n\n' + summaryToc.map(h => '- ' + h).join('\n') + '\n\n---\n\n**Section summaries:**')">
+                 v-html="renderMd(summaryTocMd())">
             </div>
 
             <!-- Section summaries streaming in -->
-            <div v-for="s in summarySections" :key="s.heading" style="margin-bottom:16px">
+            <div v-for="(s, idx) in summarySections" :key="idx" style="margin-bottom:16px">
               <div class="markdown-body" v-html="renderMd('#### ' + s.heading + '\n\n' + s.content)"></div>
             </div>
 
