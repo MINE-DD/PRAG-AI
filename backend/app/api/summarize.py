@@ -207,9 +207,6 @@ def _parse_sections(
     parts = pattern.split(text)
 
     sections: list[tuple[str, str]] = []
-    preamble = parts[0].strip()
-    if len(preamble) >= min_body_chars:
-        sections.append(("Overview", preamble))
 
     for i in range(1, len(parts), 2):
         heading = re.sub(r"^#+\s*", "", parts[i]).strip()
@@ -224,6 +221,7 @@ def _parse_sections(
 def summarize_single_paper_stream(
     collection_id: str,
     paper_id: str,
+    max_sentences: int = 3,
     services: tuple = Depends(get_services),
     prompt_service: PromptService = Depends(get_prompt_service),
 ):
@@ -275,6 +273,7 @@ def summarize_single_paper_stream(
                     "section",
                     heading=heading,
                     context=body[:section_char_limit],
+                    max_sentences=max_sentences,
                 )
                 content = llm_service.generate(
                     prompt=rendered.user,

@@ -12,13 +12,15 @@ const ExploreTab = defineComponent({
     const selected      = ref(null)
     const detail        = ref(null)
     const loading       = ref(false)
-    const summarizing     = ref(false)
-    const summaryToc      = ref([])
-    const summarySections = ref([])
-    const summaryProgress = ref('')
-    const summaryError    = ref(null)
-    const summaryMethod   = ref(null)
-    let   _summaryAbort   = null
+    const summarizing       = ref(false)
+    const summaryToc        = ref([])
+    const summarySections   = ref([])
+    const summaryProgress   = ref('')
+    const summaryError      = ref(null)
+    const summaryMethod     = ref(null)
+    const summaryMaxSent    = ref(3)
+    const showSummaryAdv    = ref(false)
+    let   _summaryAbort     = null
 
     function renderMd(text) {
       return window.marked ? window.marked.parse(text) : text
@@ -66,7 +68,7 @@ const ExploreTab = defineComponent({
       summaryMethod.value = null
       try {
         const resp = await fetch(
-          `${api.url()}/collections/${collectionId.value}/papers/${encodeURIComponent(detail.value.paper_id)}/summarize/stream`,
+          api.url() + '/collections/' + collectionId.value + '/papers/' + encodeURIComponent(detail.value.paper_id) + '/summarize/stream?max_sentences=' + summaryMaxSent.value,
           { signal: ac.signal }
         )
         if (!resp.ok) throw new Error(await resp.text())
@@ -138,7 +140,8 @@ const ExploreTab = defineComponent({
 
     return { error, papers, selected, detail, loading, collectionId, selectPaper,
              summarizing, summaryToc, summarySections, summaryProgress,
-             summaryError, summaryMethod, generateSummary, renderMd, summaryTocMd, apiBase }
+             summaryError, summaryMethod, summaryMaxSent, showSummaryAdv,
+             generateSummary, renderMd, summaryTocMd, apiBase }
   },
 
   template: `
@@ -274,9 +277,25 @@ const ExploreTab = defineComponent({
               <span class="text-muted text-sm">Parsing sections…</span>
             </div>
 
-            <button class="btn btn-primary btn-sm" @click="generateSummary" :disabled="summarizing">
-              {{ summarySections.length ? 'Regenerate' : 'Generate summary' }}
-            </button>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" @click="generateSummary" :disabled="summarizing">
+                {{ summarySections.length ? 'Regenerate' : 'Generate summary' }}
+              </button>
+              <button class="btn btn-secondary btn-sm" @click="showSummaryAdv = !showSummaryAdv">
+                {{ showSummaryAdv ? '▲' : '▼' }} Settings
+              </button>
+            </div>
+
+            <div v-if="showSummaryAdv" style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:6px">
+              <label style="font-size:13px;font-weight:500;display:block;margin-bottom:6px">
+                Sentences per section: {{ summaryMaxSent }}
+              </label>
+              <input type="range" v-model.number="summaryMaxSent" min="1" max="8" step="1"
+                     style="width:100%;margin-bottom:4px" />
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)">
+                <span>1 — brief</span><span>4 — balanced</span><span>8 — detailed</span>
+              </div>
+            </div>
           </div>
         </template>
 
