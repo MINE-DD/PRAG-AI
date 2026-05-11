@@ -261,7 +261,7 @@ const ExploreTab = defineComponent({
 
             <!-- Section summaries streaming in -->
             <div v-for="(s, idx) in summarySections" :key="idx" style="margin-bottom:16px">
-              <div class="markdown-body" v-html="renderMd('#### ' + s.heading + '\n\n' + s.content)"></div>
+              <div class="markdown-body" v-html="renderMd('#### ' + s.heading + '\\n\\n' + s.content)"></div>
             </div>
 
             <!-- Progress -->
