@@ -406,8 +406,9 @@ const ExploreTab = defineComponent({
           <div v-if="!summarizing && summarySections.length" class="card" style="margin-top:16px">
             <div style="font-weight:600;font-size:14px;margin-bottom:10px">Structured Abstract</div>
 
-            <div v-if="summaryPartial" style="margin-bottom:10px;padding:6px 10px;background:#fffbeb;border:1px solid #b45309;border-radius:4px;font-size:12px;color:#b45309">
-              ⚠ Based on {{ summarySections.length }} of {{ (detail.sections || []).length }} sections
+            <div v-if="detail.sections && detail.sections.length > 0 && summarySections.length < detail.sections.length"
+                 style="margin-bottom:10px;padding:6px 10px;background:#fffbeb;border:1px solid #b45309;border-radius:4px;font-size:12px;color:#b45309">
+              ⚠ Based on {{ summarySections.length }} of {{ detail.sections.length }} sections
             </div>
 
             <div v-if="abstractError" class="alert alert-error" style="margin-bottom:8px">{{ abstractError }}</div>
@@ -429,8 +430,9 @@ const ExploreTab = defineComponent({
           <div v-if="!summarizing && summarySections.length" class="card" style="margin-top:16px">
             <div style="font-weight:600;font-size:14px;margin-bottom:10px">Key Contributions</div>
 
-            <div v-if="summaryPartial" style="margin-bottom:10px;padding:6px 10px;background:#fffbeb;border:1px solid #b45309;border-radius:4px;font-size:12px;color:#b45309">
-              ⚠ Based on {{ summarySections.length }} of {{ (detail.sections || []).length }} sections
+            <div v-if="detail.sections && detail.sections.length > 0 && summarySections.length < detail.sections.length"
+                 style="margin-bottom:10px;padding:6px 10px;background:#fffbeb;border:1px solid #b45309;border-radius:4px;font-size:12px;color:#b45309">
+              ⚠ Based on {{ summarySections.length }} of {{ detail.sections.length }} sections
             </div>
 
             <!-- Explicit claims -->

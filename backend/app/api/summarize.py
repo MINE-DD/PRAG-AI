@@ -200,7 +200,7 @@ def summarize_single_paper(
 
 
 def _parse_sections(
-    text: str, max_sections: int = 12, min_body_chars: int = 150
+    text: str, max_sections: int = 50, min_body_chars: int = 150
 ) -> list[tuple[str, str]]:
     """Split markdown into [(heading, body)] pairs by H1/H2 headings."""
     pattern = re.compile(r"^(#{1,2} .+)$", re.MULTILINE)
@@ -263,6 +263,15 @@ def summarize_single_paper_stream(
 
     if filter_sections:
         allowed = {s.strip() for s in filter_sections.split(",") if s.strip()}
+        # Re-parse without the body-length filter so explicitly selected short
+        # sections are not silently dropped.
+        if preprocessed_dir and source_pdf:
+            stem = Path(source_pdf).stem
+            md_path = Path(settings.preprocessed_dir) / preprocessed_dir / f"{stem}.md"
+            if md_path.exists():
+                sections = _parse_sections(
+                    md_path.read_text(encoding="utf-8"), min_body_chars=0
+                )
         sections = [(h, b) for h, b in sections if h in allowed]
 
     if summary_format == "bullets":

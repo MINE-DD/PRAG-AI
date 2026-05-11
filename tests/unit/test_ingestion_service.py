@@ -130,7 +130,9 @@ def test_ingest_file(service, temp_data_dir, temp_preprocessed_dir, mock_service
     assert result["embeddings_generated"] > 0
 
     # Check metadata was copied to collection under the slug name
-    meta_dest = Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
+    meta_dest = (
+        Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
+    )
     assert meta_dest.exists()
     stored_meta = json.loads(meta_dest.read_text())
     assert stored_meta["title"] == "Test Paper One"
@@ -178,6 +180,46 @@ def test_generate_unique_id_empty(service):
     """Test unique ID generation with empty data."""
     uid = service._generate_unique_id("", [], None)
     assert uid == "UnknownPaper"
+
+
+def test_extract_headings_h1_and_h2():
+    """H1 and H2 headings are extracted; H3 and deeper are ignored."""
+    text = "# Introduction\n\nSome text.\n\n## Methods\n\nMore text.\n\n### Sub-detail\n\nDeep."
+    headings = IngestionService._extract_headings(text)
+    assert headings == ["Introduction", "Methods"]
+
+
+def test_extract_headings_empty():
+    headings = IngestionService._extract_headings("No headings here.")
+    assert headings == []
+
+
+def test_extract_headings_strips_whitespace():
+    headings = IngestionService._extract_headings("#  Spaced Heading  \n\nBody.")
+    assert headings == ["Spaced Heading"]
+
+
+def test_ingest_file_metadata_includes_sections(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
+    """sections field in stored metadata lists H1/H2 headings from the body."""
+    _, ollama, _ = mock_services
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+
+    service.create_collection("test_coll", "Test")
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    meta_path = str(Path(temp_preprocessed_dir) / "paper1_metadata.json")
+
+    service.ingest_file("test_coll", md_path, meta_path)
+
+    meta_dest = (
+        Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
+    )
+    stored = json.loads(meta_dest.read_text())
+    assert "sections" in stored
+    assert isinstance(stored["sections"], list)
+    # paper1.md starts with "# Paper 1" so at least one heading
+    assert "Paper 1" in stored["sections"]
 
 
 # ---------------------------------------------------------------------------

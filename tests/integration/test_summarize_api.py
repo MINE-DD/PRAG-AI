@@ -185,3 +185,83 @@ def test_summarize_accepts_prompt_name_field(client, test_collection):
         json={"paper_ids": ["paper-123"], "prompt_name": "default"},
     )
     assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# New POST endpoints: structured-abstract, explicit-claims, assess-claims
+# ---------------------------------------------------------------------------
+
+SAMPLE_SUMMARIES = [
+    {"heading": "Introduction", "content": "This paper studies X."},
+    {"heading": "Methods", "content": "We used method Y."},
+    {"heading": "Results", "content": "We found Z."},
+]
+
+
+def test_structured_abstract_returns_content(client, test_collection):
+    """structured-abstract endpoint returns a content string."""
+    response = client.post(
+        f"/collections/{test_collection}/papers/paper-123/structured-abstract",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "content" in data
+    assert len(data["content"]) > 0
+
+
+def test_explicit_claims_returns_content(client, test_collection):
+    """explicit-claims endpoint returns a content string."""
+    response = client.post(
+        f"/collections/{test_collection}/papers/paper-123/explicit-claims",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "content" in data
+    assert len(data["content"]) > 0
+
+
+def test_assess_claims_returns_content(client, test_collection):
+    """assess-claims endpoint returns a content string."""
+    response = client.post(
+        f"/collections/{test_collection}/papers/paper-123/assess-claims",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "content" in data
+    assert len(data["content"]) > 0
+
+
+def test_structured_abstract_empty_summaries(client, test_collection):
+    """Empty summaries list is accepted (LLM still runs)."""
+    response = client.post(
+        f"/collections/{test_collection}/papers/paper-123/structured-abstract",
+        json={"summaries": []},
+    )
+    assert response.status_code == 200
+
+
+def test_derived_endpoints_call_llm_once_each(client, test_collection, mock_ollama):
+    """Each derived endpoint makes exactly one LLM call."""
+    mock_ollama.generate.reset_mock()
+    client.post(
+        f"/collections/{test_collection}/papers/paper-123/structured-abstract",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert mock_ollama.generate.call_count == 1
+
+    mock_ollama.generate.reset_mock()
+    client.post(
+        f"/collections/{test_collection}/papers/paper-123/explicit-claims",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert mock_ollama.generate.call_count == 1
+
+    mock_ollama.generate.reset_mock()
+    client.post(
+        f"/collections/{test_collection}/papers/paper-123/assess-claims",
+        json={"summaries": SAMPLE_SUMMARIES},
+    )
+    assert mock_ollama.generate.call_count == 1
