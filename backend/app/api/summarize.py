@@ -222,6 +222,8 @@ def summarize_single_paper_stream(
     collection_id: str,
     paper_id: str,
     max_sentences: int = 3,
+    filter_sections: str = "",
+    summary_format: str = "prose",
     services: tuple = Depends(get_services),
     prompt_service: PromptService = Depends(get_prompt_service),
 ):
@@ -259,6 +261,15 @@ def summarize_single_paper_stream(
         ]
         method = "rag"
 
+    if filter_sections:
+        allowed = {s.strip() for s in filter_sections.split(",") if s.strip()}
+        sections = [(h, b) for h, b in sections if h in allowed]
+
+    if summary_format == "bullets":
+        format_instruction = f"Write as exactly {max_sentences} concise bullet points, one per line starting with -."
+    else:
+        format_instruction = f"Write exactly {max_sentences} sentences in prose."
+
     # 2000 tokens ≈ 8000 chars — safe for any local model per section
     section_char_limit = 8000
 
@@ -273,7 +284,7 @@ def summarize_single_paper_stream(
                     "section",
                     heading=heading,
                     context=body[:section_char_limit],
-                    max_sentences=max_sentences,
+                    format_instruction=format_instruction,
                 )
                 content = llm_service.generate(
                     prompt=rendered.user,
@@ -287,3 +298,83 @@ def summarize_single_paper_stream(
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+class SummariesInput(BaseModel):
+    summaries: list[dict]
+
+
+class TextResponse(BaseModel):
+    content: str
+
+
+def _summaries_to_text(summaries: list[dict]) -> str:
+    return "\n\n".join(
+        f"**{s.get('heading', '')}**\n{s.get('content', '')}" for s in summaries
+    )
+
+
+@router.post(
+    "/collections/{collection_id}/papers/{paper_id}/structured-abstract",
+    response_model=TextResponse,
+)
+def generate_structured_abstract(
+    collection_id: str,
+    paper_id: str,
+    body: SummariesInput,
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
+) -> TextResponse:
+    """Generate a structured abstract from provided section summaries."""
+    _, _, _, llm_service, _ = services
+    rendered = prompt_service.render(
+        "summarize", "structured_abstract", summaries=_summaries_to_text(body.summaries)
+    )
+    content = llm_service.generate(
+        prompt=rendered.user, system=rendered.system, temperature=0.3
+    )
+    return TextResponse(content=content)
+
+
+@router.post(
+    "/collections/{collection_id}/papers/{paper_id}/explicit-claims",
+    response_model=TextResponse,
+)
+def generate_explicit_claims(
+    collection_id: str,
+    paper_id: str,
+    body: SummariesInput,
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
+) -> TextResponse:
+    """Extract explicit claims the paper makes about its own contributions."""
+    _, _, _, llm_service, _ = services
+    rendered = prompt_service.render(
+        "summarize", "explicit_claims", summaries=_summaries_to_text(body.summaries)
+    )
+    content = llm_service.generate(
+        prompt=rendered.user, system=rendered.system, temperature=0.3
+    )
+    return TextResponse(content=content)
+
+
+@router.post(
+    "/collections/{collection_id}/papers/{paper_id}/assess-claims",
+    response_model=TextResponse,
+)
+def generate_assess_claims(
+    collection_id: str,
+    paper_id: str,
+    body: SummariesInput,
+    services: tuple = Depends(get_services),
+    prompt_service: PromptService = Depends(get_prompt_service),
+) -> TextResponse:
+    """Provide critical and contextual assessment of a paper's claims."""
+    _, _, _, llm_service, _ = services
+    rendered = prompt_service.render(
+        "summarize", "assess_claims", summaries=_summaries_to_text(body.summaries)
+    )
+    content = llm_service.generate(
+        prompt=rendered.user, system=rendered.system, temperature=0.3
+    )
+    return TextResponse(content=content)

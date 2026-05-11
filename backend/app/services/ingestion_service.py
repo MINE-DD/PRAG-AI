@@ -225,6 +225,7 @@ class IngestionService:
             "unique_id": unique_id,
             "preprocessed_dir": md_file.parent.name,
             "source_pdf": md_file.name,
+            "sections": self._extract_headings(body_text),
             "chunks_created": len(chunks),
             "references": references,
             "ingested_at": datetime.now(UTC).isoformat(),
@@ -265,6 +266,12 @@ class IngestionService:
             return None
         match = re.search(r"\d{4}", str(publication_date))
         return int(match.group()) if match else None
+
+    @staticmethod
+    def _extract_headings(text: str) -> list[str]:
+        """Extract H1/H2 heading titles from markdown text."""
+        pattern = re.compile(r"^#{1,2} (.+)$", re.MULTILINE)
+        return [m.group(1).strip() for m in pattern.finditer(text)]
 
     @staticmethod
     def _split_references(text: str) -> tuple[str, str]:

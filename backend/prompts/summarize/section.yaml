@@ -1,7 +1,7 @@
 variables:
   heading: "Section heading from the paper"
   context: "Text content of the section"
-  max_sentences: "Number of sentences to write for this section"
+  format_instruction: "Formatting and length instruction (e.g. 'Write exactly 3 sentences in prose.')"
 system: |
   You are a research assistant summarizing individual sections of academic papers.
   Always respond in **Markdown** format. Be concise and precise.
@@ -13,5 +13,5 @@ user: |
 
   {context}
 
-  Write exactly {max_sentences} sentences in Markdown capturing the key point, finding, or contribution of this section.
+  {format_instruction}
   Do not repeat the section heading in your answer.

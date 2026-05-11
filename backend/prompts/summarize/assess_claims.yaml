@@ -1,0 +1,16 @@
+variables:
+  summaries: "Section summaries to assess"
+system: |
+  You are a critical research analyst evaluating academic paper claims.
+  Always respond in Markdown format.
+user: |
+  Assess the following section summaries from an academic paper under two angles. Each point must be a single one-liner bullet — no elaboration.
+
+  ## Critical assessment
+  Does the evidence in the summaries actually support the implied claims? Identify gaps, unstated assumptions, or weaknesses.
+
+  ## Contextual assessment
+  How novel or significant are the contributions? What does this work add relative to what the field likely already knows?
+
+  Section summaries:
+  {summaries}
