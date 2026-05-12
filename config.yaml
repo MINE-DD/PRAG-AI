@@ -5,7 +5,7 @@ models:
   max_embedder_tokens: 512
   llm:
     type: local
-    model: phi3:mini
+    model: gemma4:e2b
     google_model: gemini-2.5-flash
     max_allowed_tokens: 131072
 chunking:

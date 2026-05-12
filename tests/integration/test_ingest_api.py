@@ -144,7 +144,7 @@ def test_ingest_file(client, temp_data_dir, temp_preprocessed_dir):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["paper_id"] == "paper1"
+    assert data["paper_id"] == "OneTestPaper2024"
     assert data["chunks_created"] > 0
 
 

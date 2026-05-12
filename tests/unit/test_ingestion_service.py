@@ -123,17 +123,20 @@ def test_ingest_file(service, temp_data_dir, temp_preprocessed_dir, mock_service
 
     result = service.ingest_file("test_coll", md_path, meta_path)
 
-    assert result["paper_id"] == "paper1"
+    # paper_id must now equal the unique_id slug (not the filename stem)
+    assert result["paper_id"] == result["unique_id"]
+    assert result["paper_id"] == "SmithTestPaper2024"
     assert result["chunks_created"] > 0
     assert result["embeddings_generated"] > 0
-    assert "unique_id" in result
 
-    # Check metadata was copied to collection
-    meta_dest = Path(temp_data_dir) / "test_coll" / "metadata" / "paper1.json"
+    # Check metadata was copied to collection under the slug name
+    meta_dest = (
+        Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
+    )
     assert meta_dest.exists()
     stored_meta = json.loads(meta_dest.read_text())
     assert stored_meta["title"] == "Test Paper One"
-    assert stored_meta["paper_id"] == "paper1"
+    assert stored_meta["paper_id"] == "SmithTestPaper2024"
 
     # Check Qdrant was called
     qdrant.upsert_chunks.assert_called_once()
@@ -152,7 +155,9 @@ def test_ingest_file_without_metadata(
 
     result = service.ingest_file("test_coll", md_path, metadata_path=None)
 
-    assert result["paper_id"] == "paper2"
+    # Without metadata, unique_id is derived from the filename stem
+    assert result["paper_id"] == result["unique_id"]
+    assert result["paper_id"] != "paper2"  # no longer uses raw stem
     assert result["chunks_created"] > 0
 
 
@@ -175,6 +180,46 @@ def test_generate_unique_id_empty(service):
     """Test unique ID generation with empty data."""
     uid = service._generate_unique_id("", [], None)
     assert uid == "UnknownPaper"
+
+
+def test_extract_headings_h1_and_h2():
+    """H1 and H2 headings are extracted; H3 and deeper are ignored."""
+    text = "# Introduction\n\nSome text.\n\n## Methods\n\nMore text.\n\n### Sub-detail\n\nDeep."
+    headings = IngestionService._extract_headings(text)
+    assert headings == ["Introduction", "Methods"]
+
+
+def test_extract_headings_empty():
+    headings = IngestionService._extract_headings("No headings here.")
+    assert headings == []
+
+
+def test_extract_headings_strips_whitespace():
+    headings = IngestionService._extract_headings("#  Spaced Heading  \n\nBody.")
+    assert headings == ["Spaced Heading"]
+
+
+def test_ingest_file_metadata_includes_sections(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
+    """sections field in stored metadata lists H1/H2 headings from the body."""
+    _, ollama, _ = mock_services
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+
+    service.create_collection("test_coll", "Test")
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    meta_path = str(Path(temp_preprocessed_dir) / "paper1_metadata.json")
+
+    service.ingest_file("test_coll", md_path, meta_path)
+
+    meta_dest = (
+        Path(temp_data_dir) / "test_coll" / "metadata" / "SmithTestPaper2024.json"
+    )
+    stored = json.loads(meta_dest.read_text())
+    assert "sections" in stored
+    assert isinstance(stored["sections"], list)
+    # paper1.md starts with "# Paper 1" so at least one heading
+    assert "Paper 1" in stored["sections"]
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +336,77 @@ def test_ingest_fixed_mode_section_heading_empty(
     chunks = call_args[1]["chunks"] if call_args[1] else call_args[0][1]
     for chunk in chunks:
         assert chunk.metadata.get("section_heading") == ""
+
+
+# ---------------------------------------------------------------------------
+# _is_hybrid_collection False path
+# ---------------------------------------------------------------------------
+
+
+def test_is_hybrid_collection_false_when_no_info_file(service):
+    """Returns False when collection_info.json does not exist."""
+    assert service._is_hybrid_collection("nonexistent_collection") is False
+
+
+# ---------------------------------------------------------------------------
+# Collision handling
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_file_collision_appends_counter(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
+    """Ingesting the same paper twice appends _2 to avoid collision."""
+    _, ollama, _ = mock_services
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+
+    service.create_collection("coll", "Test")
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    meta_path = str(Path(temp_preprocessed_dir) / "paper1_metadata.json")
+
+    result1 = service.ingest_file("coll", md_path, meta_path)
+    result2 = service.ingest_file("coll", md_path, meta_path)
+
+    assert result1["paper_id"] == "SmithTestPaper2024"
+    assert result2["paper_id"] == "SmithTestPaper2024_2"
+
+
+# ---------------------------------------------------------------------------
+# max_tokens safety-cap truncation
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_with_max_tokens_truncates_chunks(temp_data_dir, temp_preprocessed_dir):
+    """When max_tokens is set, chunks are run through truncate_to_tokens."""
+    chunking = ChunkingService(chunk_size=500, overlap=100)
+    ollama = Mock()
+    ollama.generate_embedding.return_value = [0.1] * 1024
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+    qdrant = Mock()
+    qdrant.create_collection = Mock()
+    qdrant.upsert_chunks = Mock()
+
+    svc = IngestionService(
+        chunking_service=chunking,
+        ollama_service=ollama,
+        qdrant_service=qdrant,
+        max_tokens=50,
+    )
+    svc.create_collection("trunc_coll", "Trunc")
+
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    result = svc.ingest_file("trunc_coll", md_path)
+    assert result["chunks_created"] > 0
+
+
+# ---------------------------------------------------------------------------
+# _split_references no-match path
+# ---------------------------------------------------------------------------
+
+
+def test_split_references_no_references_section():
+    """Returns (full_text, '') when no references heading is found."""
+    text = "# Introduction\n\nSome content without a references section."
+    body, refs = IngestionService._split_references(text)
+    assert refs == ""
+    assert body == text

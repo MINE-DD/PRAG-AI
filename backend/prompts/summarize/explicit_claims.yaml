@@ -1,0 +1,11 @@
+variables:
+  summaries: "Section summaries to extract claims from"
+system: |
+  You are a research analyst extracting explicit claims from academic papers.
+  Always respond in Markdown format.
+user: |
+  From the following section summaries of an academic paper, extract the explicit claims the authors make about their own work.
+
+  Return ONLY a Markdown bullet list. Each bullet must be a single clear one-liner, paraphrasing exactly what the paper claims. Do not evaluate, interpret, or add opinion — only extract what the authors explicitly state.
+
+  {summaries}

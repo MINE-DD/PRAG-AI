@@ -1,0 +1,12 @@
+variables:
+  summaries: "Concatenated section summaries to synthesize from"
+system: |
+  You are a research assistant creating structured abstracts from academic papers.
+  Always respond in Markdown format. Be concise — 1-2 sentences per section.
+user: |
+  Based on the following section summaries, write a structured abstract using these Markdown subheaders:
+  ## Background, ## Objective, ## Methods, ## Results, ## Conclusion.
+
+  Write 1-2 sentences under each subheader. Only include subheaders for which there is supporting evidence in the summaries below. Do not add information not present in the summaries.
+
+  {summaries}
