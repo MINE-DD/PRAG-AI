@@ -336,3 +336,77 @@ def test_ingest_fixed_mode_section_heading_empty(
     chunks = call_args[1]["chunks"] if call_args[1] else call_args[0][1]
     for chunk in chunks:
         assert chunk.metadata.get("section_heading") == ""
+
+
+# ---------------------------------------------------------------------------
+# _is_hybrid_collection False path
+# ---------------------------------------------------------------------------
+
+
+def test_is_hybrid_collection_false_when_no_info_file(service):
+    """Returns False when collection_info.json does not exist."""
+    assert service._is_hybrid_collection("nonexistent_collection") is False
+
+
+# ---------------------------------------------------------------------------
+# Collision handling
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_file_collision_appends_counter(
+    service, temp_data_dir, temp_preprocessed_dir, mock_services
+):
+    """Ingesting the same paper twice appends _2 to avoid collision."""
+    _, ollama, _ = mock_services
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+
+    service.create_collection("coll", "Test")
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    meta_path = str(Path(temp_preprocessed_dir) / "paper1_metadata.json")
+
+    result1 = service.ingest_file("coll", md_path, meta_path)
+    result2 = service.ingest_file("coll", md_path, meta_path)
+
+    assert result1["paper_id"] == "SmithTestPaper2024"
+    assert result2["paper_id"] == "SmithTestPaper2024_2"
+
+
+# ---------------------------------------------------------------------------
+# max_tokens safety-cap truncation
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_with_max_tokens_truncates_chunks(temp_data_dir, temp_preprocessed_dir):
+    """When max_tokens is set, chunks are run through truncate_to_tokens."""
+    chunking = ChunkingService(chunk_size=500, overlap=100)
+    ollama = Mock()
+    ollama.generate_embedding.return_value = [0.1] * 1024
+    ollama.generate_embeddings_batch.return_value = [[0.1] * 1024] * 10
+    qdrant = Mock()
+    qdrant.create_collection = Mock()
+    qdrant.upsert_chunks = Mock()
+
+    svc = IngestionService(
+        chunking_service=chunking,
+        ollama_service=ollama,
+        qdrant_service=qdrant,
+        max_tokens=50,
+    )
+    svc.create_collection("trunc_coll", "Trunc")
+
+    md_path = str(Path(temp_preprocessed_dir) / "paper1.md")
+    result = svc.ingest_file("trunc_coll", md_path)
+    assert result["chunks_created"] > 0
+
+
+# ---------------------------------------------------------------------------
+# _split_references no-match path
+# ---------------------------------------------------------------------------
+
+
+def test_split_references_no_references_section():
+    """Returns (full_text, '') when no references heading is found."""
+    text = "# Introduction\n\nSome content without a references section."
+    body, refs = IngestionService._split_references(text)
+    assert refs == ""
+    assert body == text

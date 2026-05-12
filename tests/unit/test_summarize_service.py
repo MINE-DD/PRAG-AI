@@ -345,3 +345,138 @@ def test_stream_llm_called_once_per_section(stream_client, stream_paper):
     coll_id, paper_id = stream_paper
     client.get(f"/collections/{coll_id}/papers/{paper_id}/summarize/stream")
     assert llm_mock.generate.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Stream endpoint — 404 paths
+# ---------------------------------------------------------------------------
+
+
+def _make_stream_client(stream_data_dir, stream_preprocessed_dir, collection_return):
+    """Helper: build a TestClient with the stream endpoint's deps patched."""
+    from app.main import app
+
+    with (
+        patch("app.api.summarize.QdrantService"),
+        patch("app.api.summarize.CollectionService") as mock_coll_cls,
+        patch("app.api.summarize._get_llm_service"),
+        patch("app.api.summarize._get_llm_info", return_value={}),
+        patch("app.api.summarize.MetadataService"),
+    ):
+        mock_coll = Mock()
+        mock_coll.get_collection.return_value = collection_return
+        mock_coll_cls.return_value = mock_coll
+        yield TestClient(app)
+
+
+def test_stream_collection_not_found(stream_data_dir, stream_preprocessed_dir):
+    """Returns 404 when CollectionService.get_collection returns None."""
+    with (
+        patch("app.api.summarize.QdrantService"),
+        patch("app.api.summarize.CollectionService") as mock_coll_cls,
+        patch("app.api.summarize._get_llm_service"),
+        patch("app.api.summarize._get_llm_info", return_value={}),
+        patch("app.api.summarize.MetadataService"),
+    ):
+        mock_coll = Mock()
+        mock_coll.get_collection.return_value = None
+        mock_coll_cls.return_value = mock_coll
+
+        client = TestClient(app)
+        resp = client.get("/collections/no-coll/papers/any-paper/summarize/stream")
+        assert resp.status_code == 404
+
+
+def test_stream_paper_not_found(stream_data_dir, stream_preprocessed_dir):
+    """Returns 404 when paper metadata file does not exist on disk."""
+    with (
+        patch("app.api.summarize.QdrantService"),
+        patch("app.api.summarize.CollectionService") as mock_coll_cls,
+        patch("app.api.summarize._get_llm_service"),
+        patch("app.api.summarize._get_llm_info", return_value={}),
+        patch("app.api.summarize.MetadataService"),
+    ):
+        mock_coll = Mock()
+        mock_coll.get_collection.return_value = {"collection_id": "test-coll"}
+        mock_coll_cls.return_value = mock_coll
+
+        client = TestClient(app)
+        # No metadata file exists for this paper_id in stream_data_dir
+        resp = client.get(
+            "/collections/test-coll/papers/nonexistent-paper/summarize/stream"
+        )
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Stream endpoint — RAG fallback path
+# ---------------------------------------------------------------------------
+
+
+def test_stream_rag_fallback_when_no_markdown(stream_data_dir, stream_preprocessed_dir):
+    """Falls back to Qdrant chunks when markdown file is missing."""
+    coll_id = "test-coll"
+    paper_id = "paper-rag"
+
+    coll_path = Path(stream_data_dir) / coll_id
+    (coll_path / "metadata").mkdir(parents=True)
+    (coll_path / "metadata" / f"{paper_id}.json").write_text(
+        json.dumps(
+            {
+                "paper_id": paper_id,
+                "preprocessed_dir": "missing_dir",
+                "source_pdf": "paper.pdf",
+            }
+        )
+    )
+
+    mock_chunk = Mock()
+    mock_chunk.payload = {"chunk_text": "Chunk content from Qdrant."}
+
+    with (
+        patch("app.api.summarize.QdrantService") as mock_qdrant_cls,
+        patch("app.api.summarize.CollectionService") as mock_coll_cls,
+        patch("app.api.summarize._get_llm_service") as mock_llm,
+        patch("app.api.summarize._get_llm_info", return_value={}),
+        patch("app.api.summarize.MetadataService"),
+    ):
+        mock_coll = Mock()
+        mock_coll.get_collection.return_value = {"collection_id": coll_id}
+        mock_coll_cls.return_value = mock_coll
+
+        mock_qdrant = Mock()
+        mock_qdrant.get_chunks_for_paper.return_value = [mock_chunk]
+        mock_qdrant_cls.return_value = mock_qdrant
+
+        mock_llm_inst = Mock()
+        mock_llm_inst.generate.return_value = "Generated from chunk."
+        mock_llm.return_value = mock_llm_inst
+
+        client = TestClient(app)
+        resp = client.get(f"/collections/{coll_id}/papers/{paper_id}/summarize/stream")
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    toc = next(e for e in events if e["type"] == "toc")
+    assert toc["method"] == "rag"
+    assert toc["count"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Stream endpoint — error SSE event on LLM failure
+# ---------------------------------------------------------------------------
+
+
+def test_stream_error_event_on_llm_failure(stream_client, stream_paper):
+    """When LLM.generate raises, an error SSE event is emitted per section."""
+    client, llm_mock = stream_client
+    llm_mock.generate.side_effect = RuntimeError("LLM unavailable")
+    coll_id, paper_id = stream_paper
+
+    resp = client.get(f"/collections/{coll_id}/papers/{paper_id}/summarize/stream")
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    error_events = [e for e in events if e["type"] == "error"]
+    assert error_events, "Expected at least one error SSE event"
+    assert "LLM unavailable" in error_events[0]["message"]

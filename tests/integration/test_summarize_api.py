@@ -1,3 +1,4 @@
+import json
 import shutil
 import sys
 import tempfile
@@ -265,3 +266,129 @@ def test_derived_endpoints_call_llm_once_each(client, test_collection, mock_olla
         json={"summaries": SAMPLE_SUMMARIES},
     )
     assert mock_ollama.generate.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# POST /summarize — ValueError from prompt_service
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_prompt_value_error_returns_422(client, test_collection):
+    """ValueError raised by prompt_service.render in POST summarize → 422."""
+    from app.services.prompt_service import RenderedPrompt, get_prompt_service
+
+    err_mock = Mock()
+    err_mock.render.side_effect = ValueError("unknown prompt variant")
+    app.dependency_overrides[get_prompt_service] = lambda: err_mock
+
+    try:
+        response = client.post(
+            f"/collections/{test_collection}/summarize",
+            json={"paper_ids": ["paper-123"]},
+        )
+        assert response.status_code == 422
+        assert "unknown prompt variant" in response.json()["detail"]
+    finally:
+        app.dependency_overrides[get_prompt_service] = lambda: Mock(
+            render=Mock(
+                return_value=RenderedPrompt(
+                    system="You are a research assistant.",
+                    user="Summarize the following papers.",
+                )
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# GET /collections/{coll}/papers/{paper}/summarize — single-paper endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def single_paper_dir(temp_data_dir, tmp_path):
+    """Create collection + paper metadata + markdown on disk."""
+    from pathlib import Path
+
+    coll_id = "sp-coll"
+    paper_id = "sp-paper"
+    preproc_dir = "papers"
+
+    coll_path = Path(temp_data_dir) / coll_id
+    (coll_path / "metadata").mkdir(parents=True)
+    (coll_path / "collection_info.json").write_text(
+        json.dumps({"collection_id": coll_id, "name": "SP", "search_type": "dense"})
+    )
+    (coll_path / "metadata" / f"{paper_id}.json").write_text(
+        json.dumps(
+            {
+                "paper_id": paper_id,
+                "preprocessed_dir": preproc_dir,
+                "source_pdf": "paper.pdf",
+            }
+        )
+    )
+
+    preproc_path = tmp_path / preproc_dir
+    preproc_path.mkdir()
+    (preproc_path / "paper.md").write_text("# Introduction\n\n" + "Content " * 100)
+
+    return coll_id, paper_id, str(tmp_path)
+
+
+def test_summarize_single_paper_get_markdown(client, single_paper_dir, mock_ollama):
+    """GET single-paper endpoint returns method=markdown when markdown exists."""
+    from app.core.config import settings
+
+    coll_id, paper_id, preproc_root = single_paper_dir
+    orig = settings.preprocessed_dir
+    settings.preprocessed_dir = preproc_root
+    try:
+        resp = client.get(f"/collections/{coll_id}/papers/{paper_id}/summarize")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["method"] == "markdown"
+        assert len(data["summary"]) > 0
+    finally:
+        settings.preprocessed_dir = orig
+
+
+def test_summarize_single_paper_get_paper_not_found(client, test_collection):
+    """GET single-paper endpoint returns 404 when paper metadata is missing."""
+    resp = client.get(f"/collections/{test_collection}/papers/no-such-paper/summarize")
+    assert resp.status_code == 404
+
+
+def test_summarize_single_paper_get_collection_not_found(client):
+    """GET single-paper endpoint returns 404 when collection doesn't exist."""
+    resp = client.get("/collections/no-coll/papers/paper-1/summarize")
+    assert resp.status_code == 404
+
+
+def test_summarize_single_paper_get_rag_fallback(
+    temp_data_dir, mock_qdrant, mock_ollama, mock_metadata_service
+):
+    """GET single-paper falls back to Qdrant when markdown is missing."""
+    from pathlib import Path
+
+    coll_id = "rag-coll"
+    paper_id = "rag-paper"
+
+    coll_path = Path(temp_data_dir) / coll_id
+    (coll_path / "metadata").mkdir(parents=True)
+    (coll_path / "collection_info.json").write_text(
+        json.dumps({"collection_id": coll_id, "name": "RAG", "search_type": "dense"})
+    )
+    (coll_path / "metadata" / f"{paper_id}.json").write_text(
+        json.dumps(
+            {"paper_id": paper_id, "preprocessed_dir": "missing", "source_pdf": "p.pdf"}
+        )
+    )
+
+    mock_chunk = Mock()
+    mock_chunk.payload = {"chunk_text": "Chunk content."}
+    mock_qdrant.get_chunks_for_paper = Mock(return_value=[mock_chunk])
+
+    client = TestClient(app)
+    resp = client.get(f"/collections/{coll_id}/papers/{paper_id}/summarize")
+    assert resp.status_code == 200
+    assert resp.json()["method"] == "rag"
