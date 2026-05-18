@@ -22,7 +22,6 @@ jobs:
             --verbose
             --no-progress
             --exclude-mail
-            --allow-missing
             'README.md'
             'docs/**/*.md'
           fail: true
