@@ -31,15 +31,15 @@ class CitationService:
         return ". ".join(parts) + "."
 
     def format_bibtex(self, metadata: PaperMetadata) -> str:
-        """
-        Format paper metadata as BibTeX entry.
+        """Format paper metadata as BibTeX entry.
 
-        Example:
-        @article{VaswaniAttention2017,
-          title = {Attention Is All You Need},
-          author = {Vaswani, A. and Shazeer, N.},
-          year = {2017}
-        }
+        Example::
+
+            @article{VaswaniAttention2017,
+              title = {Attention Is All You Need},
+              author = {Vaswani, A. and Shazeer, N.},
+              year = {2017}
+            }
         """
         key = self.extract_citation_key(metadata)
         lines = [f"@article{{{key},"]
