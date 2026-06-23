@@ -224,7 +224,7 @@ class IngestionService:
             "paper_id": paper_id,
             "unique_id": unique_id,
             "preprocessed_dir": md_file.parent.name,
-            "source_pdf": md_file.name,
+            "source_pdf": metadata.get("source_pdf") or f"{md_file.stem}.pdf",
             "sections": self._extract_headings(body_text),
             "chunks_created": len(chunks),
             "references": references,
