@@ -71,7 +71,11 @@ def get_model_context_length(model: str):
         info = svc.client.show(model)
         capabilities = list(info.capabilities or [])
         is_embedding = "embedding" in capabilities
-        context_length = svc.get_embedding_context_length() if is_embedding else svc.get_llm_context_length()
+        context_length = (
+            svc.get_embedding_context_length()
+            if is_embedding
+            else svc.get_llm_context_length()
+        )
         return {
             "model": model,
             "context_length": context_length,
@@ -93,15 +97,17 @@ def get_settings():
 
     return {
         "embedding_model": config["models"]["embedding"],
-        "embedding_context_length": config["models"].get("max_embedder_tokens", 512),
+        "embedding_context_length": config["models"].get("max_embedder_tokens"),
         "default_embedder_model": config["models"].get(
             "default_embedder", config["models"]["embedding"]
         ),
         "default_llm_model": config["models"].get("default_llm", llm_cfg["model"]),
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
-        "llm_max_ctx": llm_cfg.get("max_allowed_tokens") or _fetch_llm_context_length(llm_cfg.get("model", "")),
-        "llm_num_context_tokens": llm_cfg.get("num_context_tokens", 20000),
+        "llm_max_ctx": llm_cfg.get("max_allowed_tokens")
+        or _fetch_llm_context_length(llm_cfg.get("model", "")),
+        "llm_num_context_tokens": llm_cfg.get("num_context_tokens"),
+        "llm_temperature": llm_cfg.get("temperature", 0.3),
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_google_key": _api_keys.has_key("google"),
         "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
@@ -109,7 +115,7 @@ def get_settings():
         "chunk_size": config["chunking"]["size"],
         "chunk_overlap": config["chunking"]["overlap"],
         "chunk_mode": config["chunking"].get("mode", "characters"),
-        "top_k": config["retrieval"]["top_k"],
+        "top_k": config["retrieval"].get("top_k", 10),
         "pdf_input_dir": settings.pdf_input_dir,
         "preprocessed_dir": settings.preprocessed_dir,
     }
@@ -164,7 +170,7 @@ class UpdateSettingsRequest(BaseModel):
     chunk_mode: str | None = None
     top_k: int | None = None
     num_context_tokens: int | None = None
-
+    temperature: float | None = None
 
 
 def _fetch_llm_context_length(model: str) -> int | None:
@@ -224,12 +230,20 @@ def update_settings(request: UpdateSettingsRequest):
         model_max = config["models"]["llm"].get("max_allowed_tokens")
 
         if request.num_context_tokens is not None:
-            clamped = min(request.num_context_tokens, model_max) if model_max else request.num_context_tokens
+            clamped = (
+                min(request.num_context_tokens, model_max)
+                if model_max
+                else request.num_context_tokens
+            )
             config["models"]["llm"]["num_context_tokens"] = clamped
         elif request.llm_model is not None:
             # Model changed without explicit context budget — reset to sensible default
             default_ctx = min(20000, model_max) if model_max else 20000
             config["models"]["llm"]["num_context_tokens"] = default_ctx
+    if request.temperature is not None:
+        config["models"]["llm"]["temperature"] = round(
+            max(0.0, min(2.0, request.temperature)), 2
+        )
     if request.chunk_size is not None:
         config["chunking"]["size"] = request.chunk_size
     if request.chunk_overlap is not None:

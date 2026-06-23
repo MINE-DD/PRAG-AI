@@ -78,14 +78,23 @@ class OllamaService:
         usage = {
             "prompt_tokens": response.prompt_eval_count,
             "completion_tokens": response.eval_count,
-            "total_tokens": (response.prompt_eval_count or 0) + (response.eval_count or 0),
+            "total_tokens": (response.prompt_eval_count or 0)
+            + (response.eval_count or 0),
             "model": response.model,
             "created_at": str(response.created_at) if response.created_at else None,
             "done_reason": response.done_reason,
-            "total_duration_ms": round(response.total_duration / 1e6) if response.total_duration else None,
-            "load_duration_ms": round(response.load_duration / 1e6) if response.load_duration else None,
-            "prompt_eval_duration_ms": round(response.prompt_eval_duration / 1e6) if response.prompt_eval_duration else None,
-            "eval_duration_ms": round(response.eval_duration / 1e6) if response.eval_duration else None,
+            "total_duration_ms": round(response.total_duration / 1e6)
+            if response.total_duration
+            else None,
+            "load_duration_ms": round(response.load_duration / 1e6)
+            if response.load_duration
+            else None,
+            "prompt_eval_duration_ms": round(response.prompt_eval_duration / 1e6)
+            if response.prompt_eval_duration
+            else None,
+            "eval_duration_ms": round(response.eval_duration / 1e6)
+            if response.eval_duration
+            else None,
         }
         return text, usage
 

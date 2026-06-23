@@ -8,7 +8,8 @@ models:
     model: gemma4:e2b
     google_model: gemini-2.5-flash
     max_allowed_tokens: 131072
-    num_context_tokens: 77000
+    num_context_tokens: 20000
+    temperature: 0.25
 chunking:
   size: 500
   overlap: 100

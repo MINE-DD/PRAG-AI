@@ -21,6 +21,8 @@ const SettingsPanel = defineComponent({
       llmProvider:          'local',
       llmMaxCtx:            null,
       llmNumContextTokens:  20000,
+      llmTemperature:       0.3,
+      topK:           10,
       googleModel:    'gemini-2.5-flash',
       googleKey:      '',
       hasGoogleKey:   false,
@@ -104,6 +106,8 @@ const SettingsPanel = defineComponent({
         form.llmProvider          = cfg.llm_provider || 'local'
         form.llmMaxCtx            = cfg.llm_max_ctx ?? null
         form.llmNumContextTokens  = cfg.llm_num_context_tokens ?? 20000
+        form.llmTemperature       = cfg.llm_temperature ?? 0.3
+        form.topK                 = cfg.top_k ?? 10
         fetchLlmInfo(cfg.llm_model)
         form.googleModel     = cfg.google_model || googleModels.value[0]
         form.hasGoogleKey    = !!cfg.has_google_key
@@ -239,6 +243,8 @@ const SettingsPanel = defineComponent({
           const ceiling = form.llmMaxCtx || Infinity
           body.num_context_tokens = Math.min(form.llmNumContextTokens, ceiling)
         }
+        body.temperature = form.llmTemperature
+        body.top_k = form.topK
 
         if (form.llmProvider === 'google') {
           body.google_model = form.googleModel
@@ -456,6 +462,13 @@ const SettingsPanel = defineComponent({
         <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
           For other models visit <a href="https://ollama.com/library" target="_blank" rel="noopener" style="color:var(--accent)">ollama.com/library</a>
         </div>
+        <div class="form-group" style="margin-top:12px">
+          <label>Temperature: {{ form.llmTemperature.toFixed(2) }}</label>
+          <input type="range" v-model.number="form.llmTemperature" min="0" max="2" step="0.05" style="width:100%;margin-top:6px" />
+          <div class="text-sm text-muted" style="margin-top:3px">
+            0 = deterministic · 0.3–0.7 = focused · 1+ = creative · 2 = chaotic
+          </div>
+        </div>
       </div>
     </template>
 
@@ -504,6 +517,18 @@ const SettingsPanel = defineComponent({
                placeholder="Paste API key" autocomplete="off" />
       </div>
     </template>
+
+    <hr class="divider" />
+
+    <!-- 5. Retrieval -->
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Retrieval</div>
+    <div class="form-group">
+      <label>Default Top-K chunks: {{ form.topK }}</label>
+      <input type="range" v-model.number="form.topK" min="1" max="50" style="width:100%;margin-top:6px" />
+      <div class="text-sm text-muted" style="margin-top:3px">
+        Number of passages retrieved per query. Can be adjusted per-query in the RAG tab.
+      </div>
+    </div>
 
     <div class="modal-footer">
       <button class="btn btn-secondary" @click="close">Cancel</button>

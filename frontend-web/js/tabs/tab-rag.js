@@ -1,4 +1,4 @@
-import { defineComponent, ref, computed, watch } from 'vue'
+import { defineComponent, ref, computed, watch, onMounted } from 'vue'
 import { api, downloadBlob } from '../backend-client.js'
 import { PromptSelector } from '../components/shared/prompt-selector.js'
 
@@ -13,7 +13,8 @@ const RagTab = defineComponent({
     const loading      = ref(false)
     const query        = ref('')
     const topK         = ref(10)
-    const maxTokens    = ref(500)
+    const maxGeneratedTokens = ref(2000)
+    const temperature  = ref(0.3)
     const result       = ref(null)
     const papers       = ref([])
     const selectedIds  = ref([])
@@ -60,6 +61,14 @@ const RagTab = defineComponent({
       }
     }, { immediate: true })
 
+    onMounted(async () => {
+      try {
+        const cfg = await api.get('/settings')
+        if (cfg.top_k != null) topK.value = cfg.top_k
+        if (cfg.llm_temperature != null) temperature.value = cfg.llm_temperature
+      } catch { /* keep default */ }
+    })
+
     async function runQuery() {
       if (!collectionId.value) { error.value = 'Select a collection from the sidebar first.'; return }
       if (!query.value.trim()) { error.value = 'Please enter a question.'; return }
@@ -75,7 +84,8 @@ const RagTab = defineComponent({
         const body = {
           query_text: query.value.trim(),
           limit: topK.value,
-          max_tokens: maxTokens.value,
+          max_generated_tokens: maxGeneratedTokens.value,
+          temperature: temperature.value,
           include_citations: true,
           use_hybrid: useHybrid.value,
           prompt_name: selectedPrompt.value,
@@ -153,7 +163,7 @@ const RagTab = defineComponent({
     }
 
     return {
-      error, loading, query, topK, maxTokens,
+      error, loading, query, topK, maxGeneratedTokens, temperature,
       result, papers, selectedIds, showFilters, citationMode,
       collectionId, useHybrid,
       filterSearch, filterDir, allDirs, filteredPapers,
@@ -246,8 +256,12 @@ const RagTab = defineComponent({
               <input type="range" v-model.number="topK" min="1" max="50" style="width:100%;margin-top:6px" />
             </div>
             <div class="form-group" style="margin:0">
-              <label>Max response tokens: {{ maxTokens }}</label>
-              <input type="range" v-model.number="maxTokens" min="50" max="2000" step="50" style="width:100%;margin-top:6px" />
+              <label>Max generated tokens: {{ maxGeneratedTokens }}</label>
+              <input type="range" v-model.number="maxGeneratedTokens" min="50" max="32000" step="50" style="width:100%;margin-top:6px" />
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Temperature: {{ temperature.toFixed(2) }}</label>
+              <input type="range" v-model.number="temperature" min="0" max="2" step="0.05" style="width:100%;margin-top:6px" />
             </div>
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />

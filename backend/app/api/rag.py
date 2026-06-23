@@ -226,7 +226,7 @@ def rag_query(
         valid_keys = sorted(set(paper_citation_keys.values()))
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
-        word_target = rag_request.max_tokens
+        word_target = rag_request.max_generated_tokens
 
         # Auto-select small_llm prompt for edge models when default is requested
         prompt_name = rag_request.prompt_name
@@ -253,16 +253,26 @@ def rag_query(
         llm_cfg = config["models"]["llm"]
         # num_context_tokens: user's working budget (local); max_allowed_tokens: Google output cap
         num_context_tokens = llm_cfg.get("num_context_tokens") or None
-        capacity = num_context_tokens or llm_cfg.get("max_allowed_tokens") or 8192
-        num_predict = min(rag_request.max_tokens * 3, capacity)
+        context_window = num_context_tokens or llm_cfg.get("max_allowed_tokens")
+        num_predict = (
+            min(rag_request.max_generated_tokens, context_window)
+            if context_window
+            else rag_request.max_generated_tokens
+        )
+        temperature = (
+            rag_request.temperature
+            if rag_request.temperature is not None
+            else llm_cfg.get("temperature", 0.3)
+        )
 
         answer, usage = llm_service.generate(
             prompt=rendered.user,
             system=rendered.system,
-            temperature=0.3,
+            temperature=temperature,
             max_tokens=num_predict,
             num_context_tokens=num_context_tokens,
         )
+        usage["temperature"] = temperature
         rendered_prompt = {
             "system": rendered.system,
             "user": rendered.user,

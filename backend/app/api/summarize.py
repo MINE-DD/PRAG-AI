@@ -167,9 +167,9 @@ def summarize_single_paper(
 
     config = load_config("config.yaml")
     llm_cfg = config.get("models", {}).get("llm", {})
-    max_allowed = llm_cfg.get("num_context_tokens") or llm_cfg.get("max_allowed_tokens") or 8192
+    max_allowed = llm_cfg.get("num_context_tokens") or llm_cfg.get("max_allowed_tokens")
     # Cap at 6000 tokens worth of chars — local models choke on larger contexts
-    practical_limit = max(int(max_allowed * 0.6), 6000)
+    practical_limit = max(int(max_allowed * 0.6), 6000) if max_allowed else 6000
     char_budget = int(practical_limit * 4 * 0.8)
 
     context: str | None = None
