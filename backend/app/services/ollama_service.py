@@ -43,9 +43,13 @@ class OllamaService:
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        num_context_tokens: int | None = None,
         chat_history: list[dict] | None = None,
-    ) -> str:
-        """Generate text response from LLM"""
+    ) -> tuple[str, dict]:
+        """Generate text response from LLM.
+
+        Returns (content, usage) where usage = {prompt_tokens, completion_tokens}.
+        """
         messages = []
 
         if system:
@@ -59,6 +63,8 @@ class OllamaService:
         opts: dict = {"temperature": temperature}
         if max_tokens is not None:
             opts["num_predict"] = max_tokens
+        if num_context_tokens is not None:
+            opts["num_ctx"] = num_context_tokens
 
         response = self.client.chat(
             model=self.model,
@@ -67,8 +73,43 @@ class OllamaService:
         )
 
         NO_LLM_TOKENS_IN_RESPONSE = "OOPS! It seems like the LLM refused to generate any tokens as a response to this question =("
-        content = response["message"]["content"]
-        return content if content and content.strip() else NO_LLM_TOKENS_IN_RESPONSE
+        content = response.message.content
+        text = content if content and content.strip() else NO_LLM_TOKENS_IN_RESPONSE
+        usage = {
+            "prompt_tokens": response.prompt_eval_count,
+            "completion_tokens": response.eval_count,
+            "total_tokens": (response.prompt_eval_count or 0) + (response.eval_count or 0),
+            "model": response.model,
+            "created_at": str(response.created_at) if response.created_at else None,
+            "done_reason": response.done_reason,
+            "total_duration_ms": round(response.total_duration / 1e6) if response.total_duration else None,
+            "load_duration_ms": round(response.load_duration / 1e6) if response.load_duration else None,
+            "prompt_eval_duration_ms": round(response.prompt_eval_duration / 1e6) if response.prompt_eval_duration else None,
+            "eval_duration_ms": round(response.eval_duration / 1e6) if response.eval_duration else None,
+        }
+        return text, usage
+
+    def get_llm_context_length(self) -> int:
+        """Return the max context length for the LLM model from Ollama metadata.
+
+        Ollama stores this as '{architecture}.context_length' (e.g. 'llama.context_length',
+        'gemma4.context_length'). Falls back to 4096 if unavailable.
+        """
+        try:
+            info = self.client.show(self.model)
+            modelinfo = info.modelinfo or {}
+            architecture = modelinfo.get("general.architecture", "")
+            if architecture:
+                key = f"{architecture}.context_length"
+                if key in modelinfo:
+                    return int(modelinfo[key])
+            # Fallback: scan for any *.context_length key
+            for key, value in modelinfo.items():
+                if key.endswith(".context_length") and value:
+                    return int(value)
+        except Exception:
+            pass
+        return 4096
 
     def get_embedding_context_length(self) -> int:
         """Return the max token context length for the embedding model.

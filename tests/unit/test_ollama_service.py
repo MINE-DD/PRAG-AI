@@ -20,6 +20,24 @@ def _embed_response(*vectors):
     return resp
 
 
+def _chat_response(content: str):
+    """Build a mock response matching ollama.Client.chat() return shape."""
+    msg = Mock()
+    msg.content = content
+    resp = Mock()
+    resp.message = msg
+    resp.prompt_eval_count = 10
+    resp.eval_count = 5
+    resp.model = "test-model"
+    resp.created_at = None
+    resp.done_reason = "stop"
+    resp.total_duration = None
+    resp.load_duration = None
+    resp.prompt_eval_duration = None
+    resp.eval_duration = None
+    return resp
+
+
 def test_generate_embedding(ollama_service):
     """Test generating embeddings"""
     ollama_service.client.embed = Mock(return_value=_embed_response([0.1] * 768))
@@ -44,21 +62,22 @@ def test_generate_embeddings_batch(ollama_service):
 
 def test_generate_response(ollama_service):
     """Test generating LLM response"""
-    ollama_service.client.chat = Mock(
-        return_value={"message": {"content": "This is a response"}}
-    )
+    ollama_service.client.chat = Mock(return_value=_chat_response("This is a response"))
 
-    response = ollama_service.generate(
+    text, usage = ollama_service.generate(
         prompt="Test prompt", system="You are a helpful assistant"
     )
 
-    assert "response" in response
+    assert "response" in text
+    assert usage["prompt_tokens"] == 10
+    assert usage["completion_tokens"] == 5
+    assert usage["total_tokens"] == 15
     ollama_service.client.chat.assert_called_once()
 
 
 def test_generate_with_chat_history(ollama_service):
     """chat_history messages are included in the request."""
-    ollama_service.client.chat = Mock(return_value={"message": {"content": "ok"}})
+    ollama_service.client.chat = Mock(return_value=_chat_response("ok"))
     history = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
@@ -72,11 +91,11 @@ def test_generate_with_chat_history(ollama_service):
 
 def test_generate_empty_response_returns_fallback(ollama_service):
     """Empty LLM content returns the hardcoded fallback message."""
-    ollama_service.client.chat = Mock(return_value={"message": {"content": ""}})
+    ollama_service.client.chat = Mock(return_value=_chat_response(""))
 
-    response = ollama_service.generate(prompt="test")
+    text, _ = ollama_service.generate(prompt="test")
 
-    assert "OOPS" in response
+    assert "OOPS" in text
 
 
 def test_get_embedding_context_length(ollama_service):

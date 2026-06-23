@@ -212,6 +212,7 @@ def rag_query(
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
     rendered_prompt: dict = {}
+    usage: dict = {}
     if results:
         # Build context: each chunk tagged with its citation key
         context_parts = []
@@ -249,14 +250,18 @@ def rag_query(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        llm_max_tokens = config["models"]["llm"].get("max_allowed_tokens", 512)
-        num_predict = min(rag_request.max_tokens * 3, llm_max_tokens)
+        llm_cfg = config["models"]["llm"]
+        # num_context_tokens: user's working budget (local); max_allowed_tokens: Google output cap
+        num_context_tokens = llm_cfg.get("num_context_tokens") or None
+        capacity = num_context_tokens or llm_cfg.get("max_allowed_tokens") or 8192
+        num_predict = min(rag_request.max_tokens * 3, capacity)
 
-        answer = llm_service.generate(
+        answer, usage = llm_service.generate(
             prompt=rendered.user,
             system=rendered.system,
             temperature=0.3,
             max_tokens=num_predict,
+            num_context_tokens=num_context_tokens,
         )
         rendered_prompt = {
             "system": rendered.system,
@@ -293,6 +298,7 @@ def rag_query(
         "llm_provider": llm_info["provider"],
         "llm_model": llm_info["model"],
         "rendered_prompt": rendered_prompt,
+        "usage": usage,
     }
 
     return response

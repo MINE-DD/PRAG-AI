@@ -17,8 +17,10 @@ const SettingsPanel = defineComponent({
       embeddingModel: '',
       embeddingContextLength: null,
       embeddingModelWarning: null,
-      llmModel:       '',
-      llmProvider:    'local',
+      llmModel:             '',
+      llmProvider:          'local',
+      llmMaxCtx:            null,
+      llmNumContextTokens:  20000,
       googleModel:    'gemini-2.5-flash',
       googleKey:      '',
       hasGoogleKey:   false,
@@ -98,8 +100,11 @@ const SettingsPanel = defineComponent({
         form.embeddingContextLength = cfg.embedding_context_length ?? null
         form.embeddingModelWarning  = null
         fetchEmbeddingInfo(cfg.embedding_model)
-        form.llmModel        = cfg.llm_model
-        form.llmProvider     = cfg.llm_provider || 'local'
+        form.llmModel             = cfg.llm_model
+        form.llmProvider          = cfg.llm_provider || 'local'
+        form.llmMaxCtx            = cfg.llm_max_ctx ?? null
+        form.llmNumContextTokens  = cfg.llm_num_context_tokens ?? 20000
+        fetchLlmInfo(cfg.llm_model)
         form.googleModel     = cfg.google_model || googleModels.value[0]
         form.hasGoogleKey    = !!cfg.has_google_key
         form.googleKey       = ''
@@ -117,6 +122,29 @@ const SettingsPanel = defineComponent({
     }
 
     watch(() => props.visible, v => { if (v) load() })
+
+    async function fetchLlmInfo(model) {
+      if (!model) return
+      try {
+        const res = await api.get(`/ollama/models/${encodeURIComponent(model)}/context-length`)
+        form.llmMaxCtx = res.context_length ?? null
+        // Clamp working budget to new model's ceiling; reset to 20000 if model just changed
+        if (form.llmMaxCtx) {
+          if (form.llmNumContextTokens > form.llmMaxCtx) {
+            form.llmNumContextTokens = form.llmMaxCtx
+          } else if (!form.llmNumContextTokens) {
+            form.llmNumContextTokens = Math.min(20000, form.llmMaxCtx)
+          }
+        }
+      } catch {
+        form.llmMaxCtx = null
+      }
+    }
+
+    function clampNumContextTokens() {
+      if (form.llmMaxCtx && form.llmNumContextTokens > form.llmMaxCtx)
+        form.llmNumContextTokens = form.llmMaxCtx
+    }
 
     async function fetchEmbeddingInfo(model) {
       if (!model) return
@@ -207,6 +235,11 @@ const SettingsPanel = defineComponent({
         if (form.embeddingModel) body.embedding_model = form.embeddingModel
         if (form.llmModel)       body.llm_model       = form.llmModel
         body.llm_provider = form.llmProvider
+        if (form.llmProvider === 'local' && form.llmNumContextTokens) {
+          const ceiling = form.llmMaxCtx || Infinity
+          body.num_context_tokens = Math.min(form.llmNumContextTokens, ceiling)
+        }
+
         if (form.llmProvider === 'google') {
           body.google_model = form.googleModel
           if (form.clearGoogleKey)        body.clear_google_key = true
@@ -235,7 +268,7 @@ const SettingsPanel = defineComponent({
       googleModels, recommendedEmbeddingModels, recommendedLlmModels,
       defaultEmbeddingModel, defaultLlmModel, defaultsPulled,
       pullModel, pulling, pullingDefaults, pullProgress, pullStatus, pullError, pullDone,
-      fetchEmbeddingInfo, pullOllamaModel, pullDefaults, save, close,
+      fetchEmbeddingInfo, fetchLlmInfo, clampNumContextTokens, pullOllamaModel, pullDefaults, save, close,
     }
   },
 
@@ -369,11 +402,23 @@ const SettingsPanel = defineComponent({
         </div>
         <div class="form-group">
           <label>Generation (LLM) model</label>
-          <select v-model="form.llmModel">
+          <select v-model="form.llmModel" @change="fetchLlmInfo(form.llmModel)">
             <option v-for="m in llmModels" :key="m.name" :value="m.name">
               {{ m.name }}{{ m.capabilities.length ? ' (' + m.capabilities.join(', ') + ')' : '' }}
             </option>
           </select>
+          <div v-if="form.llmMaxCtx" class="text-sm text-muted" style="margin-top:3px">
+            Model max: {{ form.llmMaxCtx.toLocaleString() }} tokens
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Prompt context tokens</label>
+          <input type="number" v-model.number="form.llmNumContextTokens"
+                 min="512" :max="form.llmMaxCtx || 131072" step="1000"
+                 @change="clampNumContextTokens()" />
+          <div class="text-sm text-muted" style="margin-top:3px">
+            How much context window to allocate per request. Larger uses more memory. Cannot exceed model max.
+          </div>
         </div>
       </template>
       <div v-if="defaultsPulled" style="margin-top:8px">

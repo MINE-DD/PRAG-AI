@@ -66,7 +66,7 @@ def mock_ollama():
         # Return fake embedding (1024-dimensional)
         mock_instance.generate_embedding = Mock(return_value=[0.1] * 1024)
         mock_instance.generate = Mock(
-            return_value="This is a generated answer about NLP."
+            return_value=("This is a generated answer about NLP.", {})
         )
         mock.return_value = mock_instance
         yield mock_instance

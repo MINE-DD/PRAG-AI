@@ -165,7 +165,7 @@ def compare_papers(
         raise HTTPException(status_code=422, detail=str(e))
 
     # Generate comparison using LLM
-    comparison = llm_service.generate(
+    comparison, _ = llm_service.generate(
         prompt=rendered.user,
         system=rendered.system,
         temperature=0.3,

@@ -107,6 +107,7 @@ const RagTab = defineComponent({
         query: query.value,
         rendered_prompt: result.value.rendered_prompt || {},
         answer: result.value.answer,
+        usage: result.value.usage || {},
         retrieved_chunks: result.value.results || [],
         citations: result.value.citations || {},
       }
@@ -279,6 +280,10 @@ const RagTab = defineComponent({
           <button class="btn btn-secondary btn-sm" @click="exportInteraction">⬇ Export Interaction</button>
         </div>
         <div class="markdown-body" v-html="renderMd(result.answer, result.citations)"></div>
+        <div v-if="result.usage && result.usage.prompt_tokens" style="margin-top:10px;font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:8px">
+          Prompt: <strong>{{ result.usage.prompt_tokens.toLocaleString() }}</strong> tokens
+          <span v-if="result.usage.completion_tokens"> &nbsp;·&nbsp; Generated: <strong>{{ result.usage.completion_tokens.toLocaleString() }}</strong> tokens</span>
+        </div>
       </div>
 
       <!-- Retrieved passages -->

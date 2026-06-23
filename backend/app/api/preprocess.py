@@ -368,7 +368,7 @@ def analyze_table(request: AnalyzeTableRequest):
     )
 
     try:
-        analysis = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=500)
+        analysis, _ = ollama.generate(prompt=prompt, temperature=0.3, max_tokens=500)
         return {"analysis": analysis, "table_file": request.table_file}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
