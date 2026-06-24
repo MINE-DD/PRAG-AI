@@ -259,20 +259,31 @@ def rag_query(
             if context_window
             else rag_request.max_generated_tokens
         )
+        if rag_request.think:
+            buffer = llm_cfg.get("think_tokens_buffer", 5000)
+            num_predict = num_predict + buffer
+            if context_window:
+                num_predict = min(num_predict, context_window)
+
         temperature = (
             rag_request.temperature
             if rag_request.temperature is not None
             else llm_cfg.get("temperature", 0.3)
         )
 
-        answer, usage = llm_service.generate(
-            prompt=rendered.user,
-            system=rendered.system,
-            temperature=temperature,
-            max_tokens=num_predict,
-            num_context_tokens=num_context_tokens,
-        )
+        generate_kwargs: dict = {
+            "prompt": rendered.user,
+            "system": rendered.system,
+            "temperature": temperature,
+            "max_tokens": num_predict,
+            "num_context_tokens": num_context_tokens,
+        }
+        if llm_cfg.get("type", "local") == "local":
+            generate_kwargs["think"] = rag_request.think
+
+        answer, usage = llm_service.generate(**generate_kwargs)
         usage["temperature"] = temperature
+        thinking = usage.pop("thinking", None)
         rendered_prompt = {
             "system": rendered.system,
             "user": rendered.user,
@@ -303,6 +314,7 @@ def rag_query(
 
     response = {
         "answer": answer,
+        "thinking": thinking,
         "results": results,
         "citations": citations,
         "llm_provider": llm_info["provider"],

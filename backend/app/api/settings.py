@@ -116,6 +116,7 @@ def get_settings():
         "chunk_overlap": config["chunking"]["overlap"],
         "chunk_mode": config["chunking"].get("mode", "characters"),
         "top_k": config["retrieval"].get("top_k", 10),
+        "llm_is_thinking_model": _check_is_thinking_model(llm_cfg.get("model", "")),
         "pdf_input_dir": settings.pdf_input_dir,
         "preprocessed_dir": settings.preprocessed_dir,
     }
@@ -171,6 +172,18 @@ class UpdateSettingsRequest(BaseModel):
     top_k: int | None = None
     num_context_tokens: int | None = None
     temperature: float | None = None
+
+
+def _check_is_thinking_model(model: str) -> bool:
+    """Return True if the Ollama model advertises 'thinking' in its capabilities."""
+    if not model:
+        return False
+    try:
+        svc = OllamaService(url=settings.ollama_url)
+        info = svc.client.show(model)
+        return "thinking" in list(info.capabilities or [])
+    except Exception:
+        return False
 
 
 def _fetch_llm_context_length(model: str) -> int | None:

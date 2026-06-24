@@ -36,6 +36,10 @@ class RAGRequest(BaseModel):
         le=2.0,
         description="Sampling temperature (overrides config for this query)",
     )
+    think: bool = Field(
+        default=False,
+        description="Enable thinking mode (adds think_tokens_buffer to generation budget)",
+    )
 
 
 class Source(BaseModel):

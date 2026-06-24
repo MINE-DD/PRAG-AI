@@ -20,10 +20,11 @@ def _embed_response(*vectors):
     return resp
 
 
-def _chat_response(content: str):
+def _chat_response(content: str, thinking: str = ""):
     """Build a mock response matching ollama.Client.chat() return shape."""
     msg = Mock()
     msg.content = content
+    msg.thinking = thinking
     resp = Mock()
     resp.message = msg
     resp.prompt_eval_count = 10
@@ -96,6 +97,51 @@ def test_generate_empty_response_returns_fallback(ollama_service):
     text, _ = ollama_service.generate(prompt="test")
 
     assert "OOPS" in text
+
+
+def test_generate_native_thinking_field(ollama_service):
+    """Thinking content from the native message.thinking field is returned in usage."""
+    ollama_service.client.chat = Mock(
+        return_value=_chat_response("Final answer.", thinking="I reasoned about this.")
+    )
+
+    text, usage = ollama_service.generate(prompt="test")
+
+    assert text == "Final answer."
+    assert usage["thinking"] == "I reasoned about this."
+
+
+def test_generate_think_tag_stripped_from_content(ollama_service):
+    """<think>…</think> tags are extracted from content and returned as thinking."""
+    raw = "<think>internal reasoning</think>The actual answer."
+    resp = _chat_response(raw)
+    resp.message.thinking = ""  # no native field
+    ollama_service.client.chat = Mock(return_value=resp)
+
+    text, usage = ollama_service.generate(prompt="test")
+
+    assert text == "The actual answer."
+    assert usage["thinking"] == "internal reasoning"
+
+
+def test_generate_think_kwarg_passed_to_client(ollama_service):
+    """think=True is forwarded as a keyword argument to client.chat()."""
+    ollama_service.client.chat = Mock(return_value=_chat_response("ok"))
+
+    ollama_service.generate(prompt="test", think=True)
+
+    call_kwargs = ollama_service.client.chat.call_args[1]
+    assert call_kwargs.get("think") is True
+
+
+def test_generate_no_think_kwarg_when_none(ollama_service):
+    """think kwarg is omitted from client.chat() when think=None."""
+    ollama_service.client.chat = Mock(return_value=_chat_response("ok"))
+
+    ollama_service.generate(prompt="test", think=None)
+
+    call_kwargs = ollama_service.client.chat.call_args[1]
+    assert "think" not in call_kwargs
 
 
 def test_get_embedding_context_length(ollama_service):

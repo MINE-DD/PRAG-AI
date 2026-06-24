@@ -1,3 +1,5 @@
+import re
+
 import ollama
 
 
@@ -45,6 +47,7 @@ class OllamaService:
         max_tokens: int | None = None,
         num_context_tokens: int | None = None,
         chat_history: list[dict] | None = None,
+        think: bool | None = None,
     ) -> tuple[str, dict]:
         """Generate text response from LLM.
 
@@ -66,15 +69,31 @@ class OllamaService:
         if num_context_tokens is not None:
             opts["num_ctx"] = num_context_tokens
 
-        response = self.client.chat(
-            model=self.model,
-            messages=messages,
-            options=opts,
-        )
+        chat_kwargs: dict = {"model": self.model, "messages": messages, "options": opts}
+        if think is not None:
+            chat_kwargs["think"] = think
+
+        response = self.client.chat(**chat_kwargs)
 
         NO_LLM_TOKENS_IN_RESPONSE = "OOPS! It seems like the LLM refused to generate any tokens as a response to this question =("
-        content = response.message.content
-        text = content if content and content.strip() else NO_LLM_TOKENS_IN_RESPONSE
+        raw_content = response.message.content or ""
+
+        # Extract thinking tokens: native field first (Ollama >= 0.7 thinking models),
+        # then fall back to <think>...</think> tags embedded in content.
+        thinking: str = getattr(response.message, "thinking", None) or ""
+        if not thinking and "<think>" in raw_content:
+            match = re.search(r"<think>(.*?)</think>", raw_content, re.DOTALL)
+            if match:
+                thinking = match.group(1).strip()
+                raw_content = (
+                    raw_content[: match.start()] + raw_content[match.end() :]
+                ).strip()
+
+        text = (
+            raw_content
+            if raw_content and raw_content.strip()
+            else NO_LLM_TOKENS_IN_RESPONSE
+        )
         usage = {
             "prompt_tokens": response.prompt_eval_count,
             "completion_tokens": response.eval_count,
@@ -95,6 +114,7 @@ class OllamaService:
             "eval_duration_ms": round(response.eval_duration / 1e6)
             if response.eval_duration
             else None,
+            "thinking": thinking or None,
         }
         return text, usage
 

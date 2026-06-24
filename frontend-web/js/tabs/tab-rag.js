@@ -22,6 +22,9 @@ const RagTab = defineComponent({
     const showAdvanced   = ref(false)
     const showPassages   = ref(false)
     const showCitations  = ref(false)
+    const showThinking      = ref(false)
+    const isThinkingModel   = ref(false)
+    const thinkEnabled      = ref(false)
     const selectedPrompt    = ref('default')
     const citationMode      = ref('apa')
     const includeReferences = ref(false)
@@ -66,6 +69,7 @@ const RagTab = defineComponent({
         const cfg = await api.get('/settings')
         if (cfg.top_k != null) topK.value = cfg.top_k
         if (cfg.llm_temperature != null) temperature.value = cfg.llm_temperature
+        isThinkingModel.value = cfg.llm_is_thinking_model ?? false
       } catch { /* keep default */ }
     })
 
@@ -77,6 +81,7 @@ const RagTab = defineComponent({
       result.value = null
       showPassages.value = false
       showCitations.value = false
+      showThinking.value = false
       try {
         const excluded = includeReferences.value
           ? []
@@ -86,6 +91,7 @@ const RagTab = defineComponent({
           limit: topK.value,
           max_generated_tokens: maxGeneratedTokens.value,
           temperature: temperature.value,
+          think: isThinkingModel.value && thinkEnabled.value,
           include_citations: true,
           use_hybrid: useHybrid.value,
           prompt_name: selectedPrompt.value,
@@ -171,6 +177,7 @@ const RagTab = defineComponent({
       runQuery, togglePassage, exportMd, exportInteraction, pdfUrl,
       showAdvanced, selectedPrompt, renderMd,
       showPassages, showCitations, includeReferences,
+      showThinking, isThinkingModel, thinkEnabled,
     }
   },
 
@@ -256,12 +263,18 @@ const RagTab = defineComponent({
               <input type="range" v-model.number="topK" min="1" max="50" style="width:100%;margin-top:6px" />
             </div>
             <div class="form-group" style="margin:0">
-              <label>Max generated tokens: {{ maxGeneratedTokens }}</label>
-              <input type="range" v-model.number="maxGeneratedTokens" min="50" max="32000" step="50" style="width:100%;margin-top:6px" />
+              <label>Max answer tokens: {{ maxGeneratedTokens }}</label>
+              <input type="range" v-model.number="maxGeneratedTokens" min="50" max="5000" step="50" style="width:100%;margin-top:6px" />
             </div>
             <div class="form-group" style="margin:0">
               <label>Temperature: {{ temperature.toFixed(2) }}</label>
               <input type="range" v-model.number="temperature" min="0" max="2" step="0.05" style="width:100%;margin-top:6px" />
+            </div>
+            <div v-if="isThinkingModel" class="form-group" style="margin:0">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+                <input type="checkbox" v-model="thinkEnabled" />
+                Enable thinking mode
+              </label>
             </div>
           </div>
           <hr style="border:none;border-top:1px solid var(--border);margin:12px 0" />
@@ -285,6 +298,16 @@ const RagTab = defineComponent({
 
     <!-- Results -->
     <template v-if="result">
+      <!-- Thinking panel (thinking models only) -->
+      <div class="card" v-if="result.thinking" style="border-color:var(--border);opacity:0.85">
+        <div class="flex items-center gap-8" style="cursor:pointer;user-select:none" @click="showThinking=!showThinking">
+          <span class="chevron" :class="{open:showThinking}" style="margin-right:4px;color:var(--text-muted)">▶</span>
+          <span style="font-size:13px;font-weight:600;color:var(--text-muted)">Thinking</span>
+          <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:4px">internal reasoning</span>
+        </div>
+        <div v-if="showThinking" style="margin-top:10px;color:var(--text-muted);font-size:12px;line-height:1.7;white-space:pre-wrap;font-family:monospace;background:var(--bg-subtle,#f6f8fa);border-radius:4px;padding:10px 12px;border-left:3px solid var(--border)">{{ result.thinking }}</div>
+      </div>
+
       <!-- Answer -->
       <div class="card" v-if="result.answer">
         <div class="flex items-center gap-8" style="margin-bottom:12px">
@@ -296,7 +319,13 @@ const RagTab = defineComponent({
         <div class="markdown-body" v-html="renderMd(result.answer, result.citations)"></div>
         <div v-if="result.usage && result.usage.prompt_tokens" style="margin-top:10px;font-size:11px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:8px">
           Prompt: <strong>{{ result.usage.prompt_tokens.toLocaleString() }}</strong> tokens
-          <span v-if="result.usage.completion_tokens"> &nbsp;·&nbsp; Generated: <strong>{{ result.usage.completion_tokens.toLocaleString() }}</strong> tokens</span>
+          <template v-if="result.thinking && result.usage.completion_tokens">
+            &nbsp;·&nbsp;
+            Thinking: <strong>~{{ Math.round(result.thinking.length / 3.5).toLocaleString() }}</strong> tokens (est.)
+            &nbsp;·&nbsp;
+            Answer: <strong>{{ Math.max(0, result.usage.completion_tokens - Math.round(result.thinking.length / 3.5)).toLocaleString() }}</strong> tokens
+          </template>
+          <span v-else-if="result.usage.completion_tokens"> &nbsp;·&nbsp; Generated: <strong>{{ result.usage.completion_tokens.toLocaleString() }}</strong> tokens</span>
         </div>
       </div>
 
