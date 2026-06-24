@@ -162,3 +162,39 @@ def test_get_embedding_context_length_fallback(ollama_service):
     length = ollama_service.get_embedding_context_length()
 
     assert length == 512
+
+
+# ---------------------------------------------------------------------------
+# get_llm_context_length
+# ---------------------------------------------------------------------------
+
+
+def test_get_llm_context_length_via_architecture_key(ollama_service):
+    """Reads context length from the '{arch}.context_length' key in modelinfo."""
+    mock_info = Mock()
+    mock_info.modelinfo = {
+        "general.architecture": "gemma4",
+        "gemma4.context_length": 131072,
+    }
+    ollama_service.client.show = Mock(return_value=mock_info)
+
+    assert ollama_service.get_llm_context_length() == 131072
+
+
+def test_get_llm_context_length_via_scan_fallback(ollama_service):
+    """Falls back to scanning any '*.context_length' key when architecture key is absent."""
+    mock_info = Mock()
+    mock_info.modelinfo = {
+        "general.architecture": "unknown",
+        "llama.context_length": 8192,
+    }
+    ollama_service.client.show = Mock(return_value=mock_info)
+
+    assert ollama_service.get_llm_context_length() == 8192
+
+
+def test_get_llm_context_length_fallback_value(ollama_service):
+    """Returns 4096 when Ollama is unreachable."""
+    ollama_service.client.show = Mock(side_effect=Exception("unavailable"))
+
+    assert ollama_service.get_llm_context_length() == 4096

@@ -257,6 +257,67 @@ def test_post_settings_google_provider_sets_max_tokens(client, tmp_path):
     assert saved["models"]["llm"]["max_allowed_tokens"] == 100000
 
 
+# ---------------------------------------------------------------------------
+# llm_is_thinking_model — GET /settings
+# ---------------------------------------------------------------------------
+
+
+def test_get_settings_llm_is_thinking_model_true(client):
+    """GET /settings returns llm_is_thinking_model=True for a thinking model."""
+    with patch("app.api.settings._check_is_thinking_model", return_value=True):
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert resp.json()["llm_is_thinking_model"] is True
+
+
+def test_get_settings_llm_is_thinking_model_false(client):
+    """GET /settings returns llm_is_thinking_model=False for a non-thinking model."""
+    with patch("app.api.settings._check_is_thinking_model", return_value=False):
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert resp.json()["llm_is_thinking_model"] is False
+
+
+def test_check_is_thinking_model_true():
+    """Returns True when 'thinking' is in Ollama model capabilities."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        info = Mock()
+        info.capabilities = ["thinking", "completion"]
+        mock_cls.return_value.client.show.return_value = info
+        assert _check_is_thinking_model("gemma4:e2b") is True
+
+
+def test_check_is_thinking_model_false():
+    """Returns False when 'thinking' is not in capabilities."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        info = Mock()
+        info.capabilities = ["completion"]
+        mock_cls.return_value.client.show.return_value = info
+        assert _check_is_thinking_model("llama3") is False
+
+
+def test_check_is_thinking_model_ollama_unreachable():
+    """Returns False gracefully when Ollama cannot be reached."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_cls.return_value.client.show.side_effect = Exception("unreachable")
+        assert _check_is_thinking_model("gemma4:e2b") is False
+
+
+def test_check_is_thinking_model_empty_model():
+    """Returns False immediately for an empty model name (no Ollama call made)."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        assert _check_is_thinking_model("") is False
+        mock_cls.assert_not_called()
+
+
 def test_post_settings_local_llm_fetches_max_tokens(client, tmp_path):
     config_path = _write_config(tmp_path / "config.yaml")
     with (
