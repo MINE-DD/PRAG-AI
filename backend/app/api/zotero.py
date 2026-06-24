@@ -2,6 +2,7 @@
 """Zotero integration API endpoints."""
 
 import json
+from collections.abc import Generator
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -91,7 +92,7 @@ def import_from_zotero(request: ImportRequest):
     config = load_config("config.yaml")
     local_storage = config.get("zotero_local_storage", "").strip()
 
-    def generate():
+    def generate() -> Generator[str, None, None]:
         prep_svc = (
             PreprocessingService(prompt_service=get_prompt_service())
             if request.auto_convert
