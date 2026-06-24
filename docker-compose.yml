@@ -19,6 +19,7 @@ services:
       - ./data:/data
       - ./config.yaml:/app/config.yaml
       - ./backend/prompts:/app/prompts
+      - ~/Zotero/storage:/zotero_storage:ro
     env_file:
       - .env
     environment:

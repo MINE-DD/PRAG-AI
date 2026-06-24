@@ -117,6 +117,7 @@ def get_settings():
         "chunk_mode": config["chunking"].get("mode", "characters"),
         "top_k": config["retrieval"].get("top_k", 10),
         "llm_is_thinking_model": _check_is_thinking_model(llm_cfg.get("model", "")),
+        "zotero_local_storage": config.get("zotero_local_storage", ""),
         "pdf_input_dir": settings.pdf_input_dir,
         "preprocessed_dir": settings.preprocessed_dir,
     }
@@ -172,6 +173,7 @@ class UpdateSettingsRequest(BaseModel):
     top_k: int | None = None
     num_context_tokens: int | None = None
     temperature: float | None = None
+    zotero_local_storage: str | None = None
 
 
 def _check_is_thinking_model(model: str) -> bool:
@@ -265,6 +267,8 @@ def update_settings(request: UpdateSettingsRequest):
         config["chunking"]["mode"] = request.chunk_mode
     if request.top_k is not None:
         config["retrieval"]["top_k"] = request.top_k
+    if request.zotero_local_storage is not None:
+        config["zotero_local_storage"] = request.zotero_local_storage.strip()
 
     with open(CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)

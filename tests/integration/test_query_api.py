@@ -328,7 +328,9 @@ def test_rag_think_false_forwarded_to_generate(client, test_collection, mock_oll
     assert call_kwargs.get("think") is False
 
 
-def test_rag_think_true_adds_buffer_to_num_predict(client, test_collection, mock_ollama):
+def test_rag_think_true_adds_buffer_to_num_predict(
+    client, test_collection, mock_ollama
+):
     """think=True adds think_tokens_buffer to max_tokens sent to generate()."""
     with patch("app.api.rag.load_config") as mock_cfg:
         mock_cfg.return_value = {

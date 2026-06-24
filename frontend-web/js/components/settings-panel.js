@@ -27,10 +27,11 @@ const SettingsPanel = defineComponent({
       googleKey:      '',
       hasGoogleKey:   false,
       clearGoogleKey: false,
-      zoteroUserId:   '',
-      zoteroKey:      '',
-      hasZoteroKey:   false,
-      clearZoteroKey: false,
+      zoteroUserId:        '',
+      zoteroKey:           '',
+      hasZoteroKey:        false,
+      clearZoteroKey:      false,
+      zoteroLocalStorage:  '',
     })
 
     const status     = ref('unknown')
@@ -113,10 +114,11 @@ const SettingsPanel = defineComponent({
         form.hasGoogleKey    = !!cfg.has_google_key
         form.googleKey       = ''
         form.clearGoogleKey  = false
-        form.zoteroUserId    = cfg.zotero_user_id || ''
-        form.hasZoteroKey    = !!cfg.has_zotero_key
-        form.zoteroKey       = ''
-        form.clearZoteroKey  = false
+        form.zoteroUserId        = cfg.zotero_user_id || ''
+        form.hasZoteroKey        = !!cfg.has_zotero_key
+        form.zoteroKey           = ''
+        form.clearZoteroKey      = false
+        form.zoteroLocalStorage  = cfg.zotero_local_storage || ''
       } catch (e) {
         modelError.value = e.message
         status.value     = 'error'
@@ -258,6 +260,7 @@ const SettingsPanel = defineComponent({
           if (form.zoteroUserId.trim()) body.zotero_user_id = form.zoteroUserId.trim()
           if (form.zoteroKey.trim())    body.zotero_key = form.zoteroKey.trim()
         }
+        body.zotero_local_storage = form.zoteroLocalStorage.trim()
         await api.post('/settings', body)
         emit('update:visible', false)
         emit('saved')
@@ -517,6 +520,19 @@ const SettingsPanel = defineComponent({
                placeholder="Paste API key" autocomplete="off" />
       </div>
     </template>
+
+    <div class="form-group" style="margin-top:12px">
+      <label>Local Zotero storage path
+        <span style="font-size:11px;color:var(--text-muted)"> (inside Docker container)</span>
+      </label>
+      <input v-model="form.zoteroLocalStorage" class="form-control"
+             placeholder="/zotero_storage" />
+      <div class="text-sm text-muted" style="margin-top:3px">
+        Mount your <code>~/Zotero/storage</code> folder in docker-compose and set the container path here.
+        PDFs are read from <code>{path}/{attachmentKey}/{filename}</code>.
+      </div>
+    </div>
+
 
     <hr class="divider" />
 

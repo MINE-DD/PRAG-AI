@@ -185,3 +185,96 @@ def test_import_always_downloads(client, tmp_path):
     ]
     statuses = {e.get("filename"): e.get("status") for e in events if "filename" in e}
     assert statuses.get("test.pdf") == "done"
+
+
+# ---------------------------------------------------------------------------
+# Local storage fallback helpers + tests
+# ---------------------------------------------------------------------------
+
+_ITEM = {
+    "item_key": "I1",
+    "title": "Paper",
+    "authors": ["Alice"],
+    "year": 2024,
+    "doi": None,
+    "journal": None,
+    "abstract": None,
+    "attachment": {"type": "cloud", "filename": "paper.pdf", "attachment_key": "A1"},
+}
+
+_EMPTY_CONFIG = {
+    "models": {"embedding": "m", "llm": {"type": "local", "model": "m"}},
+    "chunking": {"size": 500, "overlap": 100, "mode": "tokens"},
+    "retrieval": {"top_k": 5},
+    "zotero_local_storage": "",
+}
+
+
+def test_import_falls_back_to_local_storage(client, tmp_path):
+    """When Zotero cloud fails, the importer reads the PDF from local Zotero storage."""
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    local_storage = tmp_path / "zotero_storage"
+    (local_storage / "A1").mkdir(parents=True)
+    (local_storage / "A1" / "paper.pdf").write_bytes(b"%PDF local")
+
+    cfg = {**_EMPTY_CONFIG, "zotero_local_storage": str(local_storage)}
+
+    with (
+        patch("app.api.zotero._api_keys", _mock_keys()),
+        patch("app.api.zotero._get_user_id", return_value="12345"),
+        patch("app.services.zotero_service.list_items", return_value=[_ITEM]),
+        patch(
+            "app.services.zotero_service.download_pdf",
+            side_effect=RuntimeError("PDF not found in Zotero cloud"),
+        ),
+        patch("app.api.zotero.load_config", return_value=cfg),
+    ):
+        resp = client.post(
+            "/zotero/import",
+            json={"collection_key": "C1", "dir_name": "col", "item_keys": ["I1"]},
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    statuses = {e.get("filename"): e.get("status") for e in events if "filename" in e}
+    assert statuses.get("paper.pdf") == "done"
+    assert (
+        tmp_path / "pdf_input" / "col_zt" / "paper.pdf"
+    ).read_bytes() == b"%PDF local"
+
+
+def test_import_errors_when_cloud_404_and_no_local_storage(client, tmp_path):
+    """Without local storage configured, a cloud 404 propagates as an error event."""
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    with (
+        patch("app.api.zotero._api_keys", _mock_keys()),
+        patch("app.api.zotero._get_user_id", return_value="12345"),
+        patch("app.services.zotero_service.list_items", return_value=[_ITEM]),
+        patch(
+            "app.services.zotero_service.download_pdf",
+            side_effect=RuntimeError("PDF not found in Zotero cloud"),
+        ),
+        patch("app.api.zotero.load_config", return_value=_EMPTY_CONFIG),
+    ):
+        resp = client.post(
+            "/zotero/import",
+            json={"collection_key": "C1", "dir_name": "col", "item_keys": ["I1"]},
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    error_events = [e for e in events if e.get("status") == "error"]
+    assert error_events, "Expected an error event"
+    assert "not found" in error_events[0]["message"].lower()
