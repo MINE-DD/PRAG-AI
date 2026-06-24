@@ -66,7 +66,9 @@ class PreprocessingService:
             title: str | None = None
             if meta_path.exists():
                 try:
-                    title = json.loads(meta_path.read_text(encoding="utf-8")).get("title")
+                    title = json.loads(meta_path.read_text(encoding="utf-8")).get(
+                        "title"
+                    )
                 except Exception:
                     pass
             files.append(
