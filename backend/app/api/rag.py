@@ -213,6 +213,7 @@ def rag_query(
     answer = ""
     rendered_prompt: dict = {}
     usage: dict = {}
+    thinking = None
     if results:
         # Build context: each chunk tagged with its citation key
         context_parts = []

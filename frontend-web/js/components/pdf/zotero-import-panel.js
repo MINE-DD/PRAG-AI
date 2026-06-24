@@ -20,10 +20,6 @@ const ZoteroImportPanel = defineComponent({
     const ztImportError   = ref(null)
     const autoConvert     = ref(true)
 
-    const ztCollectionSlug = computed(() =>
-      ztDirName.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    )
-
     async function load() {
       ztCollections.value   = []
       ztCollError.value     = null
@@ -111,7 +107,7 @@ const ZoteroImportPanel = defineComponent({
       ztCollections, ztCollError, ztSelCollection,
       ztItems, ztItemsLoading, ztItemsError,
       ztChecked, ztDirName, ztImporting, ztProgress, ztDone, ztImportError,
-      autoConvert, ztCollectionSlug,
+      autoConvert,
       selectCollection, runImport,
     }
   },

@@ -156,7 +156,7 @@ const UploadPanel = defineComponent({
       <div class="text-muted">Go to the <strong>Collections</strong> tab to create a collection from this folder.</div>
     </div>
     <button class="btn btn-secondary btn-sm" style="margin-top:8px"
-            @click="convertDone.value = false; convertEvents.value = []">Upload more</button>
+            @click="convertDone = false; convertEvents = []">Upload more</button>
   </template>
 </div>
 `,
