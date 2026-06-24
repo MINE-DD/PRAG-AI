@@ -79,6 +79,35 @@ def _clean_context(text: str) -> str:
     return text
 
 
+def _dedupe_consecutive_citations(text: str) -> str:
+    """Collapse runs of the same citation key within a paragraph.
+
+    When the same [Key] appears in back-to-back sentences with no other key
+    between them, all but the first occurrence are dropped. This is a safety
+    net for cases where the LLM still repeats citations despite prompt instructions.
+    """
+    citation_re = re.compile(r"\[([^\]]+)\]")
+
+    def process_paragraph(para: str) -> str:
+        last_key: str | None = None
+        parts: list[str] = []
+        prev_end = 0
+        for m in citation_re.finditer(para):
+            key = m.group(1)
+            between = para[prev_end : m.start()]
+            if key == last_key:
+                parts.append(between.rstrip())
+            else:
+                parts.append(between)
+                parts.append(m.group(0))
+                last_key = key
+            prev_end = m.end()
+        parts.append(para[prev_end:])
+        return "".join(parts)
+
+    return "\n\n".join(process_paragraph(p) for p in text.split("\n\n"))
+
+
 def get_services():
     """Dependency to get services"""
     config = load_config("config.yaml")
@@ -283,6 +312,7 @@ def rag_query(
             generate_kwargs["think"] = rag_request.think
 
         answer, usage = llm_service.generate(**generate_kwargs)
+        answer = _dedupe_consecutive_citations(answer)
         usage["temperature"] = temperature
         thinking = usage.pop("thinking", None)
         rendered_prompt = {

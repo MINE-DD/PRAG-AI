@@ -70,6 +70,7 @@ const RagTab = defineComponent({
         if (cfg.top_k != null) topK.value = cfg.top_k
         if (cfg.llm_temperature != null) temperature.value = cfg.llm_temperature
         isThinkingModel.value = cfg.llm_is_thinking_model ?? false
+        thinkEnabled.value = isThinkingModel.value
       } catch { /* keep default */ }
     })
 

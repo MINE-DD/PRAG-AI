@@ -1,8 +1,8 @@
 models:
   default_embedder: nomic-embed-text:latest
   default_llm: gemma3:1b
-  embedding: mxbai-embed-large:latest
-  max_embedder_tokens: 512
+  embedding: nomic-embed-text:latest
+  max_embedder_tokens: 2048
   llm:
     type: local
     model: gemma4:e2b
