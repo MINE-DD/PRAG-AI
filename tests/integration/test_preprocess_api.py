@@ -1,3 +1,4 @@
+import json
 import shutil
 import sys
 import tempfile
@@ -139,3 +140,86 @@ def test_get_history_empty(client):
     response = client.get("/preprocess/history")
     assert response.status_code == 200
     assert response.json() == {"directories": {}}
+
+
+def test_convert_batch_streams_events(client, tmp_path):
+    """POST /preprocess/convert-batch converts unconverted PDFs and streams SSE."""
+    from unittest.mock import MagicMock, patch
+
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    pdf_dir = tmp_path / "pdf_input" / "mydir"
+    pdf_dir.mkdir(parents=True)
+    (pdf_dir / "a.pdf").write_bytes(b"%PDF a")
+    (pdf_dir / "b.pdf").write_bytes(b"%PDF b")
+
+    # b.pdf already converted — should be skipped
+    prep_dir = tmp_path / "preprocessed" / "mydir"
+    prep_dir.mkdir(parents=True)
+    (prep_dir / "b.md").write_text("existing")
+
+    mock_svc = MagicMock()
+    mock_svc.scan_directory.return_value = [
+        {"filename": "a.pdf", "processed": False},
+        {"filename": "b.pdf", "processed": True},
+    ]
+    mock_svc.convert_single_pdf.return_value = {"filename": "a.pdf"}
+
+    with patch("app.api.preprocess.get_preprocessing_service", return_value=mock_svc):
+        resp = client.post(
+            "/preprocess/convert-batch",
+            json={"dir_name": "mydir", "backend": "pymupdf",
+                  "metadata_backend": "openalex", "document_type": "default"},
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    statuses = [(e.get("filename"), e.get("status")) for e in events if "filename" in e]
+    assert ("a.pdf", "converting") in statuses
+    assert ("a.pdf", "done") in statuses
+    assert ("b.pdf", "skipped") in statuses
+    done_event = next(e for e in events if e.get("done") is True)
+    assert done_event["converted"] == 1
+    assert done_event["skipped"] == 1
+    assert done_event["errors"] == 0
+
+
+def test_convert_batch_handles_conversion_error(client, tmp_path):
+    """Conversion errors are non-fatal — error event emitted, processing continues."""
+    from unittest.mock import MagicMock, patch
+
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    pdf_dir = tmp_path / "pdf_input" / "mydir"
+    pdf_dir.mkdir(parents=True)
+    (pdf_dir / "bad.pdf").write_bytes(b"%PDF bad")
+
+    mock_svc = MagicMock()
+    mock_svc.scan_directory.return_value = [{"filename": "bad.pdf", "processed": False}]
+    mock_svc.convert_single_pdf.side_effect = RuntimeError("corrupt pdf")
+
+    with patch("app.api.preprocess.get_preprocessing_service", return_value=mock_svc):
+        resp = client.post(
+            "/preprocess/convert-batch",
+            json={"dir_name": "mydir", "backend": "pymupdf",
+                  "metadata_backend": "openalex", "document_type": "default"},
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    error_events = [e for e in events if e.get("status") == "error"]
+    assert error_events
+    assert "corrupt pdf" in error_events[0]["message"]
+    done_event = next(e for e in events if e.get("done") is True)
+    assert done_event["errors"] == 1
+    assert done_event["converted"] == 0

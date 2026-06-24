@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import load_config, settings
@@ -33,6 +33,13 @@ class ConvertRequest(BaseModel):
         "openalex"  # "openalex", "crossref", "semantic_scholar", "none"
     )
     document_type: str = "default"  # matches a vlm_extract/vlm_metadata YAML name
+
+
+class ConvertBatchRequest(BaseModel):
+    dir_name: str
+    backend: str = "pymupdf"
+    metadata_backend: str = "openalex"
+    document_type: str = "default"
 
 
 def get_preprocessing_service() -> PreprocessingService:
@@ -76,6 +83,52 @@ def convert_pdf(request: ConvertRequest):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")
+
+
+@router.post("/preprocess/convert-batch")
+def convert_batch(request: ConvertBatchRequest):
+    """Convert all unconverted PDFs in a directory. Streams SSE progress."""
+    dir_name = _safe(request.dir_name)
+    service = get_preprocessing_service()
+    try:
+        files = service.scan_directory(dir_name)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    to_convert = [f for f in files if not f["processed"]]
+    already_done = [f for f in files if f["processed"]]
+    total = len(files)
+
+    def generate():
+        converted = 0
+        errors = 0
+        idx = 0
+
+        for f in already_done:
+            idx += 1
+            yield f"data: {json.dumps({'filename': f['filename'], 'status': 'skipped', 'index': idx, 'total': total})}\n\n"
+
+        for f in to_convert:
+            idx += 1
+            fn = f["filename"]
+            yield f"data: {json.dumps({'filename': fn, 'status': 'converting', 'index': idx, 'total': total})}\n\n"
+            try:
+                service.convert_single_pdf(
+                    dir_name,
+                    fn,
+                    backend=request.backend,
+                    metadata_backend=request.metadata_backend,
+                    document_type=request.document_type,
+                )
+                converted += 1
+                yield f"data: {json.dumps({'filename': fn, 'status': 'done', 'index': idx, 'total': total})}\n\n"
+            except Exception as e:
+                errors += 1
+                yield f"data: {json.dumps({'filename': fn, 'status': 'error', 'index': idx, 'total': total, 'message': str(e)})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'converted': converted, 'skipped': len(already_done), 'errors': errors})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/preprocess/extract-assets")
