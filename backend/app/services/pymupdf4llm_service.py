@@ -52,7 +52,7 @@ class PyMuPDF4LLMService:
         # First # heading = title
         for i, line in enumerate(lines):
             stripped = line.strip()
-            if stripped.startswith("# ") and not stripped.startswith("## "):
+            if stripped.startswith("# "):
                 title = stripped.lstrip("# ").strip()
                 title_idx = i
                 break
