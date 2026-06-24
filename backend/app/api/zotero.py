@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from app.core.config import load_config, settings
 from app.services import zotero_service
 from app.services.api_keys_service import ApiKeysService
+from app.services.preprocessing_service import PreprocessingService
+from app.services.prompt_service import get_prompt_service
 from app.services.zotero_service import normalize_metadata
 
 router = APIRouter()
@@ -57,6 +59,10 @@ class ImportRequest(BaseModel):
     collection_key: str
     dir_name: str
     item_keys: list[str]
+    auto_convert: bool = False
+    pdf_backend: str = "pymupdf"
+    metadata_backend: str = "openalex"
+    document_type: str = "default"
 
 
 @router.post("/zotero/import")
@@ -86,6 +92,12 @@ def import_from_zotero(request: ImportRequest):
     local_storage = config.get("zotero_local_storage", "").strip()
 
     def generate():
+        prep_svc = (
+            PreprocessingService(prompt_service=get_prompt_service())
+            if request.auto_convert
+            else None
+        )
+
         for item in selected:
             attachment = item.get("attachment") or {}
             filename = attachment.get("filename", "attachment.pdf")
@@ -125,6 +137,22 @@ def import_from_zotero(request: ImportRequest):
                     json.dumps(normalize_metadata(item), indent=2), encoding="utf-8"
                 )
                 yield f"data: {json.dumps({'filename': filename, 'status': 'done'})}\n\n"
+
+                # Auto-convert to markdown if requested
+                if prep_svc is not None:
+                    yield f"data: {json.dumps({'filename': filename, 'status': 'converting'})}\n\n"
+                    try:
+                        prep_svc.convert_single_pdf(
+                            dir_name,
+                            filename,
+                            backend=request.pdf_backend,
+                            metadata_backend=request.metadata_backend,
+                            document_type=request.document_type,
+                        )
+                        yield f"data: {json.dumps({'filename': filename, 'status': 'converted'})}\n\n"
+                    except Exception as conv_err:
+                        yield f"data: {json.dumps({'filename': filename, 'status': 'convert_error', 'message': str(conv_err)})}\n\n"
+
             except Exception as e:
                 yield f"data: {json.dumps({'filename': filename, 'status': 'error', 'message': str(e)})}\n\n"
 

@@ -278,3 +278,120 @@ def test_import_errors_when_cloud_404_and_no_local_storage(client, tmp_path):
     error_events = [e for e in events if e.get("status") == "error"]
     assert error_events, "Expected an error event"
     assert "not found" in error_events[0]["message"].lower()
+
+
+def test_import_with_auto_convert_emits_convert_events(client, tmp_path):
+    """When auto_convert=True, convert events are emitted after each download."""
+    from unittest.mock import MagicMock, patch
+
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    mock_svc = MagicMock()
+    mock_svc.convert_single_pdf.return_value = {"filename": "test.pdf"}
+
+    with (
+        patch("app.api.zotero._api_keys", _mock_keys()),
+        patch("app.api.zotero._get_user_id", return_value="12345"),
+        patch("app.services.zotero_service.list_items") as mock_items,
+        patch("app.services.zotero_service.download_pdf", return_value=b"%PDF fake"),
+        patch("app.api.zotero.load_config", return_value=_EMPTY_CONFIG),
+        patch("app.api.zotero.PreprocessingService", return_value=mock_svc),
+    ):
+        mock_items.return_value = [
+            {
+                "item_key": "I1",
+                "title": "Test",
+                "authors": ["Alice"],
+                "year": 2023,
+                "doi": None,
+                "journal": None,
+                "abstract": None,
+                "attachment": {
+                    "type": "cloud",
+                    "filename": "test.pdf",
+                    "attachment_key": "A1",
+                },
+            }
+        ]
+        resp = client.post(
+            "/zotero/import",
+            json={
+                "collection_key": "C1",
+                "dir_name": "mycol",
+                "item_keys": ["I1"],
+                "auto_convert": True,
+                "pdf_backend": "pymupdf",
+                "metadata_backend": "openalex",
+                "document_type": "default",
+            },
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    statuses = {e.get("filename"): e.get("status") for e in events if "filename" in e}
+    assert statuses.get("test.pdf") == "converted"
+    mock_svc.convert_single_pdf.assert_called_once_with(
+        "mycol_zt", "test.pdf",
+        backend="pymupdf",
+        metadata_backend="openalex",
+        document_type="default",
+    )
+
+
+def test_import_auto_convert_error_is_nonfatal(client, tmp_path):
+    """A conversion failure emits convert_error but does not stop remaining downloads."""
+    from unittest.mock import MagicMock, patch
+
+    settings.pdf_input_dir = str(tmp_path / "pdf_input")
+    settings.preprocessed_dir = str(tmp_path / "preprocessed")
+
+    mock_svc = MagicMock()
+    mock_svc.convert_single_pdf.side_effect = RuntimeError("bad pdf")
+
+    with (
+        patch("app.api.zotero._api_keys", _mock_keys()),
+        patch("app.api.zotero._get_user_id", return_value="12345"),
+        patch("app.services.zotero_service.list_items") as mock_items,
+        patch("app.services.zotero_service.download_pdf", return_value=b"%PDF fake"),
+        patch("app.api.zotero.load_config", return_value=_EMPTY_CONFIG),
+        patch("app.api.zotero.PreprocessingService", return_value=mock_svc),
+    ):
+        mock_items.return_value = [
+            {
+                "item_key": "I1",
+                "title": "Test",
+                "authors": [],
+                "year": None,
+                "doi": None,
+                "journal": None,
+                "abstract": None,
+                "attachment": {
+                    "type": "cloud",
+                    "filename": "test.pdf",
+                    "attachment_key": "A1",
+                },
+            }
+        ]
+        resp = client.post(
+            "/zotero/import",
+            json={
+                "collection_key": "C1",
+                "dir_name": "mycol",
+                "item_keys": ["I1"],
+                "auto_convert": True,
+            },
+        )
+
+    assert resp.status_code == 200
+    events = [
+        json.loads(line[6:])
+        for line in resp.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert any(e.get("status") == "convert_error" for e in events)
+    assert any(e.get("done") for e in events)
