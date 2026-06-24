@@ -41,6 +41,7 @@ const UploadPanel = defineComponent({
         const reader  = resp.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        let streamDone = false
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -51,14 +52,16 @@ const UploadPanel = defineComponent({
             if (!line.startsWith('data: ')) continue
             let data
             try { data = JSON.parse(line.slice(6)) } catch { continue }
-            if (data.done) { convertDone.value = true; break }
+            if (data.done) { convertDone.value = true; streamDone = true; break }
             if (data.filename) convertEvents.value = [...convertEvents.value, data]
           }
+          if (streamDone) break
         }
       } catch (e) {
         error.value = `Conversion error: ${e.message}`
       } finally {
         converting.value = false
+        if (!error.value) convertDone.value = true
       }
     }
 
@@ -78,7 +81,9 @@ const UploadPanel = defineComponent({
         if (autoConvert.value) {
           await runConvertBatch(dir)
         }
-        emit('files-uploaded', dir)
+        if (!error.value) {
+          emit('files-uploaded', dir)
+        }
       } catch (e) { error.value = e.message }
       finally { loading.value = false }
     }
@@ -151,7 +156,7 @@ const UploadPanel = defineComponent({
       <div class="text-muted">Go to the <strong>Collections</strong> tab to create a collection from this folder.</div>
     </div>
     <button class="btn btn-secondary btn-sm" style="margin-top:8px"
-            @click="convertDone = false; convertEvents = []">Upload more</button>
+            @click="convertDone.value = false; convertEvents.value = []">Upload more</button>
   </template>
 </div>
 `,
