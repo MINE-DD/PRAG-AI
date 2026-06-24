@@ -7,7 +7,6 @@ from app.api import (
     health,
     ingest,
     papers,
-    pipeline,
     preprocess,
     prompts,
     rag,
@@ -47,7 +46,6 @@ app.include_router(preprocess.router, tags=["preprocess"])
 app.include_router(ingest.router, tags=["ingest"])
 app.include_router(settings_api.router, tags=["settings"])
 app.include_router(zotero.router, tags=["zotero"])
-app.include_router(pipeline.router, tags=["pipeline"])
 app.include_router(prompts.router, tags=["prompts"])
 
 
