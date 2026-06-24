@@ -333,9 +333,13 @@ def test_import_with_auto_convert_emits_convert_events(client, tmp_path):
         for line in resp.text.splitlines()
         if line.startswith("data: ")
     ]
-    assert any(e.get("filename") == "test.pdf" and e.get("status") == "converted" for e in events)
+    assert any(
+        e.get("filename") == "test.pdf" and e.get("status") == "converted"
+        for e in events
+    )
     mock_svc.convert_single_pdf.assert_called_once_with(
-        "mycol_zt", "test.pdf",
+        "mycol_zt",
+        "test.pdf",
         backend="pymupdf",
         metadata_backend="openalex",
         document_type="default",

@@ -167,8 +167,12 @@ def test_convert_batch_streams_events(client, tmp_path):
     with patch("app.api.preprocess.get_preprocessing_service", return_value=mock_svc):
         resp = client.post(
             "/preprocess/convert-batch",
-            json={"dir_name": "mydir", "backend": "pymupdf",
-                  "metadata_backend": "openalex", "document_type": "default"},
+            json={
+                "dir_name": "mydir",
+                "backend": "pymupdf",
+                "metadata_backend": "openalex",
+                "document_type": "default",
+            },
         )
 
     assert resp.status_code == 200
@@ -203,8 +207,12 @@ def test_convert_batch_handles_conversion_error(client, tmp_path):
     with patch("app.api.preprocess.get_preprocessing_service", return_value=mock_svc):
         resp = client.post(
             "/preprocess/convert-batch",
-            json={"dir_name": "mydir", "backend": "pymupdf",
-                  "metadata_backend": "openalex", "document_type": "default"},
+            json={
+                "dir_name": "mydir",
+                "backend": "pymupdf",
+                "metadata_backend": "openalex",
+                "document_type": "default",
+            },
         )
 
     assert resp.status_code == 200

@@ -11,7 +11,7 @@ models:
     num_context_tokens: 20000
     temperature: 0.25
     think_tokens_buffer: 5000
-zotero_local_storage: "/zotero_storage"
+zotero_local_storage: /zotero_storage
 chunking:
   size: 500
   overlap: 100
