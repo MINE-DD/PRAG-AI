@@ -144,8 +144,6 @@ def test_get_history_empty(client):
 
 def test_convert_batch_streams_events(client, tmp_path):
     """POST /preprocess/convert-batch converts unconverted PDFs and streams SSE."""
-    from unittest.mock import MagicMock, patch
-
     settings.pdf_input_dir = str(tmp_path / "pdf_input")
     settings.preprocessed_dir = str(tmp_path / "preprocessed")
 
@@ -191,8 +189,6 @@ def test_convert_batch_streams_events(client, tmp_path):
 
 def test_convert_batch_handles_conversion_error(client, tmp_path):
     """Conversion errors are non-fatal — error event emitted, processing continues."""
-    from unittest.mock import MagicMock, patch
-
     settings.pdf_input_dir = str(tmp_path / "pdf_input")
     settings.preprocessed_dir = str(tmp_path / "preprocessed")
 

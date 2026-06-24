@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -11,6 +12,7 @@ from app.services.preprocessing_service import PreprocessingService
 from app.services.prompt_service import get_prompt_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _safe(name: str) -> str:
@@ -124,6 +126,7 @@ def convert_batch(request: ConvertBatchRequest):
                 yield f"data: {json.dumps({'filename': fn, 'status': 'done', 'index': idx, 'total': total})}\n\n"
             except Exception as e:
                 errors += 1
+                logger.exception("Conversion failed for %s in %s", fn, dir_name)
                 yield f"data: {json.dumps({'filename': fn, 'status': 'error', 'index': idx, 'total': total, 'message': str(e)})}\n\n"
 
         yield f"data: {json.dumps({'done': True, 'converted': converted, 'skipped': len(already_done), 'errors': errors})}\n\n"
