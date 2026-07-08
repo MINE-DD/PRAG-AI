@@ -22,6 +22,7 @@ jobs:
             --verbose
             --no-progress
             --exclude-mail
+            --exclude 'localhost'
             'README.md'
             'docs/**/*.md'
           fail: true

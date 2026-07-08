@@ -69,7 +69,7 @@ Paper A uses self-attention while Paper B employs cross-attention.
 
 ## Key Findings
 Both demonstrate improved performance on NLP tasks."""
-        mock_instance.generate = Mock(return_value=comparison_text)
+        mock_instance.generate = Mock(return_value=(comparison_text, {}))
         mock.return_value = mock_instance
         yield mock_instance
 

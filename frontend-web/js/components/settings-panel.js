@@ -17,16 +17,21 @@ const SettingsPanel = defineComponent({
       embeddingModel: '',
       embeddingContextLength: null,
       embeddingModelWarning: null,
-      llmModel:       '',
-      llmProvider:    'local',
+      llmModel:             '',
+      llmProvider:          'local',
+      llmMaxCtx:            null,
+      llmNumContextTokens:  20000,
+      llmTemperature:       0.3,
+      topK:           10,
       googleModel:    'gemini-2.5-flash',
       googleKey:      '',
       hasGoogleKey:   false,
       clearGoogleKey: false,
-      zoteroUserId:   '',
-      zoteroKey:      '',
-      hasZoteroKey:   false,
-      clearZoteroKey: false,
+      zoteroUserId:        '',
+      zoteroKey:           '',
+      hasZoteroKey:        false,
+      clearZoteroKey:      false,
+      zoteroLocalStorage:  '',
     })
 
     const status     = ref('unknown')
@@ -98,16 +103,22 @@ const SettingsPanel = defineComponent({
         form.embeddingContextLength = cfg.embedding_context_length ?? null
         form.embeddingModelWarning  = null
         fetchEmbeddingInfo(cfg.embedding_model)
-        form.llmModel        = cfg.llm_model
-        form.llmProvider     = cfg.llm_provider || 'local'
+        form.llmModel             = cfg.llm_model
+        form.llmProvider          = cfg.llm_provider || 'local'
+        form.llmMaxCtx            = cfg.llm_max_ctx ?? null
+        form.llmNumContextTokens  = cfg.llm_num_context_tokens ?? 20000
+        form.llmTemperature       = cfg.llm_temperature ?? 0.3
+        form.topK                 = cfg.top_k ?? 10
+        fetchLlmInfo(cfg.llm_model)
         form.googleModel     = cfg.google_model || googleModels.value[0]
         form.hasGoogleKey    = !!cfg.has_google_key
         form.googleKey       = ''
         form.clearGoogleKey  = false
-        form.zoteroUserId    = cfg.zotero_user_id || ''
-        form.hasZoteroKey    = !!cfg.has_zotero_key
-        form.zoteroKey       = ''
-        form.clearZoteroKey  = false
+        form.zoteroUserId        = cfg.zotero_user_id || ''
+        form.hasZoteroKey        = !!cfg.has_zotero_key
+        form.zoteroKey           = ''
+        form.clearZoteroKey      = false
+        form.zoteroLocalStorage  = cfg.zotero_local_storage || ''
       } catch (e) {
         modelError.value = e.message
         status.value     = 'error'
@@ -117,6 +128,29 @@ const SettingsPanel = defineComponent({
     }
 
     watch(() => props.visible, v => { if (v) load() })
+
+    async function fetchLlmInfo(model) {
+      if (!model) return
+      try {
+        const res = await api.get(`/ollama/models/${encodeURIComponent(model)}/context-length`)
+        form.llmMaxCtx = res.context_length ?? null
+        // Clamp working budget to new model's ceiling; reset to 20000 if model just changed
+        if (form.llmMaxCtx) {
+          if (form.llmNumContextTokens > form.llmMaxCtx) {
+            form.llmNumContextTokens = form.llmMaxCtx
+          } else if (!form.llmNumContextTokens) {
+            form.llmNumContextTokens = Math.min(20000, form.llmMaxCtx)
+          }
+        }
+      } catch {
+        form.llmMaxCtx = null
+      }
+    }
+
+    function clampNumContextTokens() {
+      if (form.llmMaxCtx && form.llmNumContextTokens > form.llmMaxCtx)
+        form.llmNumContextTokens = form.llmMaxCtx
+    }
 
     async function fetchEmbeddingInfo(model) {
       if (!model) return
@@ -207,6 +241,13 @@ const SettingsPanel = defineComponent({
         if (form.embeddingModel) body.embedding_model = form.embeddingModel
         if (form.llmModel)       body.llm_model       = form.llmModel
         body.llm_provider = form.llmProvider
+        if (form.llmProvider === 'local' && form.llmNumContextTokens) {
+          const ceiling = form.llmMaxCtx || Infinity
+          body.num_context_tokens = Math.min(form.llmNumContextTokens, ceiling)
+        }
+        body.temperature = form.llmTemperature
+        body.top_k = form.topK
+
         if (form.llmProvider === 'google') {
           body.google_model = form.googleModel
           if (form.clearGoogleKey)        body.clear_google_key = true
@@ -219,6 +260,7 @@ const SettingsPanel = defineComponent({
           if (form.zoteroUserId.trim()) body.zotero_user_id = form.zoteroUserId.trim()
           if (form.zoteroKey.trim())    body.zotero_key = form.zoteroKey.trim()
         }
+        body.zotero_local_storage = form.zoteroLocalStorage.trim()
         await api.post('/settings', body)
         emit('update:visible', false)
         emit('saved')
@@ -235,7 +277,7 @@ const SettingsPanel = defineComponent({
       googleModels, recommendedEmbeddingModels, recommendedLlmModels,
       defaultEmbeddingModel, defaultLlmModel, defaultsPulled,
       pullModel, pulling, pullingDefaults, pullProgress, pullStatus, pullError, pullDone,
-      fetchEmbeddingInfo, pullOllamaModel, pullDefaults, save, close,
+      fetchEmbeddingInfo, fetchLlmInfo, clampNumContextTokens, pullOllamaModel, pullDefaults, save, close,
     }
   },
 
@@ -369,11 +411,23 @@ const SettingsPanel = defineComponent({
         </div>
         <div class="form-group">
           <label>Generation (LLM) model</label>
-          <select v-model="form.llmModel">
+          <select v-model="form.llmModel" @change="fetchLlmInfo(form.llmModel)">
             <option v-for="m in llmModels" :key="m.name" :value="m.name">
               {{ m.name }}{{ m.capabilities.length ? ' (' + m.capabilities.join(', ') + ')' : '' }}
             </option>
           </select>
+          <div v-if="form.llmMaxCtx" class="text-sm text-muted" style="margin-top:3px">
+            Model max: {{ form.llmMaxCtx.toLocaleString() }} tokens
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Prompt context tokens</label>
+          <input type="number" v-model.number="form.llmNumContextTokens"
+                 min="512" :max="form.llmMaxCtx || 131072" step="1000"
+                 @change="clampNumContextTokens()" />
+          <div class="text-sm text-muted" style="margin-top:3px">
+            How much context window to allocate per request. Larger uses more memory. Cannot exceed model max.
+          </div>
         </div>
       </template>
       <div v-if="defaultsPulled" style="margin-top:8px">
@@ -410,6 +464,13 @@ const SettingsPanel = defineComponent({
         <div v-if="pullDone" style="font-size:12px;color:var(--success,#22c55e);margin-top:6px">Model pulled successfully. Reload models to see it.</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:8px">
           For other models visit <a href="https://ollama.com/library" target="_blank" rel="noopener" style="color:var(--accent)">ollama.com/library</a>
+        </div>
+        <div class="form-group" style="margin-top:12px">
+          <label>Temperature: {{ form.llmTemperature.toFixed(2) }}</label>
+          <input type="range" v-model.number="form.llmTemperature" min="0" max="2" step="0.05" style="width:100%;margin-top:6px" />
+          <div class="text-sm text-muted" style="margin-top:3px">
+            0 = deterministic · 0.3–0.7 = focused · 1+ = creative · 2 = chaotic
+          </div>
         </div>
       </div>
     </template>
@@ -459,6 +520,31 @@ const SettingsPanel = defineComponent({
                placeholder="Paste API key" autocomplete="off" />
       </div>
     </template>
+
+    <div class="form-group" style="margin-top:12px">
+      <label>Local Zotero storage path
+        <span style="font-size:11px;color:var(--text-muted)"> (inside Docker container)</span>
+      </label>
+      <input v-model="form.zoteroLocalStorage" class="form-control"
+             placeholder="/zotero_storage" />
+      <div class="text-sm text-muted" style="margin-top:3px">
+        Mount your <code>~/Zotero/storage</code> folder in docker-compose and set the container path here.
+        PDFs are read from <code>{path}/{attachmentKey}/{filename}</code>.
+      </div>
+    </div>
+
+
+    <hr class="divider" />
+
+    <!-- 5. Retrieval -->
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px">Retrieval</div>
+    <div class="form-group">
+      <label>Default Top-K chunks: {{ form.topK }}</label>
+      <input type="range" v-model.number="form.topK" min="1" max="50" style="width:100%;margin-top:6px" />
+      <div class="text-sm text-muted" style="margin-top:3px">
+        Number of passages retrieved per query. Can be adjusted per-query in the RAG tab.
+      </div>
+    </div>
 
     <div class="modal-footer">
       <button class="btn btn-secondary" @click="close">Cancel</button>

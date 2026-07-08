@@ -125,7 +125,7 @@ def summarize_papers(
         raise HTTPException(status_code=422, detail=str(e))
 
     # Generate summary using LLM
-    summary = llm_service.generate(
+    summary, _ = llm_service.generate(
         prompt=rendered.user,
         system=rendered.system,
         temperature=0.3,
@@ -166,9 +166,10 @@ def summarize_single_paper(
     paper_meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
     config = load_config("config.yaml")
-    max_allowed = config.get("models", {}).get("max_allowed_tokens", 8192)
+    llm_cfg = config.get("models", {}).get("llm", {})
+    max_allowed = llm_cfg.get("num_context_tokens") or llm_cfg.get("max_allowed_tokens")
     # Cap at 6000 tokens worth of chars — local models choke on larger contexts
-    practical_limit = max(int(max_allowed * 0.6), 6000)
+    practical_limit = max(int(max_allowed * 0.6), 6000) if max_allowed else 6000
     char_budget = int(practical_limit * 4 * 0.8)
 
     context: str | None = None
@@ -190,7 +191,7 @@ def summarize_single_paper(
         context = "\n\n".join(c.payload["chunk_text"] for c in chunks)[:char_budget]
 
     rendered = prompt_service.render("summarize", "academic_paper", context=context)
-    summary = llm_service.generate(
+    summary, _ = llm_service.generate(
         prompt=rendered.user,
         system=rendered.system,
         temperature=0.3,
@@ -295,7 +296,7 @@ def summarize_single_paper_stream(
                     context=body[:section_char_limit],
                     format_instruction=format_instruction,
                 )
-                content = llm_service.generate(
+                content, _ = llm_service.generate(
                     prompt=rendered.user,
                     system=rendered.system,
                     temperature=0.3,
@@ -339,7 +340,7 @@ def generate_structured_abstract(
     rendered = prompt_service.render(
         "summarize", "structured_abstract", summaries=_summaries_to_text(body.summaries)
     )
-    content = llm_service.generate(
+    content, _ = llm_service.generate(
         prompt=rendered.user, system=rendered.system, temperature=0.3
     )
     return TextResponse(content=content)
@@ -361,7 +362,7 @@ def generate_explicit_claims(
     rendered = prompt_service.render(
         "summarize", "explicit_claims", summaries=_summaries_to_text(body.summaries)
     )
-    content = llm_service.generate(
+    content, _ = llm_service.generate(
         prompt=rendered.user, system=rendered.system, temperature=0.3
     )
     return TextResponse(content=content)
@@ -383,7 +384,7 @@ def generate_assess_claims(
     rendered = prompt_service.render(
         "summarize", "assess_claims", summaries=_summaries_to_text(body.summaries)
     )
-    content = llm_service.generate(
+    content, _ = llm_service.generate(
         prompt=rendered.user, system=rendered.system, temperature=0.3
     )
     return TextResponse(content=content)

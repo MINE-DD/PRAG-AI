@@ -42,7 +42,7 @@ def test_upsert_chunks(qdrant_service):
             unique_id="Test2024",
             chunk_text="Test content",
             chunk_type=ChunkType.BODY,
-            page_number=1,
+            page_number="1",
         )
     ]
     vectors = [[0.1] * 768]
@@ -200,7 +200,7 @@ def test_upsert_chunks_with_sparse_vectors(qdrant_service):
             unique_id="U1",
             chunk_text="text",
             chunk_type=ChunkType.BODY,
-            page_number=1,
+            page_number="1",
         )
     ]
     dense = [[0.1] * 768]

@@ -50,5 +50,5 @@ class Chunk(BaseModel):
     unique_id: str = Field(..., description="Human-readable citation ID")
     chunk_text: str = Field(..., description="Chunk content")
     chunk_type: ChunkType = Field(..., description="Type of chunk")
-    page_number: int = Field(..., description="Source page number")
+    page_number: str = Field(..., description="Source page range (e.g. '3' or '3-4')")
     metadata: dict | None = Field(None, description="Additional metadata")

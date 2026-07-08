@@ -14,8 +14,10 @@ class RAGRequest(BaseModel):
     include_citations: bool = Field(
         default=False, description="Include formatted citations"
     )
-    max_tokens: int = Field(
-        default=500, ge=50, le=4000, description="Desired response length in tokens"
+    max_generated_tokens: int = Field(
+        default=2000,
+        ge=50,
+        description="Maximum tokens the model may generate in its answer",
     )
     chat_history: list[dict] = Field(
         default_factory=list, description="Previous messages"
@@ -27,6 +29,16 @@ class RAGRequest(BaseModel):
     exclude_chunk_types: list[str] = Field(
         default_factory=lambda: ["references", "acknowledgements", "appendix"],
         description="Chunk types to exclude from retrieval",
+    )
+    temperature: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature (overrides config for this query)",
+    )
+    think: bool = Field(
+        default=False,
+        description="Enable thinking mode (adds think_tokens_buffer to generation budget)",
     )
 
 

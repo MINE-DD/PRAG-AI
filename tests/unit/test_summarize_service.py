@@ -243,7 +243,7 @@ def stream_client(stream_data_dir, stream_preprocessed_dir):
         mock_qdrant_cls.return_value = mock_qdrant
 
         mock_llm_inst = Mock()
-        mock_llm_inst.generate.return_value = "Generated summary."
+        mock_llm_inst.generate.return_value = ("Generated summary.", {})
         mock_llm.return_value = mock_llm_inst
 
         yield TestClient(app), mock_llm_inst
@@ -449,7 +449,7 @@ def test_stream_rag_fallback_when_no_markdown(stream_data_dir, stream_preprocess
         mock_qdrant_cls.return_value = mock_qdrant
 
         mock_llm_inst = Mock()
-        mock_llm_inst.generate.return_value = "Generated from chunk."
+        mock_llm_inst.generate.return_value = ("Generated from chunk.", {})
         mock_llm.return_value = mock_llm_inst
 
         client = TestClient(app)

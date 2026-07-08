@@ -112,7 +112,7 @@ def test_get_settings_includes_default_model_fields(client, tmp_path):
     assert data["default_embedder_model"] == "nomic-embed-text"
     assert data["default_llm_model"] == "gemma3:1b"
     assert data["embedding_context_length"] == 512
-    assert data["llm_max_allowed_tokens"] == 8192
+    assert data["llm_max_ctx"] == 8192
 
 
 def test_get_settings_default_model_falls_back_to_active(client, tmp_path):
@@ -159,7 +159,7 @@ def test_get_model_context_length_generative_model(client):
     with patch("app.api.settings.OllamaService") as mock_cls:
         mock_svc = Mock()
         mock_svc.client.show.return_value = Mock(capabilities=["completion"])
-        mock_svc.get_embedding_context_length.return_value = 4096
+        mock_svc.get_llm_context_length.return_value = 4096
         mock_cls.return_value = mock_svc
         resp = client.get("/ollama/models/gemma3:1b/context-length")
     assert resp.status_code == 200
@@ -174,7 +174,7 @@ def test_get_model_context_length_ollama_unreachable(client):
 
 
 # ---------------------------------------------------------------------------
-# _fetch_embedding_max_tokens / _fetch_llm_max_tokens
+# _fetch_embedding_max_tokens / _fetch_llm_context_length
 # ---------------------------------------------------------------------------
 
 
@@ -197,23 +197,21 @@ def test_fetch_embedding_max_tokens_fallback():
 
 
 def test_fetch_llm_max_tokens_success():
-    from app.api.settings import _fetch_llm_max_tokens
+    from app.api.settings import _fetch_llm_context_length
 
-    mock_info = Mock()
-    mock_info.modelinfo = {"llama.context_length": 4096}
     with patch("app.api.settings.OllamaService") as mock_cls:
         mock_svc = Mock()
-        mock_svc.client.show.return_value = mock_info
+        mock_svc.get_llm_context_length.return_value = 4096
         mock_cls.return_value = mock_svc
-        assert _fetch_llm_max_tokens("llama3.2") == 4096
+        assert _fetch_llm_context_length("llama3.2") == 4096
 
 
 def test_fetch_llm_max_tokens_fallback():
-    from app.api.settings import _fetch_llm_max_tokens
+    from app.api.settings import _fetch_llm_context_length
 
     with patch("app.api.settings.OllamaService") as mock_cls:
         mock_cls.side_effect = Exception("timeout")
-        assert _fetch_llm_max_tokens("llama3.2") == 8192
+        assert _fetch_llm_context_length("llama3.2") is None
 
 
 # ---------------------------------------------------------------------------
@@ -259,12 +257,73 @@ def test_post_settings_google_provider_sets_max_tokens(client, tmp_path):
     assert saved["models"]["llm"]["max_allowed_tokens"] == 100000
 
 
+# ---------------------------------------------------------------------------
+# llm_is_thinking_model — GET /settings
+# ---------------------------------------------------------------------------
+
+
+def test_get_settings_llm_is_thinking_model_true(client):
+    """GET /settings returns llm_is_thinking_model=True for a thinking model."""
+    with patch("app.api.settings._check_is_thinking_model", return_value=True):
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert resp.json()["llm_is_thinking_model"] is True
+
+
+def test_get_settings_llm_is_thinking_model_false(client):
+    """GET /settings returns llm_is_thinking_model=False for a non-thinking model."""
+    with patch("app.api.settings._check_is_thinking_model", return_value=False):
+        resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert resp.json()["llm_is_thinking_model"] is False
+
+
+def test_check_is_thinking_model_true():
+    """Returns True when 'thinking' is in Ollama model capabilities."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        info = Mock()
+        info.capabilities = ["thinking", "completion"]
+        mock_cls.return_value.client.show.return_value = info
+        assert _check_is_thinking_model("gemma4:e2b") is True
+
+
+def test_check_is_thinking_model_false():
+    """Returns False when 'thinking' is not in capabilities."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        info = Mock()
+        info.capabilities = ["completion"]
+        mock_cls.return_value.client.show.return_value = info
+        assert _check_is_thinking_model("llama3") is False
+
+
+def test_check_is_thinking_model_ollama_unreachable():
+    """Returns False gracefully when Ollama cannot be reached."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        mock_cls.return_value.client.show.side_effect = Exception("unreachable")
+        assert _check_is_thinking_model("gemma4:e2b") is False
+
+
+def test_check_is_thinking_model_empty_model():
+    """Returns False immediately for an empty model name (no Ollama call made)."""
+    from app.api.settings import _check_is_thinking_model
+
+    with patch("app.api.settings.OllamaService") as mock_cls:
+        assert _check_is_thinking_model("") is False
+        mock_cls.assert_not_called()
+
+
 def test_post_settings_local_llm_fetches_max_tokens(client, tmp_path):
     config_path = _write_config(tmp_path / "config.yaml")
     with (
         patch("app.api.settings.CONFIG_PATH", config_path),
         patch("app.api.settings._api_keys"),
-        patch("app.api.settings._fetch_llm_max_tokens", return_value=4096),
+        patch("app.api.settings._fetch_llm_context_length", return_value=4096),
     ):
         resp = client.post("/settings", json={"llm_model": "llama3.2"})
     assert resp.status_code == 200

@@ -89,10 +89,9 @@ class DoclingService:
     # ------------------------------------------------------------------
 
     def convert_to_markdown(self, source_path: Path) -> str:
-        """Convert the PDF at *source_path* to a Markdown string."""
+        """Convert the PDF at *source_path* to a Markdown string with <!-- page: N --> markers."""
         result = self.lean_converter.convert(str(source_path))
-        doc = result.document
-        return doc.export_to_markdown()
+        return self._export_with_page_markers(result.document)
 
     def extract_metadata(self, source_path: Path, fallback_title: str) -> dict:
         """Return metadata dict with title, authors, abstract, publication_date."""
@@ -114,9 +113,19 @@ class DoclingService:
         """
         result = self.lean_converter.convert(str(source_path))
         doc = result.document
-        markdown = doc.export_to_markdown()
+        markdown = self._export_with_page_markers(doc)
         metadata = self._extract_paper_metadata(doc, fallback_title)
         return markdown, metadata
+
+    @staticmethod
+    def _export_with_page_markers(doc) -> str:
+        """Export doc to markdown with <!-- page: N --> markers at page boundaries."""
+        parts = []
+        for page_no in sorted(doc.pages.keys()):
+            page_md = doc.export_to_markdown(page_no=page_no).strip()
+            if page_md:
+                parts.append(f"<!-- page: {page_no} -->\n{page_md}")
+        return "\n\n".join(parts)
 
     def convert_full(self, source_path: Path):
         """Run full converter (with image/table generation) and return the Docling document."""

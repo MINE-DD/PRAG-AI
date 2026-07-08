@@ -1,10 +1,8 @@
 import { defineComponent, ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../../backend-client.js'
-import { PipelinePanel } from './pipeline-panel.js'
 
 const ZoteroImportPanel = defineComponent({
   name: 'ZoteroImportPanel',
-  components: { PipelinePanel },
   emits: ['refresh-dirs', 'refresh-collections', 'open-collection', 'close'],
 
   setup(props, { emit }) {
@@ -20,11 +18,7 @@ const ZoteroImportPanel = defineComponent({
     const ztProgress      = reactive({})
     const ztDone          = ref(false)
     const ztImportError   = ref(null)
-    const ztPipelineDir   = ref('')
-
-    const ztCollectionSlug = computed(() =>
-      ztDirName.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    )
+    const autoConvert     = ref(true)
 
     async function load() {
       ztCollections.value   = []
@@ -33,7 +27,6 @@ const ZoteroImportPanel = defineComponent({
       ztItems.value         = []
       ztDone.value          = false
       ztImportError.value   = null
-      ztPipelineDir.value   = ''
       Object.keys(ztChecked).forEach(k => delete ztChecked[k])
       Object.keys(ztProgress).forEach(k => delete ztProgress[k])
       try {
@@ -75,9 +68,13 @@ const ZoteroImportPanel = defineComponent({
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            collection_key: ztSelCollection.value.key,
-            dir_name:       ztDirName.value,
-            item_keys:      selectedKeys,
+            collection_key:   ztSelCollection.value.key,
+            dir_name:         ztDirName.value,
+            item_keys:        selectedKeys,
+            auto_convert:     autoConvert.value,
+            pdf_backend:      localStorage.getItem('prag_pdf_backend')   || 'pymupdf',
+            metadata_backend: localStorage.getItem('prag_meta_backend')  || 'openalex',
+            document_type:    localStorage.getItem('prag_document_type') || 'default',
           }),
         })
         const reader  = resp.body.getReader()
@@ -100,10 +97,7 @@ const ZoteroImportPanel = defineComponent({
         ztImportError.value = e.message
       } finally {
         ztImporting.value = false
-        if (ztDone.value) {
-          emit('refresh-dirs')
-          ztPipelineDir.value = ztDirName.value + '_zt'
-        }
+        if (ztDone.value) emit('refresh-dirs')
       }
     }
 
@@ -113,7 +107,7 @@ const ZoteroImportPanel = defineComponent({
       ztCollections, ztCollError, ztSelCollection,
       ztItems, ztItemsLoading, ztItemsError,
       ztChecked, ztDirName, ztImporting, ztProgress, ztDone, ztImportError,
-      ztPipelineDir, ztCollectionSlug,
+      autoConvert,
       selectCollection, runImport,
     }
   },
@@ -166,10 +160,17 @@ const ZoteroImportPanel = defineComponent({
               <span v-if="ztProgress[item.attachment.filename].status === 'downloading'">
                 <span class="spinner" style="width:10px;height:10px;border-width:2px"></span> Downloading…
               </span>
+              <span v-else-if="ztProgress[item.attachment.filename].status === 'converting'">
+                <span class="spinner" style="width:10px;height:10px;border-width:2px"></span> Converting…
+              </span>
+              <span v-else-if="ztProgress[item.attachment.filename].status === 'converted'"
+                    style="color:var(--success)">✓ Imported &amp; converted</span>
               <span v-else-if="ztProgress[item.attachment.filename].status === 'done'"
                     style="color:var(--success)">✓ Imported</span>
               <span v-else-if="ztProgress[item.attachment.filename].status === 'skipped'"
                     style="color:var(--success)">✓ Skipped (already imported)</span>
+              <span v-else-if="ztProgress[item.attachment.filename].status === 'convert_error'"
+                    style="color:var(--warning)">⚠ Imported, conversion failed: {{ ztProgress[item.attachment.filename].message }}</span>
               <span v-else-if="ztProgress[item.attachment.filename].status === 'error'"
                     style="color:var(--danger)">✗ {{ ztProgress[item.attachment.filename].message }}</span>
             </div>
@@ -184,6 +185,11 @@ const ZoteroImportPanel = defineComponent({
         <input v-model="ztDirName" class="form-control" placeholder="collection_name" />
       </div>
 
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:10px;cursor:pointer">
+        <input type="checkbox" v-model="autoConvert" />
+        Auto-convert to .md
+      </label>
+
       <div v-if="ztImportError" class="alert alert-error" style="margin-bottom:8px">{{ ztImportError }}</div>
 
       <button class="btn btn-primary"
@@ -193,14 +199,10 @@ const ZoteroImportPanel = defineComponent({
         <span v-else>Import selected</span>
       </button>
 
-      <div v-if="ztDone">
-        <div style="color:var(--success);font-size:13px;margin-top:8px;margin-bottom:12px">✓ Import complete.</div>
-        <pipeline-panel v-if="ztPipelineDir"
-                        :dir-name="ztPipelineDir"
-                        :initial-collection-name="ztCollectionSlug"
-                        @refresh-collections="$emit('refresh-collections')"
-                        @open-collection="id => $emit('open-collection', id)"
-                        @dismiss="$emit('close')" />
+      <div v-if="ztDone"
+           style="margin-top:12px;padding:10px;background:#f0fff4;border:1px solid var(--success);border-radius:4px;font-size:13px">
+        <div style="color:var(--success);font-weight:600;margin-bottom:4px">✓ Import complete</div>
+        <div class="text-muted">Go to the <strong>Collections</strong> tab to create a collection from this folder.</div>
       </div>
     </div>
   </div>

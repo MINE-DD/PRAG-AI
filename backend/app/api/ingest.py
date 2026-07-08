@@ -56,11 +56,12 @@ def get_ingestion_service(
 
     # Read the embedding context window from config (written when the model is
     # selected in settings, same pattern as llm.max_allowed_tokens).
-    context_length = config["models"].get("max_embedder_tokens", 512)
+    context_length = config["models"].get("max_embedder_tokens")
     # Reserve 10 tokens for model special tokens ([CLS], [SEP], etc.)
-    safe_max = max(context_length - 10, 50)
-    if effective_mode == "tokens":
-        effective_size = min(effective_size, safe_max)
+    if context_length is not None:
+        safe_max = max(context_length - 10, 50)
+        if effective_mode == "tokens":
+            effective_size = min(effective_size, safe_max)
 
     chunking_service = ChunkingService(
         chunk_size=effective_size,

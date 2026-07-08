@@ -62,10 +62,20 @@ class PreprocessingService:
         for pdf_path in sorted(source_dir.glob("*.pdf")):
             stem = pdf_path.stem
             md_path = output_dir / f"{stem}.md"
+            meta_path = output_dir / f"{stem}_metadata.json"
+            title: str | None = None
+            if meta_path.exists():
+                try:
+                    title = json.loads(meta_path.read_text(encoding="utf-8")).get(
+                        "title"
+                    )
+                except Exception:
+                    pass
             files.append(
                 {
                     "filename": pdf_path.name,
                     "processed": md_path.exists(),
+                    "title": title,
                 }
             )
         return files

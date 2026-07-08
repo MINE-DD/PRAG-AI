@@ -60,6 +60,12 @@ def _get_llm_service(config: dict):
     )
 
 
+def _page_citation_key(unique_id: str, page: str) -> str:
+    """Return 'AuthorTitle2024 p. 3' or 'AuthorTitle2024 pp. 3-4'."""
+    prefix = "pp." if "-" in page else "p."
+    return f"{unique_id} {prefix} {page}"
+
+
 def _clean_context(text: str) -> str:
     """Remove numeric citation indices from text to prevent LLM confusion.
 
@@ -77,6 +83,35 @@ def _clean_context(text: str) -> str:
     # Remove standalone numbers in parentheses followed by punctuation, e.g. (2)., (3),
     text = re.sub(r"\(\d+\)[\.\,]+", "", text)
     return text
+
+
+def _dedupe_consecutive_citations(text: str) -> str:
+    """Collapse runs of the same citation key within a paragraph.
+
+    When the same [Key] appears in back-to-back sentences with no other key
+    between them, all but the first occurrence are dropped. This is a safety
+    net for cases where the LLM still repeats citations despite prompt instructions.
+    """
+    citation_re = re.compile(r"\[([^\]]+)\]")
+
+    def process_paragraph(para: str) -> str:
+        last_key: str | None = None
+        parts: list[str] = []
+        prev_end = 0
+        for m in citation_re.finditer(para):
+            key = m.group(1)
+            between = para[prev_end : m.start()]
+            if key == last_key:
+                parts.append(between.rstrip())
+            else:
+                parts.append(between)
+                parts.append(m.group(0))
+                last_key = key
+            prev_end = m.end()
+        parts.append(para[prev_end:])
+        return "".join(parts)
+
+    return "\n\n".join(process_paragraph(p) for p in text.split("\n\n"))
 
 
 def get_services():
@@ -169,13 +204,19 @@ def rag_query(
 
     # Format results and build citation key map
     results = []
-    # Map paper_id → unique_id (citation key) for all retrieved chunks
-    paper_citation_keys = {}  # paper_id → unique_id
+    paper_citation_keys = {}  # paper_id → unique_id (for metadata loading)
+    chunk_citation_keys: dict[
+        tuple[str, str], str
+    ] = {}  # (paper_id, page) → page-level key
 
     for result in search_results:
         paper_id = result.payload["paper_id"]
         unique_id = result.payload["unique_id"]
+        page_number = str(result.payload["page_number"])
         paper_citation_keys[paper_id] = unique_id
+        chunk_citation_keys[(paper_id, page_number)] = _page_citation_key(
+            unique_id, page_number
+        )
 
         results.append(
             {
@@ -183,7 +224,7 @@ def rag_query(
                 "paper_id": paper_id,
                 "unique_id": unique_id,
                 "chunk_type": result.payload["chunk_type"],
-                "page_number": result.payload["page_number"],
+                "page_number": page_number,
                 "score": result.score,
                 "metadata": result.payload.get("metadata", {}),
             }
@@ -212,20 +253,24 @@ def rag_query(
     # Generate a unified answer from the retrieved chunks using the LLM
     answer = ""
     rendered_prompt: dict = {}
+    usage: dict = {}
+    thinking = None
     if results:
         # Build context: each chunk tagged with its citation key
         context_parts = []
         for r in results:
-            citation_key = r["unique_id"] or r["paper_id"]
+            page_key = _page_citation_key(
+                r["unique_id"] or r["paper_id"], r["page_number"]
+            )
             cleaned_text = _clean_context(r["chunk_text"])
-            context_parts.append(f"--- Source: [{citation_key}] ---\n{cleaned_text}")
+            context_parts.append(f"--- Source: [{page_key}] ---\n{cleaned_text}")
         context = "\n\n".join(context_parts)
 
         # List all valid citation keys for the prompt
-        valid_keys = sorted(set(paper_citation_keys.values()))
+        valid_keys = sorted(set(chunk_citation_keys.values()))
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
-        word_target = rag_request.max_tokens
+        word_target = rag_request.max_generated_tokens
 
         # Auto-select small_llm prompt for edge models when default is requested
         prompt_name = rag_request.prompt_name
@@ -249,15 +294,41 @@ def rag_query(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-        llm_max_tokens = config["models"]["llm"].get("max_allowed_tokens", 512)
-        num_predict = min(rag_request.max_tokens * 3, llm_max_tokens)
-
-        answer = llm_service.generate(
-            prompt=rendered.user,
-            system=rendered.system,
-            temperature=0.3,
-            max_tokens=num_predict,
+        llm_cfg = config["models"]["llm"]
+        # num_context_tokens: user's working budget (local); max_allowed_tokens: Google output cap
+        num_context_tokens = llm_cfg.get("num_context_tokens") or None
+        context_window = num_context_tokens or llm_cfg.get("max_allowed_tokens")
+        num_predict = (
+            min(rag_request.max_generated_tokens, context_window)
+            if context_window
+            else rag_request.max_generated_tokens
         )
+        if rag_request.think:
+            buffer = llm_cfg.get("think_tokens_buffer", 5000)
+            num_predict = num_predict + buffer
+            if context_window:
+                num_predict = min(num_predict, context_window)
+
+        temperature = (
+            rag_request.temperature
+            if rag_request.temperature is not None
+            else llm_cfg.get("temperature", 0.3)
+        )
+
+        generate_kwargs: dict = {
+            "prompt": rendered.user,
+            "system": rendered.system,
+            "temperature": temperature,
+            "max_tokens": num_predict,
+            "num_context_tokens": num_context_tokens,
+        }
+        if llm_cfg.get("type", "local") == "local":
+            generate_kwargs["think"] = rag_request.think
+
+        answer, usage = llm_service.generate(**generate_kwargs)
+        answer = _dedupe_consecutive_citations(answer)
+        usage["temperature"] = temperature
+        thinking = usage.pop("thinking", None)
         rendered_prompt = {
             "system": rendered.system,
             "user": rendered.user,
@@ -271,12 +342,12 @@ def rag_query(
                 "this question. Try broadening your query or selecting different papers."
             )
 
-    # Always build citations for all retrieved papers
+    # Always build citations for all retrieved chunks, keyed by page-level citation key
     citations = {}
-    for paper_id, unique_id in paper_citation_keys.items():
+    for (paper_id, page_number), page_key in chunk_citation_keys.items():
         meta = paper_metadata_map.get(paper_id)
         if meta:
-            citations[unique_id] = {
+            citations[page_key] = {
                 "unique_id": meta.unique_id,
                 "title": meta.title,
                 "authors": meta.authors,
@@ -284,15 +355,18 @@ def rag_query(
                 "apa": citation_service.format_apa(meta),
                 "bibtex": citation_service.format_bibtex(meta),
                 "pdf_url": paper_pdf_url_map.get(paper_id, ""),
+                "page": page_number,
             }
 
     response = {
         "answer": answer,
+        "thinking": thinking,
         "results": results,
         "citations": citations,
         "llm_provider": llm_info["provider"],
         "llm_model": llm_info["model"],
         "rendered_prompt": rendered_prompt,
+        "usage": usage,
     }
 
     return response

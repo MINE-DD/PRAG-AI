@@ -67,15 +67,20 @@ def list_ollama_models():
 def get_model_context_length(model: str):
     """Return context length and capability info for a specific Ollama model."""
     try:
-        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        svc = OllamaService(url=settings.ollama_url, model=model, embedding_model=model)
         info = svc.client.show(model)
-        capabilities = info.capabilities or []
-        context_length = svc.get_embedding_context_length()
+        capabilities = list(info.capabilities or [])
+        is_embedding = "embedding" in capabilities
+        context_length = (
+            svc.get_embedding_context_length()
+            if is_embedding
+            else svc.get_llm_context_length()
+        )
         return {
             "model": model,
             "context_length": context_length,
             "capabilities": capabilities,
-            "is_embedding_model": "embedding" in capabilities,
+            "is_embedding_model": is_embedding,
         }
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Cannot reach Ollama: {e}")
@@ -92,14 +97,17 @@ def get_settings():
 
     return {
         "embedding_model": config["models"]["embedding"],
-        "embedding_context_length": config["models"].get("max_embedder_tokens", 512),
+        "embedding_context_length": config["models"].get("max_embedder_tokens"),
         "default_embedder_model": config["models"].get(
             "default_embedder", config["models"]["embedding"]
         ),
         "default_llm_model": config["models"].get("default_llm", llm_cfg["model"]),
         "llm_model": llm_cfg["model"],
         "llm_provider": llm_cfg.get("type", "local"),
-        "llm_max_allowed_tokens": llm_cfg.get("max_allowed_tokens", 8192),
+        "llm_max_ctx": llm_cfg.get("max_allowed_tokens")
+        or _fetch_llm_context_length(llm_cfg.get("model", "")),
+        "llm_num_context_tokens": llm_cfg.get("num_context_tokens"),
+        "llm_temperature": llm_cfg.get("temperature", 0.3),
         "google_model": llm_cfg.get("google_model", GOOGLE_MODELS[0]),
         "has_google_key": _api_keys.has_key("google"),
         "zotero_user_id": _api_keys.get_key("zotero_user_id") or "",
@@ -107,7 +115,9 @@ def get_settings():
         "chunk_size": config["chunking"]["size"],
         "chunk_overlap": config["chunking"]["overlap"],
         "chunk_mode": config["chunking"].get("mode", "characters"),
-        "top_k": config["retrieval"]["top_k"],
+        "top_k": config["retrieval"].get("top_k", 10),
+        "llm_is_thinking_model": _check_is_thinking_model(llm_cfg.get("model", "")),
+        "zotero_local_storage": config.get("zotero_local_storage", ""),
         "pdf_input_dir": settings.pdf_input_dir,
         "preprocessed_dir": settings.preprocessed_dir,
     }
@@ -161,20 +171,32 @@ class UpdateSettingsRequest(BaseModel):
     chunk_overlap: int | None = None
     chunk_mode: str | None = None
     top_k: int | None = None
+    num_context_tokens: int | None = None
+    temperature: float | None = None
+    zotero_local_storage: str | None = None
 
 
-def _fetch_llm_max_tokens(model: str) -> int:
-    """Return context length for a local Ollama LLM model, fallback 8192."""
+def _check_is_thinking_model(model: str) -> bool:
+    """Return True if the Ollama model advertises 'thinking' in its capabilities."""
+    if not model:
+        return False
     try:
-        svc = OllamaService(url=settings.ollama_url, embedding_model=model)
+        svc = OllamaService(url=settings.ollama_url)
         info = svc.client.show(model)
-        modelinfo = info.modelinfo or {}
-        for key, value in modelinfo.items():
-            if key.endswith(".context_length"):
-                return int(value)
+        return "thinking" in list(info.capabilities or [])
     except Exception:
-        pass
-    return 8192
+        return False
+
+
+def _fetch_llm_context_length(model: str) -> int | None:
+    """Return the model's advertised maximum context window, or None if unavailable."""
+    if not model:
+        return None
+    try:
+        svc = OllamaService(url=settings.ollama_url, model=model)
+        return svc.get_llm_context_length()
+    except Exception:
+        return None
 
 
 def _fetch_embedding_max_tokens(model: str) -> int:
@@ -208,13 +230,34 @@ def update_settings(request: UpdateSettingsRequest):
     if request.google_model is not None:
         config["models"]["llm"]["google_model"] = request.google_model
 
-    # Update max_allowed_tokens whenever the LLM model or provider changes
     provider = request.llm_provider or config["models"]["llm"].get("type", "local")
     if provider == "google":
+        # For Google, max_allowed_tokens is the output token cap; context is managed by the API
         config["models"]["llm"]["max_allowed_tokens"] = 100000
-    elif request.llm_model is not None:
-        config["models"]["llm"]["max_allowed_tokens"] = _fetch_llm_max_tokens(
-            request.llm_model
+        config["models"]["llm"].pop("num_context_tokens", None)
+    else:
+        # max_allowed_tokens = model's true ceiling (read-only reference)
+        # num_context_tokens = user's working budget (editable, clamped to ceiling)
+        if request.llm_model is not None:
+            model_max = _fetch_llm_context_length(request.llm_model)
+            if model_max:
+                config["models"]["llm"]["max_allowed_tokens"] = model_max
+        model_max = config["models"]["llm"].get("max_allowed_tokens")
+
+        if request.num_context_tokens is not None:
+            clamped = (
+                min(request.num_context_tokens, model_max)
+                if model_max
+                else request.num_context_tokens
+            )
+            config["models"]["llm"]["num_context_tokens"] = clamped
+        elif request.llm_model is not None:
+            # Model changed without explicit context budget — reset to sensible default
+            default_ctx = min(20000, model_max) if model_max else 20000
+            config["models"]["llm"]["num_context_tokens"] = default_ctx
+    if request.temperature is not None:
+        config["models"]["llm"]["temperature"] = round(
+            max(0.0, min(2.0, request.temperature)), 2
         )
     if request.chunk_size is not None:
         config["chunking"]["size"] = request.chunk_size
@@ -224,6 +267,8 @@ def update_settings(request: UpdateSettingsRequest):
         config["chunking"]["mode"] = request.chunk_mode
     if request.top_k is not None:
         config["retrieval"]["top_k"] = request.top_k
+    if request.zotero_local_storage is not None:
+        config["zotero_local_storage"] = request.zotero_local_storage.strip()
 
     with open(CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)

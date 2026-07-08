@@ -48,7 +48,7 @@ def mock_qdrant():
             "unique_id": "AuthorTest2024",
             "chunk_text": "This is a relevant chunk about natural language processing.",
             "chunk_type": "body",
-            "page_number": 1,
+            "page_number": "1",
             "metadata": {"chunk_index": 0},
         }
         mock_instance.search = Mock(return_value=[mock_search_result])
@@ -66,7 +66,7 @@ def mock_ollama():
         # Return fake embedding (1024-dimensional)
         mock_instance.generate_embedding = Mock(return_value=[0.1] * 1024)
         mock_instance.generate = Mock(
-            return_value="This is a generated answer about NLP."
+            return_value=("This is a generated answer about NLP.", {})
         )
         mock.return_value = mock_instance
         yield mock_instance
@@ -215,15 +215,20 @@ def test_rag_query_with_citations(client, test_collection):
     assert "citations" in data
     assert isinstance(data["citations"], dict)
 
-    # Citations are keyed by unique_id (citation key)
+    # Citations are keyed by page-level citation key, e.g. "AuthorTitle2024 p. 3"
     if len(data["results"]) > 0:
-        unique_id = data["results"][0]["unique_id"]
-        assert unique_id in data["citations"]
+        r = data["results"][0]
+        unique_id = r["unique_id"]
+        page = r["page_number"]
+        prefix = "pp." if "-" in page else "p."
+        page_key = f"{unique_id} {prefix} {page}"
+        assert page_key in data["citations"]
 
-        citation_info = data["citations"][unique_id]
+        citation_info = data["citations"][page_key]
         assert "apa" in citation_info
         assert "bibtex" in citation_info
         assert "unique_id" in citation_info
+        assert "page" in citation_info
 
 
 def test_rag_citations_include_pdf_url_when_metadata_present(
@@ -275,6 +280,103 @@ def test_rag_small_model_regex_matches_expected_names():
         assert _SMALL_MODEL_RE.search(name), f"Expected match for {name!r}"
     for name in should_not_match:
         assert not _SMALL_MODEL_RE.search(name), f"Expected no match for {name!r}"
+
+
+# ---------------------------------------------------------------------------
+# Thinking mode
+# ---------------------------------------------------------------------------
+
+
+def test_rag_response_always_includes_thinking_field(client, test_collection):
+    """Response always has a 'thinking' key (None when model doesn't think)."""
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "test"},
+    )
+    assert response.status_code == 200
+    assert "thinking" in response.json()
+
+
+def test_rag_thinking_content_from_generate_surfaced_in_response(
+    client, test_collection, mock_ollama
+):
+    """thinking content returned by generate() appears as top-level 'thinking' in response."""
+    mock_ollama.generate.return_value = (
+        "Final answer.",
+        {"thinking": "I reasoned step by step."},
+    )
+    response = client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "test"},
+    )
+    assert response.status_code == 200
+    assert response.json()["thinking"] == "I reasoned step by step."
+
+
+def test_rag_think_true_forwarded_to_generate(client, test_collection, mock_ollama):
+    """think=True in the request is passed through to llm_service.generate()."""
+    client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "test", "think": True},
+    )
+    call_kwargs = mock_ollama.generate.call_args[1]
+    assert call_kwargs.get("think") is True
+
+
+def test_rag_think_false_forwarded_to_generate(client, test_collection, mock_ollama):
+    """think=False (default) is forwarded so the model skips thinking mode."""
+    client.post(
+        f"/collections/{test_collection}/rag",
+        json={"query_text": "test", "think": False},
+    )
+    call_kwargs = mock_ollama.generate.call_args[1]
+    assert call_kwargs.get("think") is False
+
+
+def test_rag_think_true_adds_buffer_to_num_predict(
+    client, test_collection, mock_ollama
+):
+    """think=True adds think_tokens_buffer to max_tokens sent to generate()."""
+    with patch("app.api.rag.load_config") as mock_cfg:
+        mock_cfg.return_value = {
+            "models": {
+                "llm": {
+                    "type": "local",
+                    "model": "gemma4:e2b",
+                    "think_tokens_buffer": 1000,
+                },
+                "embedding": "nomic-embed-text",
+            },
+            "retrieval": {"top_k": 5},
+        }
+        client.post(
+            f"/collections/{test_collection}/rag",
+            json={"query_text": "test", "max_generated_tokens": 200, "think": True},
+        )
+    call_kwargs = mock_ollama.generate.call_args[1]
+    assert call_kwargs["max_tokens"] == 1200  # 200 answer + 1000 buffer
+
+
+def test_rag_think_false_no_buffer_added(client, test_collection, mock_ollama):
+    """think=False leaves max_tokens equal to max_generated_tokens (no buffer)."""
+    with patch("app.api.rag.load_config") as mock_cfg:
+        mock_cfg.return_value = {
+            "models": {
+                "llm": {
+                    "type": "local",
+                    "model": "gemma4:e2b",
+                    "think_tokens_buffer": 1000,
+                },
+                "embedding": "nomic-embed-text",
+            },
+            "retrieval": {"top_k": 5},
+        }
+        client.post(
+            f"/collections/{test_collection}/rag",
+            json={"query_text": "test", "max_generated_tokens": 200, "think": False},
+        )
+    call_kwargs = mock_ollama.generate.call_args[1]
+    assert call_kwargs["max_tokens"] == 200
 
 
 def test_rag_small_model_prompt_fallback_when_not_found(client, test_collection):
