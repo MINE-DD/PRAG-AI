@@ -34,12 +34,12 @@ def test_chunk_creation():
         unique_id="AuthorTest2024",
         chunk_text="This is test content",
         chunk_type=ChunkType.BODY,
-        page_number=1,
+        page_number="1",
     )
 
     assert chunk.paper_id == "test-123"
     assert chunk.chunk_type == ChunkType.BODY
-    assert chunk.page_number == 1
+    assert chunk.page_number == "1"
 
 
 def test_chunk_type_enum():

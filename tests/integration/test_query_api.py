@@ -48,7 +48,7 @@ def mock_qdrant():
             "unique_id": "AuthorTest2024",
             "chunk_text": "This is a relevant chunk about natural language processing.",
             "chunk_type": "body",
-            "page_number": 1,
+            "page_number": "1",
             "metadata": {"chunk_index": 0},
         }
         mock_instance.search = Mock(return_value=[mock_search_result])
@@ -215,15 +215,20 @@ def test_rag_query_with_citations(client, test_collection):
     assert "citations" in data
     assert isinstance(data["citations"], dict)
 
-    # Citations are keyed by unique_id (citation key)
+    # Citations are keyed by page-level citation key, e.g. "AuthorTitle2024 p. 3"
     if len(data["results"]) > 0:
-        unique_id = data["results"][0]["unique_id"]
-        assert unique_id in data["citations"]
+        r = data["results"][0]
+        unique_id = r["unique_id"]
+        page = r["page_number"]
+        prefix = "pp." if "-" in page else "p."
+        page_key = f"{unique_id} {prefix} {page}"
+        assert page_key in data["citations"]
 
-        citation_info = data["citations"][unique_id]
+        citation_info = data["citations"][page_key]
         assert "apa" in citation_info
         assert "bibtex" in citation_info
         assert "unique_id" in citation_info
+        assert "page" in citation_info
 
 
 def test_rag_citations_include_pdf_url_when_metadata_present(

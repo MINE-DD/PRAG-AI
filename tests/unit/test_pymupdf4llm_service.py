@@ -15,18 +15,25 @@ def test_name():
 
 @patch("app.services.pymupdf4llm_service.pymupdf4llm")
 def test_convert_to_markdown(mock_pymupdf4llm):
-    mock_pymupdf4llm.to_markdown.return_value = "# Title\n\nContent"
+    mock_pymupdf4llm.to_markdown.return_value = [
+        {"metadata": {"page": 1}, "text": "# Title\n\nContent"}
+    ]
     service = PyMuPDF4LLMService()
     result = service.convert_to_markdown(Path("/fake/paper.pdf"))
-    assert result == "# Title\n\nContent"
-    mock_pymupdf4llm.to_markdown.assert_called_once_with(str(Path("/fake/paper.pdf")))
+    assert result == "<!-- page: 1 -->\n# Title\n\nContent"
+    mock_pymupdf4llm.to_markdown.assert_called_once_with(
+        str(Path("/fake/paper.pdf")), page_chunks=True
+    )
 
 
 @patch("app.services.pymupdf4llm_service.pymupdf4llm")
 def test_extract_metadata_from_heading(mock_pymupdf4llm):
-    mock_pymupdf4llm.to_markdown.return_value = (
-        "# My Paper Title\n\nAlice Smith, Bob Jones\n\n## Introduction\n\nText."
-    )
+    mock_pymupdf4llm.to_markdown.return_value = [
+        {
+            "metadata": {"page": 1},
+            "text": "# My Paper Title\n\nAlice Smith, Bob Jones\n\n## Introduction\n\nText.",
+        }
+    ]
     service = PyMuPDF4LLMService()
     meta = service.extract_metadata(Path("/fake/paper.pdf"), "fallback")
     assert meta["title"] == "My Paper Title"
@@ -36,7 +43,7 @@ def test_extract_metadata_from_heading(mock_pymupdf4llm):
 
 @patch("app.services.pymupdf4llm_service.pymupdf4llm")
 def test_extract_metadata_fallback(mock_pymupdf4llm):
-    mock_pymupdf4llm.to_markdown.return_value = ""
+    mock_pymupdf4llm.to_markdown.return_value = []
     service = PyMuPDF4LLMService()
     meta = service.extract_metadata(Path("/fake/paper.pdf"), "my_fallback")
     assert meta["title"] == "my_fallback"

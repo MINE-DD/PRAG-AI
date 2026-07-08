@@ -16,13 +16,14 @@ def test_name():
 def test_convert_to_markdown():
     service = DoclingService()
     mock_doc = MagicMock()
+    mock_doc.pages = {1: MagicMock()}
     mock_doc.export_to_markdown.return_value = "# Title\n\nContent"
     mock_result = MagicMock()
     mock_result.document = mock_doc
     service.lean_converter = MagicMock()
     service.lean_converter.convert.return_value = mock_result
     md = service.convert_to_markdown(Path("/fake/paper.pdf"))
-    assert md == "# Title\n\nContent"
+    assert md == "<!-- page: 1 -->\n# Title\n\nContent"
     service.lean_converter.convert.assert_called_once()
 
 

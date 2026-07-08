@@ -10,6 +10,8 @@ from app.services.ollama_service import OllamaService
 from app.services.qdrant_service import QdrantService
 from app.services.sparse_embedding_service import SparseEmbeddingService
 
+_PAGE_MARKER_RE = re.compile(r"<!--\s*page:\s*(\d+)\s*-->")
+
 
 class IngestionService:
     """Service for ingesting preprocessed markdown files into a collection."""
@@ -166,7 +168,7 @@ class IngestionService:
                     unique_id=unique_id,
                     chunk_text=chunk_text,
                     chunk_type=classify_heading(section_heading),
-                    page_number=1,
+                    page_number="1",
                     metadata={"chunk_index": i, "section_heading": section_heading},
                 )
                 chunks.append(chunk)
@@ -177,10 +179,21 @@ class IngestionService:
                     unique_id=unique_id,
                     chunk_text=chunk_text,
                     chunk_type=ChunkType.BODY,
-                    page_number=1,
+                    page_number="1",
                     metadata={"chunk_index": i, "section_heading": ""},
                 )
                 chunks.append(chunk)
+
+        # Resolve page numbers from embedded markers and strip them from chunk text
+        chunks = [
+            c.model_copy(
+                update={
+                    "page_number": self._extract_page_range(c.chunk_text),
+                    "chunk_text": _PAGE_MARKER_RE.sub("", c.chunk_text).strip(),
+                }
+            )
+            for c in chunks
+        ]
 
         # Safety-cap for character/markdown modes: truncate any chunk that exceeds
         # the embedding context window. Skipped for token mode because chunk_size
@@ -266,6 +279,15 @@ class IngestionService:
             return None
         match = re.search(r"\d{4}", str(publication_date))
         return int(match.group()) if match else None
+
+    @staticmethod
+    def _extract_page_range(text: str) -> str:
+        """Return 'N' or 'N-M' from <!-- page: N --> markers embedded in text."""
+        pages = [int(m) for m in _PAGE_MARKER_RE.findall(text)]
+        if not pages:
+            return "1"
+        lo, hi = min(pages), max(pages)
+        return str(lo) if lo == hi else f"{lo}-{hi}"
 
     @staticmethod
     def _extract_headings(text: str) -> list[str]:

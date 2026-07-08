@@ -28,8 +28,17 @@ class PyMuPDF4LLMService:
     # ------------------------------------------------------------------
 
     def convert_to_markdown(self, source_path: Path) -> str:
-        """Convert the PDF at *source_path* to a Markdown string."""
-        return pymupdf4llm.to_markdown(str(source_path))
+        """Convert the PDF at *source_path* to a Markdown string with <!-- page: N --> markers."""
+        page_chunks = pymupdf4llm.to_markdown(str(source_path), page_chunks=True)
+        parts = []
+        for i, chunk in enumerate(page_chunks):
+            # metadata["page"] is 1-indexed; fall back to positional index for older lib versions
+            meta = chunk.get("metadata") or {}
+            page_no = meta.get("page", i + 1)
+            text = chunk.get("text", "").strip()
+            if text:
+                parts.append(f"<!-- page: {page_no} -->\n{text}")
+        return "\n\n".join(parts)
 
     def extract_metadata(self, source_path: Path, fallback_title: str) -> dict:
         """Return metadata dict with title, authors, abstract, publication_date."""
@@ -65,6 +74,7 @@ class PyMuPDF4LLMService:
                     stripped
                     and not stripped.startswith("!")
                     and not stripped.startswith("[")
+                    and not stripped.startswith("<!--")
                 ):
                     title = stripped
                     title_idx = i

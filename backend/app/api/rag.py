@@ -60,6 +60,12 @@ def _get_llm_service(config: dict):
     )
 
 
+def _page_citation_key(unique_id: str, page: str) -> str:
+    """Return 'AuthorTitle2024 p. 3' or 'AuthorTitle2024 pp. 3-4'."""
+    prefix = "pp." if "-" in page else "p."
+    return f"{unique_id} {prefix} {page}"
+
+
 def _clean_context(text: str) -> str:
     """Remove numeric citation indices from text to prevent LLM confusion.
 
@@ -198,13 +204,19 @@ def rag_query(
 
     # Format results and build citation key map
     results = []
-    # Map paper_id → unique_id (citation key) for all retrieved chunks
-    paper_citation_keys = {}  # paper_id → unique_id
+    paper_citation_keys = {}  # paper_id → unique_id (for metadata loading)
+    chunk_citation_keys: dict[
+        tuple[str, str], str
+    ] = {}  # (paper_id, page) → page-level key
 
     for result in search_results:
         paper_id = result.payload["paper_id"]
         unique_id = result.payload["unique_id"]
+        page_number = str(result.payload["page_number"])
         paper_citation_keys[paper_id] = unique_id
+        chunk_citation_keys[(paper_id, page_number)] = _page_citation_key(
+            unique_id, page_number
+        )
 
         results.append(
             {
@@ -212,7 +224,7 @@ def rag_query(
                 "paper_id": paper_id,
                 "unique_id": unique_id,
                 "chunk_type": result.payload["chunk_type"],
-                "page_number": result.payload["page_number"],
+                "page_number": page_number,
                 "score": result.score,
                 "metadata": result.payload.get("metadata", {}),
             }
@@ -247,13 +259,15 @@ def rag_query(
         # Build context: each chunk tagged with its citation key
         context_parts = []
         for r in results:
-            citation_key = r["unique_id"] or r["paper_id"]
+            page_key = _page_citation_key(
+                r["unique_id"] or r["paper_id"], r["page_number"]
+            )
             cleaned_text = _clean_context(r["chunk_text"])
-            context_parts.append(f"--- Source: [{citation_key}] ---\n{cleaned_text}")
+            context_parts.append(f"--- Source: [{page_key}] ---\n{cleaned_text}")
         context = "\n\n".join(context_parts)
 
         # List all valid citation keys for the prompt
-        valid_keys = sorted(set(paper_citation_keys.values()))
+        valid_keys = sorted(set(chunk_citation_keys.values()))
         keys_list = ", ".join(f"[{k}]" for k in valid_keys)
 
         word_target = rag_request.max_generated_tokens
@@ -328,12 +342,12 @@ def rag_query(
                 "this question. Try broadening your query or selecting different papers."
             )
 
-    # Always build citations for all retrieved papers
+    # Always build citations for all retrieved chunks, keyed by page-level citation key
     citations = {}
-    for paper_id, unique_id in paper_citation_keys.items():
+    for (paper_id, page_number), page_key in chunk_citation_keys.items():
         meta = paper_metadata_map.get(paper_id)
         if meta:
-            citations[unique_id] = {
+            citations[page_key] = {
                 "unique_id": meta.unique_id,
                 "title": meta.title,
                 "authors": meta.authors,
@@ -341,6 +355,7 @@ def rag_query(
                 "apa": citation_service.format_apa(meta),
                 "bibtex": citation_service.format_bibtex(meta),
                 "pdf_url": paper_pdf_url_map.get(paper_id, ""),
+                "page": page_number,
             }
 
     response = {
