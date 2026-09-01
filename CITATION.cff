@@ -14,6 +14,9 @@ authors:
   - given-names: Angel
     family-names: Daza
     affiliation: Netherlands eScience Center
+  - given-names: Cunliang
+    family-names: Geng
+    affiliation: Netherlands eScience Center
 keywords:
   - RAG
   - retrieval-augmented generation
